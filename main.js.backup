@@ -1,0 +1,359 @@
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const ExcelJS = require('exceljs');
+const fs = require('fs').promises;
+
+let mainWindow;
+
+function createWindow() {
+    mainWindow = new BrowserWindow({
+        width: 1400,
+        height: 900,
+        minWidth: 1200,
+        minHeight: 700,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        },
+        frame: true,
+        titleBarStyle: 'default',
+        backgroundColor: '#f9fafb',
+        icon: path.join(__dirname, 'assets', 'icon.png')
+    });
+
+    mainWindow.loadFile('index.html');
+
+    // 开发时打开 DevTools
+    // mainWindow.webContents.openDevTools();
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
+}
+
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+        app.quit();
+    }
+});
+
+app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+    }
+});
+
+// ========== IPC Handlers ==========
+
+// 加载配置
+ipcMain.handle('load-config', async () => {
+    try {
+        const configPath = path.join(app.getPath('userData'), 'config.json');
+        const data = await fs.readFile(configPath, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        // 返回默认配置
+        return getDefaultConfig();
+    }
+});
+
+// 保存配置
+ipcMain.handle('save-config', async (event, config) => {
+    try {
+        const configPath = path.join(app.getPath('userData'), 'config.json');
+        await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// 选择文件
+ipcMain.handle('select-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'Excel Files', extensions: ['xlsx', 'xls'] },
+            { name: 'CSV Files', extensions: ['csv'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+        return { success: true, path: result.filePaths[0] };
+    }
+    return { success: false };
+});
+
+// 导入销售数据
+ipcMain.handle('import-sales-data', async (event, filePath) => {
+    try {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        
+        // 读取 Data Sheet
+        const dataSheet = workbook.getWorksheet('Data Sheet');
+        if (!dataSheet) {
+            return { success: false, error: 'Data Sheet not found' };
+        }
+        
+        const salesData = [];
+        let currentPerson = null;
+        let personData = null;
+        
+        // 解析数据
+        dataSheet.eachRow((row, rowNumber) => {
+            if (rowNumber === 1) return; // 跳过空行
+            if (rowNumber === 2) return; // 跳过表头
+            
+            const saleName = row.getCell(1).value;
+            const month = row.getCell(2).value;
+            const target = parseFloat(row.getCell(3).value) || 0;
+            const sales = parseFloat(row.getCell(4).value) || 0;
+            const collection = parseFloat(row.getCell(9).value) || 0;
+            
+            // 新的销售员
+            if (saleName && saleName !== currentPerson) {
+                if (personData) {
+                    salesData.push(personData);
+                }
+                
+                currentPerson = saleName;
+                personData = {
+                    name: saleName.toUpperCase(),
+                    months: []
+                };
+            }
+            
+            // 添加月度数据
+            if (month && personData) {
+                personData.months.push({
+                    month: month.toString().toUpperCase(),
+                    target: target,
+                    sales: sales,
+                    collection: collection
+                });
+            }
+        });
+        
+        // 添加最后一个人
+        if (personData) {
+            salesData.push(personData);
+        }
+        
+        return { success: true, data: salesData };
+        
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// 生成工资模板
+ipcMain.handle('generate-salary-template', async (event, data) => {
+    try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: `Salary_Template_${new Date().toISOString().split('T')[0]}.xlsx`,
+            filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+        });
+
+        if (result.canceled) {
+            return { success: false, message: 'Cancelled' };
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        
+        // 为每个销售员创建工作表
+        for (const person of data.salespeople) {
+            const sheet = workbook.addWorksheet(person.name.substring(0, 31));
+            await createSalarySheet(sheet, person, data.config, data.month);
+        }
+
+        await workbook.xlsx.writeFile(result.filePath);
+        
+        return { 
+            success: true, 
+            path: result.filePath,
+            message: 'Template generated successfully!'
+        };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// 导出 PDF 报告
+ipcMain.handle('export-pdf', async (event, data) => {
+    try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: `${data.name}_Report.pdf`,
+            filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+        });
+
+        if (result.canceled) {
+            return { success: false };
+        }
+
+        // 使用 Electron 的打印功能生成 PDF
+        const pdfData = await mainWindow.webContents.printToPDF({
+            printBackground: true,
+            landscape: false
+        });
+
+        await fs.writeFile(result.filePath, pdfData);
+        
+        return { success: true, path: result.filePath };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// ========== Helper Functions ==========
+
+async function createSalarySheet(sheet, person, config, month) {
+    // 设置列宽
+    sheet.columns = [
+        { width: 25 }, { width: 15 }, { width: 15 }, 
+        { width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }
+    ];
+
+    // 样式定义
+    const headerStyle = {
+        font: { bold: true, size: 12, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5B9BD5' } },
+        alignment: { horizontal: 'center', vertical: 'middle' },
+        border: {
+            top: { style: 'thin' },
+            bottom: { style: 'thin' },
+            left: { style: 'thin' },
+            right: { style: 'thin' }
+        }
+    };
+
+    const sectionStyle = {
+        font: { bold: true, size: 11, color: { argb: 'FF1F4E78' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+        alignment: { horizontal: 'left', vertical: 'middle' }
+    };
+
+    const totalStyle = {
+        font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC000' } },
+        alignment: { horizontal: 'left', vertical: 'middle' }
+    };
+
+    const grandTotalStyle = {
+        font: { bold: true, size: 12, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } },
+        alignment: { horizontal: 'left', vertical: 'middle' }
+    };
+
+    // 第1行：月份
+    const monthCell = sheet.getCell('A1');
+    monthCell.value = month;
+    monthCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+    monthCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+    monthCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // 数据行
+    const rows = [
+        { label: 'INCOME', type: 'header' },
+        { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', '', 'INDV%', 'TEAM%'] },
+        { label: 'SALARY', value: person.salary || 0 },
+        { label: 'ALLOWANCES', type: 'header' },
+        { label: 'HP', value: person.allowances?.HP || 0 },
+        { label: 'CAR', value: person.allowances?.CAR || 0 },
+        { label: 'LOCAL FUEL', value: person.allowances?.['LOCAL FUEL'] || 0 },
+        { label: 'OUTSTATION FUEL', value: person.allowances?.['OUTSTATION FUEL'] || 0 },
+        { label: 'HOUSING', value: person.allowances?.HOUSING || 0 },
+        { label: 'FOOD', value: person.allowances?.FOOD || 0 },
+        { label: 'OTHERS', value: person.allowances?.OTHERS || 0 },
+        { label: '', type: 'empty' },
+        { label: 'TOTAL FIXED INCOME', value: 0, type: 'total' },
+        { label: '', type: 'empty' },
+        { label: 'COMISSION', type: 'header' },
+        { label: 'SALES', value: person.commission || 0 },
+        { label: 'INCENTIVE', type: 'header' },
+        { label: 'COLLECTION', value: person.collectionIncentive || 0 },
+        { label: 'ACTIVE CALL', value: person.activeCallIncentive || 0 },
+        { label: 'QUATERLY', value: person.quarterlyBonus || 0 },
+        { label: '', type: 'empty' },
+        { label: 'TOTAL', value: 0, type: 'total' },
+        { label: '', type: 'empty' },
+        { label: 'EPF 2%', value: 0, type: 'epf' },
+        { label: '', type: 'empty' },
+        { label: 'GRAND TOTAL PAYABLE', value: 0, type: 'grandTotal' }
+    ];
+
+    let rowNum = 2;
+    for (const row of rows) {
+        const cell = sheet.getCell(rowNum, 1);
+        cell.value = row.label;
+
+        if (row.type === 'header') {
+            Object.assign(cell, headerStyle);
+            for (let col = 1; col <= 7; col++) {
+                Object.assign(sheet.getCell(rowNum, col), headerStyle);
+            }
+        } else if (row.type === 'section') {
+            Object.assign(cell, sectionStyle);
+            row.cols?.forEach((val, idx) => {
+                const c = sheet.getCell(rowNum, idx + 2);
+                c.value = val;
+                Object.assign(c, sectionStyle);
+            });
+        } else if (row.type === 'total') {
+            Object.assign(cell, totalStyle);
+            for (let col = 1; col <= 7; col++) {
+                Object.assign(sheet.getCell(rowNum, col), totalStyle);
+            }
+        } else if (row.type === 'grandTotal') {
+            Object.assign(cell, grandTotalStyle);
+            for (let col = 1; col <= 7; col++) {
+                Object.assign(sheet.getCell(rowNum, col), grandTotalStyle);
+            }
+        }
+
+        if (row.value !== undefined) {
+            const valueCell = sheet.getCell(rowNum, 4);
+            valueCell.value = row.value;
+            valueCell.numFmt = '#,##0.00';
+        }
+
+        rowNum++;
+    }
+}
+
+function getDefaultConfig() {
+    return {
+        base_salaries: {
+            // 用户可以在应用中添加
+        },
+        allowances: {
+            // 用户可以在应用中添加
+        },
+        monthly_commission_rates: [
+            { min: 0, max: 79.99, rate: 0, label: '0%-79%' },
+            { min: 80, max: 89.99, rate: 0.006, label: '80%-89%' },
+            { min: 90, max: 99.99, rate: 0.007, label: '90%-99%' },
+            { min: 100, max: 105.99, rate: 0.008, label: '100%-105%' },
+            { min: 106, max: 999, rate: 0.01, label: '106%+' }
+        ],
+        quarterly_incentive: [
+            { min: 100, incentive: 400, label: '100%+' },
+            { min: 90, incentive: 200, label: '90%-99%' },
+            { min: 0, incentive: 0, label: '<90%' }
+        ],
+        collection_incentive: [
+            { min: 100, incentive: 300, label: '100%+' },
+            { min: 90, incentive: 150, label: '90%-99%' },
+            { min: 0, incentive: 0, label: '<90%' }
+        ],
+        active_call_incentive: [
+            { min: 100, incentive: 200, label: '100%+' },
+            { min: 90, incentive: 100, label: '90%-99%' },
+            { min: 0, incentive: 0, label: '<90%' }
+        ]
+    };
+}

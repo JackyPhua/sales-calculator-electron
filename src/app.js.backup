@@ -1,0 +1,169 @@
+// 全局状态
+let appState = {
+    config: null,
+    currentView: 'quick',
+    salespeople: []
+};
+
+// 初始化应用
+async function initApp() {
+    try {
+        // 加载配置
+        appState.config = await window.electronAPI.loadConfig();
+        
+        // 显示默认视图
+        switchView('quick');
+        
+        showToast('✅', 'App loaded successfully!');
+    } catch (error) {
+        showToast('❌', 'Failed to load app: ' + error.message);
+    }
+}
+
+// 切换视图
+function switchView(viewName) {
+    appState.currentView = viewName;
+    
+    // 更新侧边栏按钮状态
+    document.querySelectorAll('.sidebar-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.view === viewName) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // 加载对应视图
+    const contentArea = document.getElementById('content-area');
+    
+    switch(viewName) {
+        case 'quick':
+            contentArea.innerHTML = getQuickCalculateView();
+            initQuickCalculate();
+            updatePageTitle('Quick Calculate', 'Calculate commissions for your sales team');
+            break;
+        case 'salary':
+            contentArea.innerHTML = getSalaryView();
+            initSalaryView();
+            updatePageTitle('Salary & Allowances', 'Configure base salaries and allowances');
+            break;
+        case 'commission':
+            contentArea.innerHTML = getCommissionView();
+            initCommissionView();
+            updatePageTitle('Commission Rates', 'Configure monthly commission rates');
+            break;
+        case 'incentive':
+            contentArea.innerHTML = getIncentiveView();
+            initIncentiveView();
+            updatePageTitle('Incentives', 'Configure quarterly and other incentives');
+            break;
+        case 'settings':
+            contentArea.innerHTML = getSettingsView();
+            updatePageTitle('Settings', 'App settings and configurations');
+            break;
+    }
+}
+
+// 更新页面标题
+function updatePageTitle(title, subtitle) {
+    document.getElementById('page-title').textContent = title;
+    document.getElementById('page-subtitle').textContent = subtitle;
+}
+
+// 显示 Toast 通知
+function showToast(icon, message, duration = 3000) {
+    const toast = document.getElementById('toast');
+    const toastIcon = document.getElementById('toast-icon');
+    const toastMessage = document.getElementById('toast-message');
+    
+    toastIcon.textContent = icon;
+    toastMessage.textContent = message;
+    
+    toast.classList.remove('translate-x-full');
+    
+    setTimeout(() => {
+        toast.classList.add('translate-x-full');
+    }, duration);
+}
+
+// 保存配置
+async function saveConfig() {
+    try {
+        const result = await window.electronAPI.saveConfig(appState.config);
+        if (result.success) {
+            showToast('✅', 'Configuration saved!');
+        } else {
+            showToast('❌', 'Failed to save: ' + result.error);
+        }
+    } catch (error) {
+        showToast('❌', 'Error: ' + error.message);
+    }
+}
+
+// 导出工资模板
+async function exportTemplate() {
+    if (appState.salespeople.length === 0) {
+        showToast('⚠️', 'Please add at least one salesperson first!');
+        return;
+    }
+    
+    try {
+        const month = new Date().toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+        
+        const result = await window.electronAPI.generateSalaryTemplate({
+            salespeople: appState.salespeople,
+            config: appState.config,
+            month: month
+        });
+        
+        if (result.success) {
+            showToast('✅', 'Template exported successfully!');
+        } else {
+            showToast('❌', 'Export failed: ' + (result.error || result.message));
+        }
+    } catch (error) {
+        showToast('❌', 'Error: ' + error.message);
+    }
+}
+
+// 计算佣金
+function calculateCommission(sales, target, rates) {
+    if (!target || target === 0) return 0;
+    
+    const achievement = (sales / target) * 100;
+    
+    for (const tier of rates) {
+        if (achievement >= tier.min && achievement <= tier.max) {
+            return sales * tier.rate;
+        }
+    }
+    
+    return 0;
+}
+
+// 计算奖励
+function calculateIncentive(achievement, incentives) {
+    for (const tier of incentives) {
+        if (achievement >= tier.min) {
+            return tier.incentive;
+        }
+    }
+    return 0;
+}
+
+// 获取成就率颜色
+function getAchievementColor(achievement) {
+    if (achievement >= 100) return 'text-green-600 bg-green-50';
+    if (achievement >= 90) return 'text-yellow-600 bg-yellow-50';
+    return 'text-red-600 bg-red-50';
+}
+
+// 格式化货币
+function formatCurrency(amount) {
+    return 'RM ' + parseFloat(amount || 0).toLocaleString('en-MY', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', initApp);

@@ -1,0 +1,19 @@
+﻿// 在 switchView 函数中找到这一部分，修改为：
+setTimeout(function() {
+    // 特殊处理 "quick" 视图
+    var initFuncName;
+    if (viewName === "quick") {
+        initFuncName = "initQuickCalculateView";
+    } else {
+        initFuncName = "init" + viewName.charAt(0).toUpperCase() + viewName.slice(1) + "View";
+    }
+    
+    console.log("尝试调用: " + initFuncName);
+    
+    if (typeof window[initFuncName] === "function") {
+        window[initFuncName]();
+        console.log("成功调用: " + initFuncName);
+    } else {
+        console.log("函数不存在: " + initFuncName);
+    }
+}, 100);

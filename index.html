@@ -1,0 +1,485 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Commission Calculator</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* 自定义动画 */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideIn {
+            from { 
+                transform: translateY(-20px); 
+                opacity: 0; 
+            }
+            to { 
+                transform: translateY(0); 
+                opacity: 1; 
+            }
+        }
+        
+        .animate-fadeIn { 
+            animation: fadeIn 0.2s ease-out; 
+        }
+        
+        .animate-slideIn { 
+            animation: slideIn 0.3s ease-out; 
+        }
+        
+        /* 自定义样式 */
+        .card {
+            transition: all 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .input-field:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .tab-button {
+            transition: all 0.2s ease;
+        }
+        
+        .tab-button.active {
+            background-color: #3b82f6;
+            color: white;
+        }
+        
+        .tab-button:not(.active):hover {
+            background-color: #e5e7eb;
+        }
+        
+        /* Toast 样式 */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 200px;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        /* 确保输入框可点击和输入 */
+        input, select {
+            pointer-events: auto !important;
+            user-select: auto !important;
+            -webkit-user-select: auto !important;
+        }
+        
+        /* 移除所有可能阻止输入的样式 */
+        .disable-input {
+            pointer-events: none;
+            user-select: none;
+        }
+        
+        /* 删除按钮样式 */
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: #fee2e2;
+            color: #dc2626;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+        
+        .delete-btn:hover {
+            background-color: #fecaca;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="text-2xl">💰</div>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">Sales Commission Calculator</h1>
+                        <p class="text-xs text-gray-500">Professional Edition v2.0</p>
+                    </div>
+                </div>
+                
+                <!-- 工具栏 -->
+                <div class="flex items-center space-x-2">
+                    <button onclick="showIntegrityReport()" 
+                            class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm flex items-center space-x-1"
+                            title="Check data integrity">
+                        <span>📊</span>
+                        <span class="hidden sm:inline">Check Data</span>
+                    </button>
+                    
+                    <button onclick="exportConfigAsJSON()" 
+                            class="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm flex items-center space-x-1"
+                            title="Export configuration (Ctrl+E)">
+                        <span>💾</span>
+                        <span class="hidden sm:inline">Export</span>
+                    </button>
+                    
+                    <button onclick="importConfigFromJSON()" 
+                            class="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm flex items-center space-x-1"
+                            title="Import configuration">
+                        <span>📥</span>
+                        <span class="hidden sm:inline">Import</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要内容区 -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        <!-- 标签页导航 -->
+        <div class="bg-white rounded-xl shadow-sm p-2 mb-6">
+            <div class="flex space-x-2">
+                <button onclick="switchView('quick')" 
+                        id="tab-quick" 
+                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors active">
+                    📊 Quick Calculate
+                </button>
+                <button onclick="switchView('salary')" 
+                        id="tab-salary" 
+                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">
+                    💵 Salary & Allowances
+                </button>
+                <button onclick="switchView('commission')" id="tab-commission" class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">💰 Commission & Incentive</button>
+                <button onclick="switchView('history')" 
+                        id="tab-history" 
+                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">
+                    📜 History
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Calculate 视图 -->
+        <div id="view-quick" class="view-container">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- 左侧：输入区 -->
+                <div class="lg:col-span-2 space-y-4">
+                    <!-- 月份选择和操作按钮 -->
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+                        <div class="flex flex-wrap items-center gap-4">
+                            <div class="flex-1 min-w-[200px]">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Report Month</label>
+                                <select id="report-month" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                                    <option value="JAN">JAN</option>
+                                    <option value="FEB">FEB</option>
+                                    <option value="MAR">MAR</option>
+                                    <option value="APR">APR</option>
+                                    <option value="MAY">MAY</option>
+                                    <option value="JUN">JUN</option>
+                                    <option value="JUL">JUL</option>
+                                    <option value="AUG">AUG</option>
+                                    <option value="SEP">SEP</option>
+                                    <option value="OCT">OCT</option>
+                                    <option value="NOV">NOV</option>
+                                    <option value="DEC">DEC</option>
+                                </select>
+                            </div>
+                            
+                            <div class="flex items-end gap-2">
+                                <button onclick="importFromExcel()" 
+                                        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center space-x-2">
+                                    <span>📂</span>
+                                    <span>Import Excel</span>
+                                </button>
+                                
+                                <button onclick="addSalespersonCard()" 
+                                        class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center space-x-2">
+                                    <span>➕</span>
+                                    <span>Add Person</span>
+                                </button>
+                                
+                                <button onclick="clearAllQuickCalculateData()" 
+                                        class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center space-x-2"
+                                        title="Clear all data">
+                                    <span>🗑️</span>
+                                    <span class="hidden sm:inline">Clear</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 销售员卡片容器 -->
+                    <div id="salespeople-container" class="space-y-4">
+                        <!-- 动态生成的卡片将插入这里 -->
+                    </div>
+                </div>
+                
+                <!-- 右侧：汇总和导出 -->
+                <div class="space-y-4">
+                    <!-- 汇总信息卡片 -->
+                    <div id="summary-view" class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                        <h3 class="text-lg font-semibold mb-4">📊 Summary</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-blue-100">Total People:</span>
+                                <span id="summary-count" class="text-2xl font-bold">0</span>
+                            </div>
+                            <div class="border-t border-blue-400 pt-3">
+                                <div class="text-blue-100 text-sm mb-1">Total Commission</div>
+                                <div id="summary-commission" class="text-3xl font-bold">RM 0.00</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 导出按钮 -->
+                    <button onclick="exportTemplate()" 
+                            class="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 shadow-lg font-semibold text-lg flex items-center justify-center space-x-2">
+                        <span>📥</span>
+                        <span>Export Excel Report</span>
+                    </button>
+                    
+                    <!-- 快捷键提示 -->
+                    <div class="bg-gray-100 rounded-lg p-4 text-sm text-gray-600">
+                        <div class="font-semibold mb-2">⌨️ Keyboard Shortcuts</div>
+                        <div class="space-y-1">
+                            <div><kbd class="px-2 py-1 bg-white rounded border">Ctrl</kbd> + <kbd class="px-2 py-1 bg-white rounded border">S</kbd> Save</div>
+                            <div><kbd class="px-2 py-1 bg-white rounded border">Ctrl</kbd> + <kbd class="px-2 py-1 bg-white rounded border">E</kbd> Export Config</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Salary & Allowances 视图 -->
+        <div id="view-salary" class="view-container hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">💵 Salary & Allowances Configuration</h2>
+                
+                <!-- 添加新销售员 -->
+                <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h3 class="font-semibold text-blue-900 mb-3">Add New Salesperson</h3>
+                    <div class="flex gap-3">
+                        <input type="text" 
+                               id="new-person-name" 
+                               placeholder="Enter name..." 
+                               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                        <input type="number" 
+                               id="new-person-salary" 
+                               placeholder="Base salary..." 
+                               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                               value="1700">
+                        <button onclick="addNewPerson()" 
+                                class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                            ➕ Add
+                        </button>
+                    </div>
+                    <p class="text-sm text-gray-600 mt-2">Enter name and base salary, then click Add.</p>
+                </div>
+                
+                <!-- 销售员配置列表 -->
+                <div id="salary-config-container" class="space-y-4">
+                    <!-- 动态生成的配置卡片 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Commission & Incentive 视图 -->
+        <div id="view-commission" class="view-container hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-2xl font-bold mb-6">💰 Commission & Incentive</h2>
+                <div id="commission-config-container"></div>
+            </div>
+        </div>
+
+        <!-- History 视图 -->
+        <div id="view-history" class="view-container hidden">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900">📜 Report History</h2>
+                    <button onclick="loadQuickCalculateHistory()" 
+                            class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center space-x-2">
+                        <span>🔄</span>
+                        <span>Refresh</span>
+                    </button>
+                </div>
+                
+                <div id="history-list" class="space-y-4">
+                    <!-- 动态生成的历史记录 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+    <!-- 初始化脚本 -->
+    <script>
+        // 全局状态
+        const appState = {
+            salespeople: [],
+            config: {},
+            currentView: 'quick',
+            locale: {
+                salesperson: {
+                    title: 'Salesperson #{}',
+                    noConfigMsg: '⚠️ No salespeople configured. Please go to Salary & Allowances to configure.'
+                },
+                views: {
+                    quick: 'Quick Calculate',
+                    salary: 'Salary & Allowances',
+                    history: 'History'
+                }
+            }
+        };
+
+        // Toast 通知
+        function showToast(icon, message, duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast bg-white shadow-lg rounded-lg px-4 py-3 flex items-center space-x-3 border border-gray-200';
+            toast.innerHTML = `
+                <span class="text-2xl">${icon}</span>
+                <span class="text-gray-700 font-medium">${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        // 视图切换
+        function switchView(view) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`tab-${view}`).classList.add('active');
+            
+            // 隐藏所有视图
+            document.querySelectorAll('.view-container').forEach(v => {
+                v.classList.add('hidden');
+            });
+            
+            // 显示选中的视图
+            document.getElementById(`view-${view}`).classList.remove('hidden');
+            
+            appState.currentView = view;
+            
+            // 初始化对应视图
+            if (view === 'quick') {
+                initQuickCalculate();
+            } else if (view === 'salary') {
+                initSalaryView();
+            } else if (view === 'commission') {
+                initCommissionView();
+            } else if (view === 'history') {
+                loadQuickCalculateHistory();
+            }
+        }
+
+        // 保存配置
+        async function saveConfig() {
+            try {
+                if (window.electronAPI && window.electronAPI.saveConfig) {
+                    await window.electronAPI.saveConfig(appState.config);
+                }
+            } catch (error) {
+                console.error('Failed to save config:', error);
+            }
+        }
+
+        // 加载配置
+        async function loadConfig() {
+            try {
+                if (window.electronAPI && window.electronAPI.loadConfig) {
+                    const config = await window.electronAPI.loadConfig();
+                    appState.config = config || getDefaultConfig();
+                } else {
+                    appState.config = getDefaultConfig();
+                }
+            } catch (error) {
+                console.error('Failed to load config:', error);
+                appState.config = getDefaultConfig();
+            }
+        }
+
+        // 默认配置
+        function getDefaultConfig() {
+            return {
+                base_salaries: {},
+                allowances: {},
+                deductions: {},
+                deductionRates: {},
+                earnings: {},
+                active_call_targets: {},
+                reportHistory: [],
+                monthly_commission_rates: [
+                    { min: 0, max: 79.99, rate: 0, label: '0%-79%' },
+                    { min: 80, max: 89.99, rate: 0.006, label: '80%-89%' },
+                    { min: 90, max: 99.99, rate: 0.007, label: '90%-99%' },
+                    { min: 100, max: 105.99, rate: 0.008, label: '100%-105%' },
+                    { min: 106, max: 999, rate: 0.01, label: '106%+' }
+                ],
+                quarterly_incentive: [
+                    { min: 100, incentive: 400, label: '100%+' },
+                    { min: 90, incentive: 200, label: '90%-99%' },
+                    { min: 0, incentive: 0, label: '<90%' }
+                ],
+                collection_incentive: [
+                    { min: 100, incentive: 300, label: '100%+' },
+                    { min: 90, incentive: 150, label: '90%-99%' },
+                    { min: 0, incentive: 0, label: '<90%' }
+                ],
+                active_call_incentive: [
+                    { min: 100, incentive: 200, label: '100%+' },
+                    { min: 90, incentive: 100, label: '90%-99%' },
+                    { min: 0, incentive: 0, label: '<90%' }
+                ]
+            };
+        }
+
+        // 初始化应用
+        async function initApp() {
+            console.log('🚀 Initializing application...');
+            
+            // 加载配置
+            await loadConfig();
+            
+            // 初始化视图
+            switchView('quick');
+            
+            console.log('✅ Application initialized!');
+        }
+
+        // 页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
+    </script>
+
+    <!-- 引入主要脚本文件 -->
+    <script src="src/calculator.js"></script>
+</body>
+</html>
