@@ -1107,21 +1107,21 @@ function addCommissionTier() {
     
     saveConfig();
     renderCommissionConfigs();
-    showToast('✅', '新佣金 Tier 已添加');
+    showToast('✅', 'New commission Tier added successfully');
 }
 
 // 移除佣金 Tier
 function removeCommissionTier(index) {
     if (window.appState.config.monthly_commission_rates.length <= 1) {
-        showToast('⚠️', '不能删除最后一个 Tier');
+        showToast('⚠️', 'Cannot delete the last Tier');
         return;
     }
     
-    if (confirm('确定要删除这个 Tier 吗？')) {
+    if (confirm('Confirm to delete this Tier ？')) {
         window.appState.config.monthly_commission_rates.splice(index, 1);
         saveConfig();
         renderCommissionConfigs();
-        showToast('✅', 'Tier 已删除');
+        showToast('✅', 'Tier deleted successfully');
     }
 }
 
@@ -1156,7 +1156,7 @@ function addIncentiveTier(type) {
     
     saveConfig();
     renderCommissionConfigs();
-    showToast('✅', `新 ${type} Tier 已添加`);
+    showToast('✅', `New ${type} Tier added successfully`);
 }
 
 // 移除激励 Tier
@@ -1171,15 +1171,15 @@ function removeIncentiveTier(type, index) {
     if (!configKey || !window.appState.config[configKey]) return;
     
     if (window.appState.config[configKey].length <= 1) {
-        showToast('⚠️', '不能删除最后一个 Tier');
+        showToast('⚠️', 'Cannot delete the last Tier');
         return;
     }
     
-    if (confirm('确定要删除这个 Tier 吗？')) {
+    if (confirm('Confirm to delete this Tier ？')) {
         window.appState.config[configKey].splice(index, 1);
         saveConfig();
         renderCommissionConfigs();
-        showToast('✅', 'Tier 已删除');
+        showToast('✅', 'Tier deleted successfully');
     }
 }
 
@@ -1349,14 +1349,14 @@ function addNewPerson() {
     const salary = parseFloat(salaryInput.value) || 1700;
     
     if (!name) {
-        showToast('⚠️', '请输入姓名！');
+        showToast('⚠️', 'Please enter a name!');
         return;
     }
     
     const nameUpper = name.toUpperCase();
     
     if (window.appState.config.base_salaries && window.appState.config.base_salaries[nameUpper]) {
-        showToast('⚠️', '此人已存在！');
+        showToast('⚠️', 'This salesperson already exists.');
         return;
     }
     
@@ -1406,7 +1406,7 @@ async function exportTemplate() {
         
         if (window.appState.salespeople.length === 0) {
             hideLoading();
-            showToast('⚠️', '没有数据可导出！');
+            showToast('⚠️', 'no sales data');
             return;
         }
         
@@ -1437,7 +1437,7 @@ async function exportTemplate() {
         hideLoading();
         
         if (result.success) {
-            showToast('✅', `成功导出 ${salesData.length} 条记录！`);
+            showToast('✅', `Successfully exported to export ${salesData.length} records!`);
             
             if (!window.appState.config.reportHistory) {
                 window.appState.config.reportHistory = [];

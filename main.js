@@ -411,11 +411,13 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         }
     }
     
-    // 临时测试：硬编码 11% 来验证计算
-    const TEST_EPF_RATE = 0.11; // 11%
-    console.log('\n🔧 临时测试: 使用硬编码 EPF 费率', TEST_EPF_RATE, `(${TEST_EPF_RATE * 100}%)`);
-    epfRate = TEST_EPF_RATE; // 临时使用硬编码值
-    epfSource = `硬编码测试值 ${TEST_EPF_RATE * 100}%`;
+    // 从 config.deductionRates 读取该人的 EPF Rate
+    const nameUpper = (person.name || '').toUpperCase();
+    if (config && config.deductionRates && config.deductionRates[nameUpper] && config.deductionRates[nameUpper].EPF_RATE !== undefined) {
+        epfRate = parseFloat(config.deductionRates[nameUpper].EPF_RATE) / 100;
+        epfSource = `config.deductionRates[${nameUpper}].EPF_RATE = ${config.deductionRates[nameUpper].EPF_RATE}%`;
+        console.log(`✅ EPF Rate: ${config.deductionRates[nameUpper].EPF_RATE}% → ${epfRate}`);
+    }
     
     console.log('\n📊 最终使用的 EPF 费率:');
     console.log('- 值:', epfRate);
@@ -498,12 +500,11 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     // D21: 季度奖金 (QUATERLY)
     const quarterlyBonus = parseFloat(person.quarterlyBonus) || 0;
     
-    // D23: TOTAL = D17 + D19 + D20 + D21
-    const totalExtraIncome = commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
+    // D23: TOTAL = D14 + D17 + D19 + D20 + D21
+    const totalExtraIncome = totalFixedIncome + commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
     
-    // D25: EPF = (D14 + D23) × EPF费率
-    const totalBeforeEPF = totalFixedIncome + totalExtraIncome;
-    const epfAmount = totalBeforeEPF * epfRate;
+    // D25: EPF = D23 × EPF费率
+    const epfAmount = totalExtraIncome * epfRate;
     const epfLabel = `EPF ${(epfRate * 100)}%`;
     
     // D27: GRAND TOTAL PAYABLE = D23 - D25
@@ -524,8 +525,8 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     console.log('- D20 (ACTIVE CALL):', activeCallIncentive);
     console.log('- D21 (QUATERLY):', quarterlyBonus);
     console.log('- D23 (TOTAL):', totalExtraIncome);
-    console.log('- 计算基数 (D14+D23):', totalBeforeEPF);
-    console.log('- D25 (EPF):', epfAmount, `(费率: ${epfRate * 100}%) = ${totalBeforeEPF} × ${epfRate}`);
+    console.log('- D23 (TOTAL):', totalExtraIncome);
+    console.log('- D25 (EPF):', epfAmount, `(费率: ${epfRate * 100}%) = ${totalExtraIncome} × ${epfRate}`);
     console.log('- D27 (GRAND TOTAL PAYABLE):', grandTotalPayable, `= ${totalExtraIncome} - ${epfAmount}`);
 
     // 使用预定义样式
