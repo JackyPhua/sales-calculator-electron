@@ -1485,6 +1485,96 @@ window.addSalespersonCard = addSalespersonCard;
 window.deleteSalespersonCard = deleteSalespersonCard;
 window.clearAllQuickCalculateData = clearAllQuickCalculateData;
 window.exportTemplate = exportTemplate;
+// Import Excel — 读取选中文件，自动填入当月数据到Quick Calculate卡片
+async function importFromExcel() {
+    try {
+        // 1. 选择文件
+        const fileResult = await window.electronAPI.selectFile();
+        if (!fileResult || !fileResult.success) return;
+
+        showToast('⏳', 'Reading Excel file...');
+
+        // 2. 读取数据
+        const importResult = await window.electronAPI.importSalesData(fileResult.path);
+        if (!importResult.success) {
+            showToast('❌', 'Import failed: ' + importResult.error);
+            return;
+        }
+
+        const data = importResult.data; // [{name, months: [{month, target, sales, collection}]}]
+        if (!data || data.length === 0) {
+            showToast('⚠️', 'No data found in file');
+            return;
+        }
+
+        // 3. 找出当前选择的月份
+        const currentMonth = document.getElementById('report-month')
+            ? document.getElementById('report-month').value.toUpperCase()
+            : '';
+
+        // 4. 清空现有卡片
+        const container = document.getElementById('salespeople-container');
+        if (container) container.innerHTML = '';
+        window.appState.salespeople = [];
+
+        // 5. 为每个人创建卡片并填入数据
+        let loaded = 0;
+        data.forEach(person => {
+            // 找该人当月数据
+            const monthData = person.months.find(m => m.month === currentMonth);
+            if (!monthData && !person.months.length) return;
+
+            const md = monthData || person.months[person.months.length - 1];
+
+            // 添加卡片
+            addSalespersonCard();
+            const idx = window.appState.salespeople.length - 1;
+
+            // 填入名字
+            const nameEl = document.getElementById('name-' + idx);
+            if (nameEl) {
+                // 找匹配的 option
+                const option = Array.from(nameEl.options).find(o => o.value.toUpperCase() === person.name.toUpperCase());
+                if (option) {
+                    nameEl.value = option.value;
+                } else {
+                    // 没有配置这个人，加一个临时 option
+                    const opt = document.createElement('option');
+                    opt.value = person.name;
+                    opt.text = person.name;
+                    nameEl.appendChild(opt);
+                    nameEl.value = person.name;
+                }
+                // 触发名字改变，自动填入 quarterly target 和 collection target
+                if (typeof autoFillLockedFields === 'function') autoFillLockedFields(idx);
+            }
+
+            // 填入目标和销售额
+            const targetEl = document.getElementById('target-' + idx);
+            const salesEl = document.getElementById('sales-' + idx);
+            const collAmtEl = document.getElementById('collection-amount-' + idx);
+
+            if (targetEl) targetEl.value = md.target || '';
+            if (salesEl) salesEl.value = md.sales || '';
+            if (collAmtEl && md.collection) collAmtEl.value = md.collection;
+
+            // 更新计算
+            updateSalespersonData(idx);
+            loaded++;
+        });
+
+        if (loaded > 0) {
+            showToast('✅', `Imported ${loaded} salespeople for ${currentMonth}`);
+        } else {
+            showToast('⚠️', `No data found for ${currentMonth}`);
+        }
+
+    } catch (e) {
+        showToast('❌', 'Error: ' + e.message);
+        console.error('Import error:', e);
+    }
+}
+
 window.importFromExcel = importFromExcel;
 window.addNewPerson = addNewPerson;
 window.deleteSalespersonConfig = deleteSalespersonConfig;

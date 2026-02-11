@@ -129,58 +129,66 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(filePath);
         
-        // 读取 Data Sheet
-        const dataSheet = workbook.getWorksheet('Data Sheet');
-        if (!dataSheet) {
-            return { success: false, error: 'Data Sheet not found' };
+        // 自动尝试多个sheet名，找不到就用第一个sheet
+        const possibleNames = ['Sheet1', 'Sheet2', 'Data Sheet', 'data sheet', 'Sheet 1', 'DATA SHEET'];
+        let dataSheet = null;
+        for (const name of possibleNames) {
+            dataSheet = workbook.getWorksheet(name);
+            if (dataSheet) break;
         }
-        
+        if (!dataSheet) dataSheet = workbook.worksheets[0];
+        if (!dataSheet) return { success: false, error: 'No worksheet found in file' };
+
         const salesData = [];
         let currentPerson = null;
         let personData = null;
-        
-        // 解析数据
+        const MONTHS = new Set(['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']);
+
+        // 解析单元格值（处理公式、数字、null）
+        const getCellNum = (cell) => {
+            const v = cell.value;
+            if (v === null || v === undefined) return 0;
+            if (typeof v === 'object' && v.result !== undefined) return parseFloat(v.result) || 0;
+            return parseFloat(v) || 0;
+        };
+
         dataSheet.eachRow((row, rowNumber) => {
-            if (rowNumber === 1) return; // 跳过空行
-            if (rowNumber === 2) return; // 跳过表头
-            
-            const saleName = row.getCell(1).value;
-            const month = row.getCell(2).value;
-            const target = parseFloat(row.getCell(3).value) || 0;
-            const sales = parseFloat(row.getCell(4).value) || 0;
-            const collection = parseFloat(row.getCell(9).value) || 0;
-            
-            // 新的销售员
-            if (saleName && saleName !== currentPerson) {
-                if (personData) {
-                    salesData.push(personData);
-                }
-                
-                currentPerson = saleName;
-                personData = {
-                    name: saleName.toUpperCase(),
-                    months: []
-                };
+            const rawA = row.getCell(1).value;
+            const rawB = row.getCell(2).value;
+
+            // 跳过完全空行
+            if (!rawA && !rawB) return;
+
+            const cellA = rawA ? rawA.toString().trim() : '';
+            const cellB = rawB ? rawB.toString().trim().toUpperCase() : '';
+
+            // 跳过表头行和Total行
+            if (cellB === 'MONTH' || cellA.toUpperCase().includes('SALE TEAM')) return;
+            if (cellB === 'TOTAL') return;
+
+            // 新销售员：A列有名字且不是月份
+            if (cellA && !MONTHS.has(cellA.toUpperCase())) {
+                if (personData) salesData.push(personData);
+                currentPerson = cellA.toUpperCase();
+                personData = { name: currentPerson, months: [] };
             }
-            
-            // 添加月度数据
-            if (month && personData) {
+
+            // 有月份就记录数据
+            if (MONTHS.has(cellB) && personData) {
                 personData.months.push({
-                    month: month.toString().toUpperCase(),
-                    target: target,
-                    sales: sales,
-                    collection: collection
+                    month: cellB,
+                    target:     getCellNum(row.getCell(3)),
+                    sales:      getCellNum(row.getCell(4)),
+                    collection: getCellNum(row.getCell(9))
                 });
             }
         });
-        
-        // 添加最后一个人
-        if (personData) {
-            salesData.push(personData);
-        }
-        
+
+        // 加入最后一个人
+        if (personData) salesData.push(personData);
+
         return { success: true, data: salesData };
-        
+
     } catch (error) {
         return { success: false, error: error.message };
     }
@@ -263,7 +271,7 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
     
     try {
         const result = await dialog.showSaveDialog(mainWindow, {
-            defaultPath: `Salary_Template_${new Date().toISOString().split('T')[0]}.xlsx`,
+            defaultPath: `Commission_Report_${data.month || 'ALL'}_${new Date().getFullYear()}.xlsx`,
             filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
         });
 
@@ -285,6 +293,14 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
             const sheet = workbook.addWorksheet(person.name.substring(0, 31));
             await createSalarySheet(sheet, person, data.config, data.month, totalTeamSales);
         }
+
+        // Group Summary sheet (Book3 格式)
+        const groupSheet = workbook.addWorksheet('Group Summary');
+        await createGroupSummarySheet(groupSheet, data.salespeople, data.config, data.month);
+
+        // Commission Summary sheet (Book2 格式)
+        const commSheet = workbook.addWorksheet('Commission Summary');
+        await createCommissionSummarySheet(commSheet, data.salespeople, data.config, data.month);
 
         await workbook.xlsx.writeFile(result.filePath);
         
@@ -330,6 +346,7 @@ ipcMain.handle('export-pdf', async (event, data) => {
 async function createSalarySheet(sheet, person, config, month, totalTeamSales = 0) {
     // 确保 EPF 率正确
     let epfRate = 0.11; // 默认 11%
+    let epfSource = 'default 11%';
     
     // 尝试从 config 获取 EPF 率
     if (config && config.epfRate !== undefined) {
@@ -747,4 +764,286 @@ function getDefaultConfig() {
         // 添加 EPF 费率配置
         epfRate: 0.02  // 默认 2%
     };
+}
+
+// ==================== Group Summary Sheet (Book3 format) ====================
+async function createGroupSummarySheet(sheet, salespeople, config, currentMonth) {
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const currentIdx = months.indexOf((currentMonth || '').toUpperCase());
+
+    // 从 reportHistory 汇总每月数据
+    const monthlyData = {};
+    months.forEach(m => {
+        monthlyData[m] = { target: 0, sales: 0 };
+    });
+
+    // 填入历史记录里的数据
+    if (config.reportHistory) {
+        config.reportHistory.forEach(report => {
+            const m = (report.month || '').toUpperCase();
+            if (monthlyData[m]) {
+                (report.data || []).forEach(p => {
+                    monthlyData[m].target += parseFloat(p.target) || 0;
+                    monthlyData[m].sales += parseFloat(p.sales) || 0;
+                });
+            }
+        });
+    }
+
+    // 当前月用传入的 salespeople 数据（覆盖历史）
+    if (currentMonth && monthlyData[currentMonth.toUpperCase()]) {
+        monthlyData[currentMonth.toUpperCase()].target = 0;
+        monthlyData[currentMonth.toUpperCase()].sales = 0;
+        salespeople.forEach(p => {
+            monthlyData[currentMonth.toUpperCase()].target += parseFloat(p.target) || 0;
+            monthlyData[currentMonth.toUpperCase()].sales += parseFloat(p.sales) || 0;
+        });
+    }
+
+    // Styles
+    const headerStyle = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } },
+        alignment: { horizontal: 'center', vertical: 'middle' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const monthStyle = {
+        font: { bold: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } },
+        alignment: { horizontal: 'center' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const totalStyle = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } },
+        alignment: { horizontal: 'center' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const dataStyle = {
+        alignment: { horizontal: 'right' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const pctStyle = {
+        alignment: { horizontal: 'right' },
+        numFmt: '0.00%',
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const currFmt = '#,##0.00';
+
+    // Column widths
+    sheet.getColumn(1).width = 10;
+    sheet.getColumn(2).width = 16;
+    sheet.getColumn(3).width = 16;
+    sheet.getColumn(4).width = 16;
+    sheet.getColumn(5).width = 14;
+
+    // Header row
+    const headers = ['GROUP SUMMARY', 'TARGET', 'SALES ACH', 'SALES vs TGT', 'SALES % HIT'];
+    headers.forEach((h, i) => {
+        const cell = sheet.getCell(1, i + 1);
+        cell.value = h;
+        Object.assign(cell, headerStyle);
+        if (i > 0) cell.numFmt = i < 4 ? currFmt : '0.00%';
+    });
+    sheet.getRow(1).height = 20;
+
+    // Data rows
+    let totalTarget = 0, totalSales = 0;
+    months.forEach((m, i) => {
+        const rowNum = i + 2;
+        const d = monthlyData[m];
+        totalTarget += d.target;
+        totalSales += d.sales;
+
+        const rowCells = [
+            { v: m, s: monthStyle },
+            { v: d.target || 0, s: {...dataStyle, numFmt: currFmt} },
+            { v: d.sales || 0, s: {...dataStyle, numFmt: currFmt} },
+            { v: d.sales - d.target, s: {...dataStyle, numFmt: currFmt} },
+            { v: d.target > 0 ? d.sales / d.target : '', s: pctStyle }
+        ];
+        rowCells.forEach((rc, ci) => {
+            const cell = sheet.getCell(rowNum, ci + 1);
+            cell.value = rc.v;
+            Object.assign(cell, rc.s);
+        });
+    });
+
+    // Total row
+    const totalRow = 14;
+    const totals = [
+        { v: 'TOTAL', s: totalStyle },
+        { v: totalTarget, s: {...totalStyle, numFmt: currFmt} },
+        { v: totalSales, s: {...totalStyle, numFmt: currFmt} },
+        { v: totalSales - totalTarget, s: {...totalStyle, numFmt: currFmt} },
+        { v: totalTarget > 0 ? totalSales / totalTarget : 0, s: {...totalStyle, numFmt: '0.00%'} }
+    ];
+    totals.forEach((t, i) => {
+        const cell = sheet.getCell(totalRow, i + 1);
+        cell.value = t.v;
+        Object.assign(cell, t.s);
+    });
+    sheet.getRow(totalRow).height = 18;
+}
+
+// ==================== Commission Summary Sheet (Book2 format) ====================
+async function createCommissionSummarySheet(sheet, salespeople, config, currentMonth) {
+    const month = (currentMonth || '').toUpperCase();
+
+    // Styles
+    const headerStyle = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } },
+        alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const nameStyle = {
+        font: { bold: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } },
+        alignment: { horizontal: 'left' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const dataStyle = {
+        alignment: { horizontal: 'right' },
+        numFmt: '#,##0.00',
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const pctStyle = {
+        alignment: { horizontal: 'right' },
+        numFmt: '0.00%',
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const totalStyle = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } },
+        alignment: { horizontal: 'right' },
+        numFmt: '#,##0.00',
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+    const rateHeaderStyle = {
+        font: { bold: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } },
+        alignment: { horizontal: 'left' },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+
+    // Column widths
+    const colWidths = [14, 14, 14, 10, 12, 12, 12, 12, 16, 20, 20, 14];
+    colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+
+    // Header row 1: Month label
+    sheet.getCell(1, 1).value = month;
+    Object.assign(sheet.getCell(1, 1), headerStyle);
+
+    const headers = ['TARGET', 'SALES ACH', '', '80%-89%', '90%-100%', '100%-104%', '106% Above',
+                     'QTR INCENTIVE', 'COLLECTION INCENTIVE', 'ACTIVE CALL INCENTIVE', 'TOTAL'];
+    headers.forEach((h, i) => {
+        const cell = sheet.getCell(1, i + 2);
+        cell.value = h;
+        Object.assign(cell, headerStyle);
+    });
+    sheet.getRow(1).height = 30;
+
+    // Data rows — one per salesperson
+    salespeople.forEach((person, idx) => {
+        const rowNum = idx + 2;
+        const target = parseFloat(person.target) || 0;
+        const sales = parseFloat(person.sales) || 0;
+        const achievement = target > 0 ? sales / target : 0;
+        const comm = parseFloat(person.commission) || 0;
+        const qtr = parseFloat(person.quarterlyBonus) || 0;
+        const coll = parseFloat(person.collectionIncentive) || 0;
+        const call = parseFloat(person.activeCallIncentive) || 0;
+        const total = comm + qtr + coll + call;
+
+        // Commission breakdown by tier
+        let c80 = '', c90 = '', c100 = '', c106 = '';
+        if (achievement >= 0.8 && achievement < 0.9)  c80  = sales * 0.006;
+        if (achievement >= 0.9 && achievement < 1.0)  c90  = sales * 0.007;
+        if (achievement >= 1.0 && achievement < 1.06) c100 = sales * 0.008;
+        if (achievement >= 1.06)                       c106 = sales * 0.01;
+
+        const row = [
+            { v: person.name, s: nameStyle },
+            { v: target,      s: dataStyle },
+            { v: sales,       s: dataStyle },
+            { v: achievement > 0 ? achievement : '', s: pctStyle },
+            { v: c80,         s: dataStyle },
+            { v: c90,         s: dataStyle },
+            { v: c100,        s: dataStyle },
+            { v: c106,        s: dataStyle },
+            { v: qtr,         s: dataStyle },
+            { v: coll,        s: dataStyle },
+            { v: call,        s: dataStyle },
+            { v: total,       s: totalStyle },
+        ];
+        row.forEach((r, ci) => {
+            const cell = sheet.getCell(rowNum, ci + 1);
+            cell.value = r.v;
+            Object.assign(cell, r.s);
+        });
+    });
+
+    // ---- Reference tables ----
+    const startRow = salespeople.length + 4;
+
+    // Commission Rate Summary
+    sheet.getCell(startRow, 1).value = 'Sale Achievement';
+    Object.assign(sheet.getCell(startRow, 1), rateHeaderStyle);
+    sheet.getCell(startRow, 2).value = 'Commission Rate Summary';
+    Object.assign(sheet.getCell(startRow, 2), rateHeaderStyle);
+
+    const commRates = config.monthly_commission_rates || [
+        { label: '0%-79%',    rate: 0 },
+        { label: '80%-89%',   rate: 0.006 },
+        { label: '90%-99%',   rate: 0.007 },
+        { label: '100%-105%', rate: 0.008 },
+        { label: '106% & Above', rate: 0.01 },
+    ];
+    commRates.forEach((r, i) => {
+        const rn = startRow + 1 + i;
+        sheet.getCell(rn, 1).value = r.label;
+        sheet.getCell(rn, 1).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+        sheet.getCell(rn, 2).value = r.rate === 0 ? 'None' : (r.rate * 100).toFixed(2) + '%';
+        sheet.getCell(rn, 2).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+    });
+
+    // Quarterly Incentive
+    const qtrRow = startRow + commRates.length + 2;
+    sheet.getCell(qtrRow, 1).value = 'Sale Achievement';
+    Object.assign(sheet.getCell(qtrRow, 1), rateHeaderStyle);
+    sheet.getCell(qtrRow, 2).value = 'Quarter Incentive';
+    Object.assign(sheet.getCell(qtrRow, 2), rateHeaderStyle);
+
+    const qtrRates = config.quarterly_incentive || [
+        { label: '90%-99%', incentive: 200 },
+        { label: '100%',    incentive: 400 },
+    ];
+    qtrRates.filter(r => r.incentive > 0).forEach((r, i) => {
+        const rn = qtrRow + 1 + i;
+        sheet.getCell(rn, 1).value = r.label;
+        sheet.getCell(rn, 1).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+        sheet.getCell(rn, 2).value = 'RM' + parseFloat(r.incentive).toFixed(2);
+        sheet.getCell(rn, 2).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+    });
+
+    // Active Call Incentive
+    const callRow = qtrRow + qtrRates.filter(r => r.incentive > 0).length + 2;
+    sheet.getCell(callRow, 1).value = 'Active Outlet';
+    Object.assign(sheet.getCell(callRow, 1), rateHeaderStyle);
+    sheet.getCell(callRow, 2).value = 'Minimum RM100.00 Buy';
+    Object.assign(sheet.getCell(callRow, 2), rateHeaderStyle);
+
+    const callRates = config.active_call_incentive || [
+        { label: '65%', incentive: 50 },
+        { label: '70%', incentive: 200 },
+        { label: '80%', incentive: 350 },
+    ];
+    callRates.filter(r => r.incentive > 0).forEach((r, i) => {
+        const rn = callRow + 1 + i;
+        sheet.getCell(rn, 1).value = r.label;
+        sheet.getCell(rn, 1).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+        sheet.getCell(rn, 2).value = 'RM' + parseFloat(r.incentive).toFixed(2);
+        sheet.getCell(rn, 2).border = { top:{style:'thin'}, bottom:{style:'thin'}, left:{style:'thin'}, right:{style:'thin'} };
+    });
 }

@@ -213,11 +213,18 @@
                     </div>
                     
                     <!-- 导出按钮 -->
-                    <button onclick="exportTemplate()" 
-                            class="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 shadow-lg font-semibold text-lg flex items-center justify-center space-x-2">
-                        <span>📥</span>
-                        <span>Export Excel Report</span>
-                    </button>
+                    <div class="flex gap-3">
+                        <button onclick="exportTemplate()" 
+                                class="flex-1 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 shadow-lg font-semibold flex items-center justify-center space-x-2">
+                            <span>📥</span>
+                            <span>Export Excel</span>
+                        </button>
+                        <button onclick="exportAndPrint()" 
+                                class="flex-1 px-4 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl hover:from-purple-600 hover:to-purple-700 shadow-lg font-semibold flex items-center justify-center space-x-2">
+                            <span>🖨️</span>
+                            <span>Export & Print</span>
+                        </button>
+                    </div>
                     
                     <!-- 快捷键提示 -->
                     <div class="bg-gray-100 rounded-lg p-4 text-sm text-gray-600">
@@ -585,6 +592,57 @@
         if (typeof saveConfig === 'function') saveConfig();
         loadQuickCalculateHistory();
         if (typeof showToast === 'function') showToast('✅', 'Record deleted');
+    }
+    </script>
+
+
+    <script>
+    // Export Excel + 自动打开打印
+    async function exportAndPrint() {
+        try {
+            // Step 1: Export Excel
+            showToast('⏳', 'Generating Excel...');
+            
+            const month = document.getElementById('report-month').value;
+            const salesData = window.appState.salespeople.map(person => {
+                const nameUpper = person.name.toUpperCase();
+                return {
+                    ...person,
+                    salary: window.appState.config.base_salaries?.[nameUpper] || 0,
+                    allowances: window.appState.config.allowances?.[nameUpper] || {},
+                    sales: parseFloat(person.sales) || 0,
+                    commission: parseFloat(person.commission) || 0,
+                    collectionIncentive: parseFloat(person.collectionIncentive) || 0,
+                    activeCallIncentive: parseFloat(person.activeCallIncentive) || 0,
+                    quarterlyBonus: parseFloat(person.quarterlyBonus) || 0
+                };
+            });
+
+            const result = await window.electronAPI.generateSalaryTemplate({
+                salespeople: salesData,
+                config: window.appState.config,
+                month: month
+            });
+
+            if (!result.success) {
+                if (result.message === 'Cancelled') return;
+                showToast('❌', 'Export failed: ' + (result.error || result.message));
+                return;
+            }
+
+            // Step 2: Open file for printing
+            showToast('🖨️', 'Opening for print...');
+            const printResult = await window.electronAPI.printExcel(result.path);
+            
+            if (printResult.success) {
+                showToast('✅', 'File opened — use Ctrl+P to print!');
+            } else {
+                showToast('⚠️', 'Excel saved but could not open: ' + printResult.error);
+            }
+
+        } catch (e) {
+            showToast('❌', 'Error: ' + e.message);
+        }
     }
     </script>
 

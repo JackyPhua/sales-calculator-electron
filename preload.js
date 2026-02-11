@@ -1,34 +1,25 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-    // === 文件操作 ===
-    selectFile: () => ipcRenderer.invoke('select-file'),
-    importSalesData: (path) => ipcRenderer.invoke('import-sales-data', path),
-    
-    // === 用户管理 ===
-    createUser: (userData) => ipcRenderer.invoke('create-user', userData),
-    updateUser: (userId, userData) => ipcRenderer.invoke('update-user', userId, userData),
-    deleteUser: (userId) => ipcRenderer.invoke('delete-user', userId),
-    getUsers: () => ipcRenderer.invoke('get-users'),
-    getUser: (userId) => ipcRenderer.invoke('get-user', userId),
-    
-    // === Excel 操作 ===
-    generateSalaryTemplate: (data) => ipcRenderer.invoke('generate-salary-template', data),
-    exportToExcel: (data) => ipcRenderer.invoke('export-to-excel', data),
-    
-    // === PDF 操作 ===
-    exportPDF: (data) => ipcRenderer.invoke('export-pdf', data),
-    generateReport: (data) => ipcRenderer.invoke('generate-report', data),
-    
-    // === 配置管理 ===
+    // 配置管理
     loadConfig: () => ipcRenderer.invoke('load-config'),
     saveConfig: (config) => ipcRenderer.invoke('save-config', config),
+    loadLocale: (lang) => ipcRenderer.invoke('load-locale', lang),
     
-    // === 系统信息 ===
-    platform: process.platform,
-    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    // 文件操作
+    selectFile: () => ipcRenderer.invoke('select-file'),
+    importSalesData: (filePath) => ipcRenderer.invoke('import-sales-data', filePath),
     
-    // === 对话框 ===
-    showMessageBox: (options) => ipcRenderer.invoke('show-message-box', options),
-    showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options)
+    // Excel 导出
+    generateSalaryTemplate: (data) => ipcRenderer.invoke('generate-salary-template', data),
+    
+    // PDF 导出
+    exportPDF: (data) => ipcRenderer.invoke('export-pdf', data),
+    
+    // Print Excel (open with system default app)
+    printExcel: (filePath) => ipcRenderer.invoke('print-excel', filePath),
+    
+    // 平台信息
+    platform: process.platform
 });
