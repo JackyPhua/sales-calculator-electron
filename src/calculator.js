@@ -1,6 +1,6 @@
-// ==================== 全局状态管理 ====================
+// ==================== Global State Management ====================
 
-// 确保 appState 存在
+// Ensure appState exists
 if (!window.appState) {
     window.appState = {
         salespeople: [],
@@ -9,27 +9,33 @@ if (!window.appState) {
     };
 }
 
-// 初始化应用
+// Initialize application
 async function initApp() {
-    console.log('🚀 正在初始化应用...');
+    console.log('🚀 Initializing application...');
     
     try {
-        // 加载配置
+        // Load configuration
         await loadConfig();
         
-        // 初始化当前视图
+        // Initialize current view
         switchView('quick');
         
-        console.log('✅ 应用初始化完成');
+        // Initialize backup system
+        initBackupSystem();
+        
+        // Add quick recovery button
+        setTimeout(addQuickRecoveryButton, 1000);
+        
+        console.log('✅ Application initialization completed');
     } catch (error) {
-        console.error('初始化失败:', error);
-        // 使用默认配置
+        console.error('Initialization failed:', error);
+        // Use default configuration
         window.appState.config = getDefaultConfig();
         switchView('quick');
     }
 }
 
-// 加载配置
+// Load configuration
 async function loadConfig() {
     try {
         if (window.electronAPI && window.electronAPI.loadConfig) {
@@ -39,21 +45,21 @@ async function loadConfig() {
             window.appState.config = getDefaultConfig();
         }
         
-        // 确保所有必要的配置项都存在
+        // Ensure all necessary configuration items exist
         ensureConfigStructure();
         
-        console.log('📂 配置加载完成');
+        console.log('📂 Configuration loaded');
     } catch (error) {
-        console.error('加载配置失败:', error);
+        console.error('Failed to load configuration:', error);
         window.appState.config = getDefaultConfig();
     }
 }
 
-// 确保配置结构完整
+// Ensure configuration structure is complete
 function ensureConfigStructure() {
     const config = window.appState.config;
     
-    // 确保所有必要的对象都存在
+    // Ensure all necessary objects exist
     const requiredStructures = [
         'base_salaries',
         'allowances', 
@@ -78,11 +84,11 @@ function ensureConfigStructure() {
         }
     });
     
-    // 确保 salespeople 数据为空（不要加载保存的销售员数据）
+    // Ensure salespeople data is empty (do not load saved salesperson data)
     config.quickCalculateData = null;
 }
 
-// 默认配置
+// Default configuration
 function getDefaultConfig() {
     return {
         base_salaries: {},
@@ -117,7 +123,7 @@ function getDefaultConfig() {
     };
 }
 
-// Toast 通知
+// Toast notification
 function showToast(icon, message, duration = 3000) {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -138,22 +144,22 @@ function showToast(icon, message, duration = 3000) {
     }, duration);
 }
 
-// 视图切换
+// View switching
 function switchView(view) {
-    console.log(`切换到视图: ${view}`);
+    console.log(`Switching to view: ${view}`);
     
-    // 更新标签按钮
+    // Update tab buttons
     document.querySelectorAll('.tab-button').forEach(btn => {
         btn.classList.remove('active');
     });
     document.getElementById(`tab-${view}`).classList.add('active');
     
-    // 隐藏所有视图
+    // Hide all views
     document.querySelectorAll('.view-container').forEach(v => {
         v.classList.add('hidden');
     });
     
-    // 显示选中的视图
+    // Show selected view
     const targetView = document.getElementById(`view-${view}`);
     if (targetView) {
         targetView.classList.remove('hidden');
@@ -161,7 +167,7 @@ function switchView(view) {
     
     window.appState.currentView = view;
     
-    // 初始化对应视图
+    // Initialize corresponding view
     if (view === 'quick') {
         initQuickCalculate();
     } else if (view === 'salary') {
@@ -173,44 +179,50 @@ function switchView(view) {
     }
 }
 
-// ==================== QUICK CALCULATE 修复版 ====================
+// ==================== QUICK CALCULATE Fixed Version ====================
 
-// 初始化 Quick Calculate
+// Initialize Quick Calculate
 function initQuickCalculate() {
-    console.log('📊 初始化 Quick Calculate');
+    console.log('📊 Initializing Quick Calculate');
     
-    // 设置当前月份
+    // Set current month
     const currentMonth = new Date().toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
     const monthSelect = document.getElementById('report-month');
     if (monthSelect) {
         monthSelect.value = currentMonth;
     }
     
-    // 清空销售员数组（关键：不要加载保存的数据）
-    window.appState.salespeople = [];
-    
-    // 清空容器
     const container = document.getElementById('salespeople-container');
+    
+    // If there is already data in the state, re-render the existing cards
+    // (user switched tabs and came back - do NOT wipe their data)
+    if (window.appState.salespeople && window.appState.salespeople.length > 0) {
+        if (container) container.innerHTML = '';
+        renderAllSalespeopleCards();
+        updateSummaryView();
+        console.log('✅ Quick Calculate restored existing cards:', window.appState.salespeople.length);
+        return;
+    }
+    
+    // First time init - start with one blank card
+    window.appState.salespeople = [];
     if (container) {
         container.innerHTML = '';
     }
-    
-    // 添加两个默认销售员卡片
-    addSalespersonCard();
     addSalespersonCard();
     
-    // 更新汇总
+    // Update summary
     updateSummaryView();
     
-    console.log('✅ Quick Calculate 初始化完成');
+    console.log('✅ Quick Calculate initialization completed');
 }
 
-// 添加销售员卡片（修复版 - 空白卡片）
+// Add salesperson card (fixed version - blank card)
 function addSalespersonCard() {
     const container = document.getElementById('salespeople-container');
     if (!container) return;
     
-    // 计算新ID
+    // Calculate new ID
     const maxId = window.appState.salespeople.length > 0 
         ? Math.max(...window.appState.salespeople.map(p => p.id || 0))
         : 0;
@@ -218,19 +230,19 @@ function addSalespersonCard() {
     const newId = maxId + 1;
     const index = window.appState.salespeople.length;
     
-    // 获取已配置的销售员
+    // Get configured salespeople
     const configuredPeople = Object.keys(window.appState.config.base_salaries || {});
     const nameOptions = configuredPeople.length > 0 
         ? configuredPeople.map(name => `<option value="${name}">${name}</option>`).join('')
-        : '<option value="">请先配置销售员</option>';
+        : '<option value="">Please configure salespeople first</option>';
     
     const card = document.createElement('div');
     card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
     card.innerHTML = `
-        <!-- 删除按钮 -->
+        <!-- Delete button -->
         <button onclick="deleteSalespersonCard(${newId})" 
                 class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
-                title="删除此销售员">
+                title="Delete this salesperson">
             ✕
         </button>
         
@@ -239,7 +251,7 @@ function addSalespersonCard() {
         </div>
         
         <div class="grid grid-cols-2 gap-4">
-            <div>
+            <div class="col-span-2">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
                 <select id="name-${index}"
                         class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -256,6 +268,7 @@ function addSalespersonCard() {
                        class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                        placeholder="Enter target"
                        value=""
+                       onfocus="this.readOnly=false;this.style.backgroundColor='';"
                        oninput="updateSalespersonData(${index})">
             </div>
             
@@ -266,6 +279,7 @@ function addSalespersonCard() {
                        class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                        placeholder="Enter sales"
                        value=""
+                       onfocus="this.readOnly=false;this.style.backgroundColor='';"
                        oninput="updateSalespersonData(${index})">
             </div>
             
@@ -342,7 +356,7 @@ function addSalespersonCard() {
             </div>
         </div>
         
-        <!-- Preview Section - 初始隐藏 -->
+        <!-- Preview Section - Initially hidden -->
         <div id="preview-${index}" class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 hidden">
             <div class="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -375,7 +389,7 @@ function addSalespersonCard() {
     
     container.appendChild(card);
     
-    // 添加到状态（使用空值）
+    // Add to state (using empty values)
     window.appState.salespeople.push({
         id: newId,
         index: index,
@@ -396,55 +410,90 @@ function addSalespersonCard() {
         totalCommission: 0
     });
     
-    console.log(`➕ 添加空白销售员卡片 #${newId}`);
+    // Ensure target and sales inputs on the new card are always editable
+    setTimeout(() => {
+        const tEl = document.getElementById('target-' + index);
+        const sEl = document.getElementById('sales-' + index);
+        if (tEl) { tEl.readOnly = false; tEl.style.backgroundColor = ''; }
+        if (sEl) { sEl.readOnly = false; sEl.style.backgroundColor = ''; }
+    }, 0);
+    
+    console.log(`➕ Added blank salesperson card #${newId}`);
     return newId;
 }
 
-// 清除所有数据（修复版）
+// Clear all data - custom modal (no confirm() to avoid Electron timing issues)
 function clearAllQuickCalculateData() {
-    if (confirm('确定要清除所有数据吗？此操作不可撤销。')) {
-        console.log('🗑️ 清除所有数据');
-        
-        // 清空状态
-        window.appState.salespeople = [];
-        
-        // 清空容器
-        const container = document.getElementById('salespeople-container');
-        if (container) {
-            container.innerHTML = '';
-        }
-        
-        // 添加两个全新的默认销售员卡片
-        addSalespersonCard();
-        addSalespersonCard();
-        
-        // 清除配置中的保存数据
-        if (window.appState.config.quickCalculateData) {
-            delete window.appState.config.quickCalculateData;
-        }
-        
-        // 更新汇总
-        updateSummaryView();
-        
-        showToast('🗑️', '所有数据已清除');
-        
-        console.log('✅ 数据清除完成');
-    }
+    backupBeforeClear();
+
+    // Remove any existing modal
+    const existingModal = document.getElementById('clear-confirm-modal');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'clear-confirm-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:12px;padding:28px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 12px;font-size:18px;font-weight:700;color:#111;">🗑️ Clear All Data</h3>
+            <p style="margin:0 0 24px;color:#555;font-size:14px;">Are you sure you want to clear all data? This cannot be undone.</p>
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button id="clear-cancel-btn" style="padding:10px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;">Cancel</button>
+                <button id="clear-ok-btn" style="padding:10px 20px;border:none;border-radius:8px;background:#ef4444;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Clear</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('clear-cancel-btn').onclick = () => modal.remove();
+
+    document.getElementById('clear-ok-btn').onclick = () => {
+        modal.remove();
+        _doClearAllData();
+    };
 }
 
-// 删除销售员配置（修复版）
+function _doClearAllData() {
+    console.log('🗑️ Clearing all data');
+
+    // Reset state
+    window.appState.salespeople = [];
+
+    // Completely replace the container to avoid any stale DOM/event issues
+    const oldContainer = document.getElementById('salespeople-container');
+    if (oldContainer) {
+        const newContainer = document.createElement('div');
+        newContainer.id = 'salespeople-container';
+        newContainer.className = oldContainer.className;
+        oldContainer.parentNode.replaceChild(newContainer, oldContainer);
+    }
+
+    // Add one fresh blank card
+    addSalespersonCard();
+
+    // Clear saved data
+    if (window.appState.config && window.appState.config.quickCalculateData) {
+        delete window.appState.config.quickCalculateData;
+    }
+
+    updateSummaryView();
+    showToast('🗑️', 'All data cleared');
+    console.log('✅ Data clearing completed');
+}
+
+// Delete salesperson configuration
 function deleteSalespersonConfig(personName) {
     if (!personName) {
-        showToast('⚠️', '请提供要删除的销售员姓名');
+        showToast('⚠️', 'Please provide the salesperson name to delete');
         return;
     }
     
-    if (confirm(`确定要删除 ${personName} 的所有薪资配置吗？此操作不可撤销。`)) {
+    if (confirm(`Are you sure you want to delete all salary configuration for ${personName}? This action cannot be undone.`)) {
         const nameUpper = personName.toUpperCase();
         
-        console.log(`🗑️ 删除销售员配置: ${personName}`);
+        console.log(`🗑️ Deleting salesperson configuration: ${personName}`);
         
-        // 从所有相关配置中删除
+        // Delete from all related configurations
         if (window.appState.config.base_salaries && window.appState.config.base_salaries[nameUpper]) {
             delete window.appState.config.base_salaries[nameUpper];
         }
@@ -469,43 +518,43 @@ function deleteSalespersonConfig(personName) {
             delete window.appState.config.active_call_targets[nameUpper];
         }
         
-        // 保存配置
+        // Save configuration
         saveConfig();
         
-        // 重新渲染
+        // Re-render
         renderSalaryConfigs();
         
-        showToast('✅', `${personName} 的配置已删除`);
+        showToast('✅', `${personName}'s configuration deleted`);
     }
 }
 
-// 重新渲染所有卡片（修复版）
+// Re-render all cards
 function renderAllSalespeopleCards() {
     const container = document.getElementById('salespeople-container');
     if (!container) {
-        console.error('找不到销售员容器');
+        console.error('Salesperson container not found');
         return;
     }
     
-    console.log('🔄 重新渲染所有卡片');
+    console.log('🔄 Re-rendering all cards');
     
-    // 完全清空容器
+    // Completely clear container
     container.innerHTML = '';
     
-    // 重新创建所有卡片
+    // Recreate all cards
     window.appState.salespeople.forEach((person, index) => {
         const configuredPeople = Object.keys(window.appState.config.base_salaries || {});
         const nameOptions = configuredPeople.length > 0 
             ? configuredPeople.map(name => `<option value="${name}">${name}</option>`).join('')
-            : '<option value="">请先配置销售员</option>';
+            : '<option value="">Please configure salespeople first</option>';
         
         const card = document.createElement('div');
         card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
         card.innerHTML = `
-            <!-- 删除按钮 -->
+            <!-- Delete button -->
             <button onclick="deleteSalespersonCard(${person.id})" 
                     class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
-                    title="删除此销售员">
+                    title="Delete this salesperson">
                 ✕
             </button>
             
@@ -514,7 +563,7 @@ function renderAllSalespeopleCards() {
             </div>
             
             <div class="grid grid-cols-2 gap-4">
-                <div>
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
                     <select id="name-${index}"
                             class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -532,7 +581,8 @@ function renderAllSalespeopleCards() {
                            id="target-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                            placeholder="50000"
-                           value="${person.target || 50000}"
+                           value="${person.target || ''}"
+                           onfocus="this.readOnly=false;this.style.backgroundColor='';"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
@@ -542,7 +592,8 @@ function renderAllSalespeopleCards() {
                            id="sales-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                            placeholder="48500"
-                           value="${person.sales || 48500}"
+                           value="${person.sales || ''}"
+                           onfocus="this.readOnly=false;this.style.backgroundColor='';"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
@@ -652,25 +703,47 @@ function renderAllSalespeopleCards() {
         
         container.appendChild(card);
         
-        // 恢复数据
+        // Restore data and re-apply locked fields
         setTimeout(() => {
+            // Restore name select value for configured people
+            const nameEl = document.getElementById('name-' + index);
+            if (nameEl && person.name) {
+                // Try to select matching option
+                const option = Array.from(nameEl.options).find(
+                    o => o.value.toUpperCase() === person.name.toUpperCase()
+                );
+                if (option) {
+                    nameEl.value = option.value;
+                } else if (person.name) {
+                    // Add option if not found
+                    const opt = document.createElement('option');
+                    opt.value = person.name;
+                    opt.text = person.name;
+                    nameEl.appendChild(opt);
+                    nameEl.value = person.name;
+                }
+            }
+            // Re-apply locked fields (quarterly target, collection target)
+            if (typeof autoFillLockedFields === 'function') {
+                autoFillLockedFields(index);
+            }
             updateSalespersonData(index);
         }, 50);
     });
 }
 
-// 更新销售员数据
+// Update salesperson data
 function updateSalespersonData(index) {
     const person = window.appState.salespeople[index];
     if (!person) return;
     
-    // 获取输入值
+    // Get input values
     const nameInput = document.getElementById(`name-${index}`);
     const targetInput = document.getElementById(`target-${index}`);
     const salesInput = document.getElementById(`sales-${index}`);
     
     if (!nameInput || !targetInput || !salesInput) {
-        console.error(`找不到输入元素 for index ${index}`);
+        console.error(`Input elements not found for index ${index}`);
         return;
     }
     
@@ -684,25 +757,30 @@ function updateSalespersonData(index) {
     person.callTarget = parseFloat(document.getElementById(`call-target-${index}`).value) || 0;
     person.callActual = parseFloat(document.getElementById(`call-actual-${index}`).value) || 0;
     
-    // 检查是否有足够的数据来显示预览
+    // Check if there's enough data to show preview
     const hasData = person.name && person.target > 0 && person.sales > 0;
     const previewElement = document.getElementById(`preview-${index}`);
     
     if (hasData) {
-        // 计算
+        // Calculate
         const achievement = person.target > 0 ? (person.sales / person.target) * 100 : 0;
         const quarterlyAchievement = person.quarterlyTarget > 0 ? (person.quarterlySales / person.quarterlyTarget) * 100 : 0;
         const collectionAchievement = person.collectionTarget > 0 ? (person.collectionAmount / person.collectionTarget) * 100 : 0;
         const callAchievement = person.callTarget > 0 ? (person.callActual / person.callTarget) * 100 : 0;
         
-        // 佣金计算
+        // Commission calculation
         const commission = calculateCommission(person.sales, person.target);
         const collectionBonus = calculateIncentive(collectionAchievement, window.appState.config.collection_incentive);
         const callBonus = calculateIncentive(callAchievement, window.appState.config.active_call_incentive);
-        const quarterlyBonus = calculateIncentive(quarterlyAchievement, window.appState.config.quarterly_incentive);
+        // Quarterly bonus only in quarter-end months MAR/JUN/SEP/DEC
+        const _qMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
+        const _isQuarterEnd = ['MAR','JUN','SEP','DEC'].includes(_qMonth);
+        const quarterlyBonus = _isQuarterEnd
+            ? calculateIncentive(quarterlyAchievement, window.appState.config.quarterly_incentive)
+            : 0;
         const totalCommission = commission + collectionBonus + callBonus + quarterlyBonus;
         
-        // 存储结果
+        // Store results
         person.achievement = achievement;
         person.quarterlyAchievement = quarterlyAchievement;
         person.commission = commission;
@@ -711,12 +789,12 @@ function updateSalespersonData(index) {
         person.quarterlyBonus = quarterlyBonus;
         person.totalCommission = totalCommission;
         
-        // 显示预览
+        // Show preview
         if (previewElement) {
             previewElement.classList.remove('hidden');
         }
         
-        // 更新预览内容
+        // Update preview content
         const achievementEl = document.getElementById(`achievement-${index}`);
         const commissionEl = document.getElementById(`commission-${index}`);
         const collectionBonusEl = document.getElementById(`collection-bonus-${index}`);
@@ -736,7 +814,7 @@ function updateSalespersonData(index) {
             : formatCurrency(quarterlyBonus);
         if (totalEl) totalEl.textContent = formatCurrency(totalCommission);
     } else {
-        // 隐藏预览并重置数据
+        // Hide preview and reset data
         if (previewElement) {
             previewElement.classList.add('hidden');
         }
@@ -748,11 +826,11 @@ function updateSalespersonData(index) {
         person.totalCommission = 0;
     }
     
-    // 更新汇总
+    // Update summary
     updateSummaryView();
 }
 
-// 计算佣金
+// Calculate commission
 function calculateCommission(sales, target) {
     if (target <= 0 || sales <= 0) return 0;
     
@@ -768,7 +846,7 @@ function calculateCommission(sales, target) {
     return 0;
 }
 
-// 计算激励
+// Calculate incentive
 function calculateIncentive(achievement, incentiveTiers) {
     if (achievement <= 0) return 0;
     
@@ -781,7 +859,7 @@ function calculateIncentive(achievement, incentiveTiers) {
     return 0;
 }
 
-// 获取成就颜色
+// Get achievement color
 function getAchievementColor(achievement) {
     if (achievement >= 100) return 'text-green-600';
     if (achievement >= 90) return 'text-yellow-600';
@@ -789,18 +867,18 @@ function getAchievementColor(achievement) {
     return 'text-red-600';
 }
 
-// 格式化货币
+// Format currency
 function formatCurrency(amount) {
     if (isNaN(amount)) return 'RM 0.00';
     return `RM ${amount.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
 }
 
-// 更新汇总视图
+// Update summary view
 function updateSummaryView() {
     const summaryContainer = document.getElementById('summary-view');
     if (!summaryContainer) return;
     
-    // 只计算有有效数据的销售员
+    // Only calculate salespeople with valid data
     const validSalespeople = window.appState.salespeople.filter(p => 
         p.name && p.target > 0 && p.sales > 0
     );
@@ -808,27 +886,27 @@ function updateSummaryView() {
     const totalPeople = window.appState.salespeople.length;
     const validMembers = validSalespeople.length;
     
-    // 计算总佣金（只计算有效数据）
+    // Calculate total commission (only valid data)
     let totalCommission = 0;
     validSalespeople.forEach(person => {
         totalCommission += (person.totalCommission || 0);
     });
     
-    // 更新显示
+    // Update display
     const summaryCount = document.getElementById('summary-count');
     const summaryCommission = document.getElementById('summary-commission');
     
     if (summaryCount) summaryCount.textContent = totalPeople;
     if (summaryCommission) summaryCommission.textContent = formatCurrency(totalCommission);
     
-    // 更新详细摘要
+    // Update detailed summary
     const existingDetails = summaryContainer.querySelector('.summary-details');
     if (existingDetails) {
         existingDetails.remove();
     }
     
     if (validMembers > 0) {
-        // 计算平均成就率
+        // Calculate average achievement rate
         let totalTarget = 0;
         let totalSales = 0;
         validSalespeople.forEach(person => {
@@ -860,21 +938,21 @@ function updateSummaryView() {
     }
 }
 
-// ==================== COMMISSION & INCENTIVE 页面修复 ====================
+// ==================== COMMISSION & INCENTIVE Page ====================
 
 function initCommissionView() {
-    console.log('💰 初始化 Commission & Incentive 页面');
+    console.log('💰 Initializing Commission & Incentive page');
     renderCommissionConfigs();
 }
 
 function renderCommissionConfigs() {
     const container = document.getElementById('commission-config-container');
     if (!container) {
-        console.error('找不到 Commission 配置容器');
+        console.error('Commission configuration container not found');
         return;
     }
     
-    // 获取配置
+    // Get configuration
     const commissionRates = window.appState.config.monthly_commission_rates || [];
     const quarterlyIncentive = window.appState.config.quarterly_incentive || [];
     const collectionIncentive = window.appState.config.collection_incentive || [];
@@ -882,7 +960,7 @@ function renderCommissionConfigs() {
     
     container.innerHTML = `
         <div class="space-y-6">
-            <!-- 月度佣金设置 -->
+            <!-- Monthly commission settings -->
             <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">💰 Monthly Commission Rates</h3>
@@ -939,7 +1017,7 @@ function renderCommissionConfigs() {
                 </div>
             </div>
             
-            <!-- 季度奖励 -->
+            <!-- Quarterly incentive -->
             <div class="bg-green-50 rounded-lg p-4 border border-green-200">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">🏆 Quarterly Incentive</h3>
@@ -986,7 +1064,7 @@ function renderCommissionConfigs() {
                 </div>
             </div>
             
-            <!-- 收款奖励 -->
+            <!-- Collection incentive -->
             <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">💵 Collection Incentive</h3>
@@ -1033,7 +1111,7 @@ function renderCommissionConfigs() {
                 </div>
             </div>
             
-            <!-- 活跃电话奖励 -->
+            <!-- Active call incentive -->
             <div class="bg-orange-50 rounded-lg p-4 border border-orange-200">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">📞 Active Call Incentive</h3>
@@ -1082,26 +1160,26 @@ function renderCommissionConfigs() {
         </div>
     `;
     
-    console.log('✅ Commission & Incentive 页面渲染完成');
+    console.log('✅ Commission & Incentive page rendering completed');
 }
 
-// 添加佣金 Tier
+// Add commission Tier
 function addCommissionTier() {
     if (!window.appState.config.monthly_commission_rates) {
         window.appState.config.monthly_commission_rates = [];
     }
     
-    // 获取最大的 max 值
+    // Get the maximum max value
     const lastTier = window.appState.config.monthly_commission_rates.length > 0 
         ? window.appState.config.monthly_commission_rates[window.appState.config.monthly_commission_rates.length - 1]
         : { min: 0, max: 0 };
     
-    const newMax = lastTier.max + 20; // 增加20%
+    const newMax = lastTier.max + 20; // Increase by 20%
     
     window.appState.config.monthly_commission_rates.push({
         min: lastTier.max + 0.01,
         max: newMax,
-        rate: 0.01, // 默认1%
+        rate: 0.01, // Default 1%
         label: `${lastTier.max + 0.01}%-${newMax}%`
     });
     
@@ -1110,14 +1188,14 @@ function addCommissionTier() {
     showToast('✅', 'New commission Tier added successfully');
 }
 
-// 移除佣金 Tier
+// Remove commission Tier
 function removeCommissionTier(index) {
     if (window.appState.config.monthly_commission_rates.length <= 1) {
         showToast('⚠️', 'Cannot delete the last Tier');
         return;
     }
     
-    if (confirm('Confirm to delete this Tier ？')) {
+    if (confirm('Confirm to delete this Tier?')) {
         window.appState.config.monthly_commission_rates.splice(index, 1);
         saveConfig();
         renderCommissionConfigs();
@@ -1125,7 +1203,7 @@ function removeCommissionTier(index) {
     }
 }
 
-// 添加激励 Tier
+// Add incentive Tier
 function addIncentiveTier(type) {
     const typeMap = {
         'quarterly': 'quarterly_incentive',
@@ -1140,18 +1218,18 @@ function addIncentiveTier(type) {
         window.appState.config[configKey] = [];
     }
     
-    // 获取最小的 min 值
+    // Get the minimum min value
     const tiers = window.appState.config[configKey];
     const minValues = tiers.map(t => t.min).filter(m => m !== undefined);
     const nextMin = minValues.length > 0 ? Math.min(...minValues) - 10 : 90;
     
     window.appState.config[configKey].push({
         min: nextMin,
-        incentive: 100, // 默认100
+        incentive: 100, // Default 100
         label: `${nextMin}%+`
     });
     
-    // 按 min 值降序排序
+    // Sort by min value descending
     window.appState.config[configKey].sort((a, b) => b.min - a.min);
     
     saveConfig();
@@ -1159,7 +1237,7 @@ function addIncentiveTier(type) {
     showToast('✅', `New ${type} Tier added successfully`);
 }
 
-// 移除激励 Tier
+// Remove incentive Tier
 function removeIncentiveTier(type, index) {
     const typeMap = {
         'quarterly': 'quarterly_incentive',
@@ -1175,7 +1253,7 @@ function removeIncentiveTier(type, index) {
         return;
     }
     
-    if (confirm('Confirm to delete this Tier ？')) {
+    if (confirm('Confirm to delete this Tier?')) {
         window.appState.config[configKey].splice(index, 1);
         saveConfig();
         renderCommissionConfigs();
@@ -1183,14 +1261,14 @@ function removeIncentiveTier(type, index) {
     }
 }
 
-// 更新佣金标签
+// Update commission label
 function updateCommissionLabel(index, value) {
     if (!window.appState.config.monthly_commission_rates[index]) return;
     window.appState.config.monthly_commission_rates[index].label = value;
     saveConfig();
 }
 
-// 更新佣金层级
+// Update commission tier
 function updateCommissionTier(index, field, value) {
     if (!window.appState.config.monthly_commission_rates[index]) return;
     window.appState.config.monthly_commission_rates[index][field] = parseFloat(value) || 0;
@@ -1204,7 +1282,7 @@ function updateCommissionTier(index, field, value) {
     renderCommissionConfigs();
 }
 
-// 更新激励标签
+// Update incentive label
 function updateIncentiveLabel(type, index, value) {
     const typeMap = {
         'quarterly': 'quarterly_incentive',
@@ -1217,7 +1295,7 @@ function updateIncentiveLabel(type, index, value) {
     saveConfig();
 }
 
-// 更新激励层级
+// Update incentive tier
 function updateIncentiveTier(type, index, field, value) {
     const typeMap = {
         'quarterly': 'quarterly_incentive',
@@ -1232,9 +1310,9 @@ function updateIncentiveTier(type, index, field, value) {
     renderCommissionConfigs();
 }
 
-// ==================== 其他页面函数 ====================
+// ==================== Other Page Functions ====================
 
-// Salary & Allowances 页面（简化版）
+// Salary & Allowances page
 function initSalaryView() {
     renderSalaryConfigs();
 }
@@ -1246,7 +1324,7 @@ function renderSalaryConfigs() {
     const people = Object.keys(window.appState.config.base_salaries || {});
     
     if (people.length === 0) {
-        container.innerHTML = '<div class="text-center py-12 text-gray-500"><p>尚未配置销售员</p></div>';
+        container.innerHTML = '<div class="text-center py-12 text-gray-500"><p>No salespeople configured yet</p></div>';
         return;
     }
     
@@ -1340,7 +1418,7 @@ function renderSalaryConfigs() {
     }).join('');
 }
 
-// 添加新销售员
+// Add new salesperson
 function addNewPerson() {
     const nameInput = document.getElementById('new-person-name');
     const salaryInput = document.getElementById('new-person-salary');
@@ -1392,21 +1470,21 @@ function addNewPerson() {
     saveConfig();
     renderSalaryConfigs();
     
-    showToast('✅', `${name} Added successfully!`);
+    showToast('✅', `${name} added successfully!`);
 }
 
-// ==================== 导出功能 ====================
+// ==================== Export Function ====================
 
-// 导出到 Excel
+// Export to Excel
 async function exportTemplate() {
     try {
-        showLoading('正在生成 Excel 报告...');
+        showLoading('Generating Excel report...');
         
         const month = document.getElementById('report-month').value;
         
         if (window.appState.salespeople.length === 0) {
             hideLoading();
-            showToast('⚠️', 'no sales data');
+            showToast('⚠️', 'No sales data');
             return;
         }
         
@@ -1428,6 +1506,11 @@ async function exportTemplate() {
             };
         });
         
+        // Debug: Confirm allowances data
+        salesData.forEach(p => {
+            console.log(`📦 Export ${p.name} allowances:`, JSON.stringify(p.allowances));
+        });
+        
         const result = await window.electronAPI.generateSalaryTemplate({
             salespeople: salesData,
             config: window.appState.config,
@@ -1437,7 +1520,7 @@ async function exportTemplate() {
         hideLoading();
         
         if (result.success) {
-            showToast('✅', `Successfully exported to export ${salesData.length} records!`);
+            showToast('✅', `Successfully exported ${salesData.length} records!`);
             
             if (!window.appState.config.reportHistory) {
                 window.appState.config.reportHistory = [];
@@ -1456,45 +1539,628 @@ async function exportTemplate() {
             saveConfig();
             loadQuickCalculateHistory();
         } else {
-            showToast('❌', '导出失败: ' + (result.error || result.message));
+            showToast('❌', 'Export failed: ' + (result.error || result.message));
         }
     } catch (error) {
         hideLoading();
-        console.error('导出错误:', error);
-        showToast('❌', '错误: ' + error.message);
+        console.error('Export error:', error);
+        showToast('❌', 'Error: ' + error.message);
     }
 }
 
-// 保存配置
+// Save configuration
 async function saveConfig() {
     try {
         if (window.electronAPI && window.electronAPI.saveConfig) {
             await window.electronAPI.saveConfig(window.appState.config);
         }
     } catch (error) {
-        console.error('保存配置失败:', error);
+        console.error('Failed to save configuration:', error);
     }
 }
 
-// ==================== 页面加载和全局函数导出 ====================
+// ==================== Delete Salesperson Card ====================
+function deleteSalespersonCard(id) {
+    window.appState.salespeople = window.appState.salespeople.filter(p => p.id !== id);
+    renderSalespersonCards();
+    updateSummaryView();
+}
 
-// 确保所有函数在全局可用
-window.initApp = initApp;
-window.switchView = switchView;
-window.addSalespersonCard = addSalespersonCard;
-window.deleteSalespersonCard = deleteSalespersonCard;
-window.clearAllQuickCalculateData = clearAllQuickCalculateData;
-window.exportTemplate = exportTemplate;
-// Import Excel — 读取选中文件，自动填入当月数据到Quick Calculate卡片
+// ==================== Data Backup & Restore ====================
+
+// Export full backup
+async function exportFullBackup() {
+    try {
+        showLoading('Creating backup...');
+        
+        const backupData = {
+            appVersion: '1.0.0',
+            timestamp: new Date().toISOString(),
+            config: window.appState.config,
+            currentData: {
+                salespeople: window.appState.salespeople,
+                currentMonth: document.getElementById('report-month')?.value || '',
+                currentView: window.appState.currentView
+            }
+        };
+        
+        // Generate JSON file
+        const dataStr = JSON.stringify(backupData, null, 2);
+        
+        if (window.electronAPI && window.electronAPI.saveBackupFile) {
+            const result = await window.electronAPI.saveBackupFile({
+                data: dataStr,
+                filename: `sales_calculator_backup_${new Date().toISOString().split('T')[0]}.json`
+            });
+            
+            if (result.success) {
+                showToast('✅', `Backup saved: ${result.path}`);
+            } else {
+                // Fallback: browser download
+                downloadFile(dataStr, `sales_calculator_backup_${new Date().toISOString().split('T')[0]}.json`);
+            }
+        } else {
+            // Pure web solution
+            downloadFile(dataStr, `sales_calculator_backup_${new Date().toISOString().split('T')[0]}.json`);
+        }
+        
+        hideLoading();
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Backup error:', error);
+        showToast('❌', 'Backup failed: ' + error.message);
+    }
+}
+
+// Import backup
+async function importBackup() {
+    try {
+        if (!confirm('Importing backup will replace all current data. Continue?')) {
+            return;
+        }
+        
+        const fileResult = await window.electronAPI.selectFile(['.json']);
+        if (!fileResult || !fileResult.success) return;
+        
+        showLoading('Restoring backup...');
+        
+        // Read backup file
+        const backupResult = await window.electronAPI.readBackupFile(fileResult.path);
+        if (!backupResult.success) {
+            throw new Error(backupResult.error || 'Failed to read backup file');
+        }
+        
+        const backupData = JSON.parse(backupResult.data);
+        
+        // Verify backup data format
+        if (!backupData.config || !backupData.timestamp) {
+            throw new Error('Invalid backup file format');
+        }
+        
+        // Restore configuration
+        window.appState.config = backupData.config;
+        
+        // Restore current data (if exists)
+        if (backupData.currentData) {
+            window.appState.salespeople = backupData.currentData.salespeople || [];
+            
+            if (backupData.currentData.currentMonth) {
+                const monthSelect = document.getElementById('report-month');
+                if (monthSelect) monthSelect.value = backupData.currentData.currentMonth;
+            }
+            
+            if (backupData.currentData.currentView) {
+                window.appState.currentView = backupData.currentData.currentView;
+            }
+        }
+        
+        // Save configuration
+        await saveConfig();
+        
+        // Refresh current view
+        switchView(window.appState.currentView);
+        
+        // If it's Quick Calculate view, re-render cards
+        if (window.appState.currentView === 'quick') {
+            renderAllSalespeopleCards();
+        }
+        
+        hideLoading();
+        showToast('✅', `Backup restored from ${new Date(backupData.timestamp).toLocaleDateString()}`);
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Restore error:', error);
+        showToast('❌', 'Restore failed: ' + error.message);
+    }
+}
+
+// Backup history management
+function initBackupManagement() {
+    // Auto backup (on first startup each day)
+    const lastBackup = localStorage.getItem('lastAutoBackup');
+    const today = new Date().toDateString();
+    
+    if (lastBackup !== today) {
+        // Auto create backup
+        setTimeout(() => autoBackup(), 5000); // Delay 5 seconds, wait for app to fully load
+    }
+}
+
+// Auto backup
+async function autoBackup() {
+    try {
+        // Only backup when there's data
+        const hasData = window.appState.salespeople.length > 0 || 
+                       Object.keys(window.appState.config.base_salaries || {}).length > 0;
+        
+        if (!hasData) return;
+        
+        const backupData = {
+            appVersion: '1.0.0',
+            timestamp: new Date().toISOString(),
+            config: window.appState.config,
+            currentData: {
+                salespeople: window.appState.salespeople,
+                currentMonth: document.getElementById('report-month')?.value || ''
+            }
+        };
+        
+        // Save to local storage (limit to recent 5 auto backups)
+        const autoBackups = JSON.parse(localStorage.getItem('autoBackups') || '[]');
+        autoBackups.unshift({
+            data: backupData,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Keep only recent 5 backups
+        if (autoBackups.length > 5) {
+            autoBackups.length = 5;
+        }
+        
+        localStorage.setItem('autoBackups', JSON.stringify(autoBackups));
+        localStorage.setItem('lastAutoBackup', new Date().toDateString());
+        
+        console.log('Auto backup created');
+        
+    } catch (error) {
+        console.error('Auto backup error:', error);
+    }
+}
+
+// Show auto backups
+function showAutoBackups() {
+    const autoBackups = JSON.parse(localStorage.getItem('autoBackups') || '[]');
+    
+    if (autoBackups.length === 0) {
+        showToast('ℹ️', 'No automatic backups found');
+        return;
+    }
+    
+    // Create backup selection dialog
+    const backupListHTML = autoBackups.map((backup, index) => {
+        const date = new Date(backup.timestamp).toLocaleString();
+        const size = JSON.stringify(backup).length;
+        const kb = (size / 1024).toFixed(2);
+        
+        return `
+            <div class="backup-item p-3 border border-gray-300 rounded mb-2 hover:bg-gray-50 cursor-pointer" 
+                 onclick="selectBackup(${index})">
+                <div class="flex justify-between">
+                    <div>
+                        <strong>Backup ${index + 1}</strong>
+                        <div class="text-sm text-gray-600">${date}</div>
+                    </div>
+                    <div class="text-sm text-gray-500">${kb} KB</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    const modalHTML = `
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-bold mb-4">📂 Auto Backups</h3>
+                <div class="max-h-64 overflow-y-auto mb-4">
+                    ${backupListHTML}
+                </div>
+                <div class="flex justify-between">
+                    <button onclick="closeBackupModal()" 
+                            class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">
+                        Cancel
+                    </button>
+                    <button id="restoreBackupBtn" 
+                            onclick="restoreSelectedBackup()"
+                            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                        Restore Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to page
+    const modal = document.createElement('div');
+    modal.id = 'backupModal';
+    modal.innerHTML = modalHTML;
+    document.body.appendChild(modal);
+    
+    // Store selected index
+    window.selectedBackupIndex = -1;
+}
+
+// Select backup
+function selectBackup(index) {
+    window.selectedBackupIndex = index;
+    
+    // Update UI
+    document.querySelectorAll('.backup-item').forEach((item, i) => {
+        if (i === index) {
+            item.classList.add('bg-blue-50', 'border-blue-300');
+        } else {
+            item.classList.remove('bg-blue-50', 'border-blue-300');
+        }
+    });
+    
+    // Enable restore button
+    document.getElementById('restoreBackupBtn').disabled = false;
+}
+
+// Close backup modal
+function closeBackupModal() {
+    const modal = document.getElementById('backupModal');
+    if (modal) modal.remove();
+    window.selectedBackupIndex = -1;
+}
+
+// Restore selected backup
+async function restoreSelectedBackup() {
+    const index = window.selectedBackupIndex;
+    if (index === -1) return;
+    
+    const autoBackups = JSON.parse(localStorage.getItem('autoBackups') || '[]');
+    if (index >= autoBackups.length) return;
+    
+    if (!confirm(`Restore backup from ${new Date(autoBackups[index].timestamp).toLocaleString()}?\nThis will replace all current data.`)) {
+        return;
+    }
+    
+    try {
+        showLoading('Restoring backup...');
+        
+        const backup = autoBackups[index].data;
+        
+        // Restore data
+        window.appState.config = backup.config;
+        
+        if (backup.currentData) {
+            window.appState.salespeople = backup.currentData.salespeople || [];
+        }
+        
+        // Save configuration
+        await saveConfig();
+        
+        // Refresh current view
+        if (window.appState.currentView === 'quick') {
+            renderAllSalespeopleCards();
+            updateSummaryView();
+        }
+        
+        closeBackupModal();
+        hideLoading();
+        showToast('✅', 'Backup restored successfully');
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Auto restore error:', error);
+        showToast('❌', 'Restore failed: ' + error.message);
+    }
+}
+
+// Download file helper function
+function downloadFile(dataStr, filename) {
+    const blob = new Blob([dataStr], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Manual backup (triggered by user)
+function createManualBackup() {
+    const backupData = {
+        appVersion: '1.0.0',
+        timestamp: new Date().toISOString(),
+        config: window.appState.config,
+        currentData: {
+            salespeople: window.appState.salespeople,
+            currentMonth: document.getElementById('report-month')?.value || '',
+            currentView: window.appState.currentView
+        }
+    };
+    
+    // Add to auto backups (at the beginning)
+    const autoBackups = JSON.parse(localStorage.getItem('autoBackups') || '[]');
+    autoBackups.unshift({
+        data: backupData,
+        timestamp: new Date().toISOString(),
+        manual: true
+    });
+    
+    // Keep only recent 5 backups
+    if (autoBackups.length > 5) {
+        autoBackups.length = 5;
+    }
+    
+    localStorage.setItem('autoBackups', JSON.stringify(autoBackups));
+    
+    showToast('✅', 'Manual backup created successfully');
+}
+
+// Export configuration only (without current data)
+function exportConfigOnly() {
+    try {
+        const configData = {
+            appVersion: '1.0.0',
+            timestamp: new Date().toISOString(),
+            config: window.appState.config
+        };
+        
+        const dataStr = JSON.stringify(configData, null, 2);
+        downloadFile(dataStr, `sales_config_${new Date().toISOString().split('T')[0]}.json`);
+        
+        showToast('✅', 'Configuration exported successfully');
+        
+    } catch (error) {
+        console.error('Config export error:', error);
+        showToast('❌', 'Export failed: ' + error.message);
+    }
+}
+
+// Import configuration only
+async function importConfigOnly() {
+    try {
+        if (!confirm('Importing configuration will replace all current settings. Continue?')) {
+            return;
+        }
+        
+        const fileResult = await window.electronAPI.selectFile(['.json']);
+        if (!fileResult || !fileResult.success) return;
+        
+        showLoading('Importing configuration...');
+        
+        const configResult = await window.electronAPI.readBackupFile(fileResult.path);
+        if (!configResult.success) {
+            throw new Error(configResult.error || 'Failed to read config file');
+        }
+        
+        const configData = JSON.parse(configResult.data);
+        
+        // Verify config data format
+        if (!configData.config) {
+            throw new Error('Invalid configuration file format');
+        }
+        
+        // Restore configuration only
+        window.appState.config = configData.config;
+        
+        // Save configuration
+        await saveConfig();
+        
+        // Refresh all views
+        renderSalaryConfigs();
+        renderCommissionConfigs();
+        loadQuickCalculateHistory();
+        
+        hideLoading();
+        showToast('✅', 'Configuration imported successfully');
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Config import error:', error);
+        showToast('❌', 'Import failed: ' + error.message);
+    }
+}
+
+// Add backup UI to history page
+function addBackupUI() {
+    // Check if already added
+    if (document.getElementById('backup-section')) return;
+    
+    const historyContainer = document.getElementById('view-history');
+    if (!historyContainer) return;
+    
+    const backupSection = document.createElement('div');
+    backupSection.id = 'backup-section';
+    backupSection.className = 'mt-8 p-6 bg-yellow-50 rounded-lg border border-yellow-200';
+    backupSection.innerHTML = `
+        <h3 class="text-lg font-bold text-yellow-800 mb-4">🔒 Data Backup & Restore</h3>
+        <div class="space-y-3">
+            <button onclick="exportFullBackup()" 
+                    class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center">
+                <span class="mr-2">📥</span> Export Full Backup
+            </button>
+            <button onclick="importBackup()" 
+                    class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center justify-center">
+                <span class="mr-2">📤</span> Import Backup
+            </button>
+            <button onclick="showAutoBackups()" 
+                    class="w-full px-4 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 flex items-center justify-center">
+                <span class="mr-2">⏰</span> Restore Auto Backup
+            </button>
+            <button onclick="createManualBackup()" 
+                    class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center">
+                <span class="mr-2">💾</span> Create Manual Backup
+            </button>
+            <div class="border-t border-yellow-300 pt-3 mt-3">
+                <h4 class="font-semibold text-yellow-700 mb-2">Configuration Only</h4>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="exportConfigOnly()" 
+                            class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm">
+                        Export Config
+                    </button>
+                    <button onclick="importConfigOnly()" 
+                            class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm">
+                        Import Config
+                    </button>
+                </div>
+            </div>
+            <div class="text-xs text-yellow-700 mt-2">
+                <p>• Auto backups are created daily</p>
+                <p>• Last 5 auto backups are kept</p>
+                <p>• Export backup for long-term storage</p>
+                <p>• Manual backups don't count toward the 5 backup limit</p>
+            </div>
+        </div>
+    `;
+    historyContainer.appendChild(backupSection);
+}
+
+// Initialize backup system
+function initBackupSystem() {
+    // Check and create auto backup
+    initBackupManagement();
+    
+    // Add backup UI to history page
+    setTimeout(addBackupUI, 500);
+}
+
+// Backup before clear all data
+function backupBeforeClear() {
+    const hasData = window.appState.salespeople.length > 0;
+    
+    if (hasData) {
+        // Create quick backup before clearing
+        const quickBackup = {
+            timestamp: new Date().toISOString(),
+            salespeople: [...window.appState.salespeople],
+            month: document.getElementById('report-month')?.value || ''
+        };
+        
+        // Store in session storage for quick recovery
+        sessionStorage.setItem('quickRecovery', JSON.stringify(quickBackup));
+    }
+}
+
+// Quick recovery
+function quickRecovery() {
+    const recoveryData = sessionStorage.getItem('quickRecovery');
+    if (!recoveryData) {
+        showToast('ℹ️', 'No quick recovery data found');
+        return;
+    }
+    
+    if (!confirm('Recover last cleared data?')) {
+        return;
+    }
+    
+    try {
+        const data = JSON.parse(recoveryData);
+        
+        window.appState.salespeople = data.salespeople || [];
+        
+        if (data.month) {
+            const monthSelect = document.getElementById('report-month');
+            if (monthSelect) monthSelect.value = data.month;
+        }
+        
+        if (window.appState.currentView === 'quick') {
+            renderAllSalespeopleCards();
+            updateSummaryView();
+        }
+        
+        showToast('✅', 'Data recovered successfully');
+        
+        // Remove recovery data
+        sessionStorage.removeItem('quickRecovery');
+        
+    } catch (error) {
+        console.error('Quick recovery error:', error);
+        showToast('❌', 'Recovery failed: ' + error.message);
+    }
+}
+
+// Add quick recovery button to UI
+function addQuickRecoveryButton() {
+    // Add to Quick Calculate view
+    const quickView = document.getElementById('view-quick');
+    if (quickView) {
+        const existingBtn = quickView.querySelector('.quick-recovery-btn');
+        if (existingBtn) return;
+        
+        const recoveryBtn = document.createElement('button');
+        recoveryBtn.className = 'quick-recovery-btn ml-2 px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm';
+        recoveryBtn.innerHTML = '↶ Undo Clear';
+        recoveryBtn.onclick = quickRecovery;
+        
+        // Add next to clear button
+        const clearBtn = quickView.querySelector('[onclick="clearAllQuickCalculateData()"]');
+        if (clearBtn && clearBtn.parentNode) {
+            clearBtn.parentNode.appendChild(recoveryBtn);
+        }
+    }
+}
+
+// ==================== Helper Functions ====================
+
+function autoFillLockedFields(index) {
+    const person = window.appState.salespeople[index];
+    if (!person) return;
+    const nameUpper = person.name.toUpperCase();
+    const month = (document.getElementById('report-month')?.value || '').toUpperCase();
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const qTarget = window.appState.config.quarterly_targets?.[nameUpper] || 0;
+    const qEl = document.getElementById('quarterly-target-' + index);
+    if (qEl) {
+        qEl.value = qTarget;
+        qEl.readOnly = true;
+        qEl.style.backgroundColor = '#f3f4f6';
+        qEl.title = 'Set in Salary & Allowances tab';
+        person.quarterlyTarget = qTarget;
+    }
+    const currentIdx = months.indexOf(month);
+    let collTarget = 0, collLabel = '';
+    if (currentIdx >= 0) {
+        let twoMonthsAgo, twoMonthsYear = new Date().getFullYear();
+        if (currentIdx >= 2) { twoMonthsAgo = months[currentIdx - 2]; }
+        else if (currentIdx === 1) { twoMonthsAgo = months[11]; twoMonthsYear--; }
+        else { twoMonthsAgo = months[10]; twoMonthsYear--; }
+        const history = window.appState.config.reportHistory || [];
+        const histEntry = history.find(r => r.month?.toUpperCase() === twoMonthsAgo) ;
+        if (histEntry) {
+            const personHist = (histEntry.data || []).find(p => p.name?.toUpperCase() === nameUpper);
+            if (personHist) {
+                collTarget = parseFloat(personHist.sales) || 0;
+                collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString();
+            } else { collLabel = 'No ' + twoMonthsAgo + ' data for ' + nameUpper; }
+        } else { collLabel = 'No history for ' + twoMonthsAgo; }
+    }
+    const cEl = document.getElementById('collection-target-' + index);
+    if (cEl) {
+        cEl.value = collTarget || '';
+        cEl.readOnly = true;
+        cEl.style.backgroundColor = '#f3f4f6';
+        cEl.title = collLabel;
+        person.collectionTarget = collTarget;
+    }
+}
+
+// Import Excel
 async function importFromExcel() {
     try {
-        // 1. 选择文件
+        // 1. Select file
         const fileResult = await window.electronAPI.selectFile();
         if (!fileResult || !fileResult.success) return;
 
         showToast('⏳', 'Reading Excel file...');
 
-        // 2. 读取数据
+        // 2. Read data
         const importResult = await window.electronAPI.importSalesData(fileResult.path);
         if (!importResult.success) {
             showToast('❌', 'Import failed: ' + importResult.error);
@@ -1507,58 +2173,58 @@ async function importFromExcel() {
             return;
         }
 
-        // 3. 找出当前选择的月份
+        // 3. Find current selected month
         const currentMonth = document.getElementById('report-month')
             ? document.getElementById('report-month').value.toUpperCase()
             : '';
 
-        // 4. 清空现有卡片
+        // 4. Clear existing cards
         const container = document.getElementById('salespeople-container');
         if (container) container.innerHTML = '';
         window.appState.salespeople = [];
 
-        // 5. 为每个人创建卡片并填入数据
+        // 5. Create cards for each person and fill data
         let loaded = 0;
         data.forEach(person => {
-            // 找该人当月数据
+            // Find this person's current month data
             const monthData = person.months.find(m => m.month === currentMonth);
             if (!monthData && !person.months.length) return;
 
             const md = monthData || person.months[person.months.length - 1];
 
-            // 添加卡片
+            // Add card
             addSalespersonCard();
             const idx = window.appState.salespeople.length - 1;
 
-            // 填入名字
+            // Fill name
             const nameEl = document.getElementById('name-' + idx);
             if (nameEl) {
-                // 找匹配的 option
+                // Find matching option
                 const option = Array.from(nameEl.options).find(o => o.value.toUpperCase() === person.name.toUpperCase());
                 if (option) {
                     nameEl.value = option.value;
                 } else {
-                    // 没有配置这个人，加一个临时 option
+                    // This person is not configured, add a temporary option
                     const opt = document.createElement('option');
                     opt.value = person.name;
                     opt.text = person.name;
                     nameEl.appendChild(opt);
                     nameEl.value = person.name;
                 }
-                // 触发名字改变，自动填入 quarterly target 和 collection target
+                // Trigger name change, automatically fill quarterly target and collection target
                 if (typeof autoFillLockedFields === 'function') autoFillLockedFields(idx);
             }
 
-            // 填入目标和销售额
+            // Fill target and sales
             const targetEl = document.getElementById('target-' + idx);
             const salesEl = document.getElementById('sales-' + idx);
             const collAmtEl = document.getElementById('collection-amount-' + idx);
 
-            if (targetEl) targetEl.value = md.target || '';
-            if (salesEl) salesEl.value = md.sales || '';
+            if (targetEl) { targetEl.value = md.target || ''; targetEl.readOnly = false; targetEl.style.backgroundColor = ''; }
+            if (salesEl) { salesEl.value = md.sales || ''; salesEl.readOnly = false; salesEl.style.backgroundColor = ''; }
             if (collAmtEl && md.collection) collAmtEl.value = md.collection;
 
-            // 更新计算
+            // Update calculation
             updateSalespersonData(idx);
             loaded++;
         });
@@ -1575,56 +2241,103 @@ async function importFromExcel() {
     }
 }
 
-window.importFromExcel = importFromExcel;
-window.addNewPerson = addNewPerson;
-window.deleteSalespersonConfig = deleteSalespersonConfig;
-window.updateSalary = updateSalary;
-window.updateAllowance = updateAllowance;
-window.updateEPFRate = updateEPFRate;
-window.updateDeduction = updateDeduction;
-window.updateSalespersonData = updateSalespersonData;
-window.onSalespersonNameChange = onSalespersonNameChange;
-window.updateCommissionLabel = updateCommissionLabel;
-window.updateCommissionTier = updateCommissionTier;
-window.updateIncentiveLabel = updateIncentiveLabel;
-window.updateIncentiveTier = updateIncentiveTier;
-// 确保所有函数在全局可用
-window.addCommissionTier = addCommissionTier;
-window.removeCommissionTier = removeCommissionTier;
-window.addIncentiveTier = addIncentiveTier;
-window.removeIncentiveTier = removeIncentiveTier;
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('📋 DOM 加载完成，开始初始化...');
-    
-    // 延迟初始化以避免竞争条件
-    setTimeout(() => {
-        if (typeof initApp === 'function') {
-            initApp();
-        } else {
-            console.error('initApp 函数未定义');
-        }
-    }, 100);
-});
+// Salary & Allowances update functions
+function updateSalary(name, value) {
+    const nameUpper = name.toUpperCase();
+    if (!window.appState.config.base_salaries) window.appState.config.base_salaries = {};
+    window.appState.config.base_salaries[nameUpper] = parseFloat(value) || 0;
+    saveConfig();
+    renderSalaryConfigs();
+}
 
-// 显示加载
+function updateAllowance(name, key, value) {
+    const nameUpper = name.toUpperCase();
+    if (!window.appState.config.allowances) window.appState.config.allowances = {};
+    if (!window.appState.config.allowances[nameUpper]) window.appState.config.allowances[nameUpper] = {};
+    window.appState.config.allowances[nameUpper][key] = parseFloat(value) || 0;
+    saveConfig();
+    // Recalculate EPF/SOCSO (based on new total income)
+    const allowances = window.appState.config.allowances[nameUpper];
+    const salary = window.appState.config.base_salaries?.[nameUpper] || 0;
+    const totalIncome = salary + Object.values(allowances).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+    const epfRate = (window.appState.config.deductionRates?.[nameUpper]?.EPF_RATE || 11) / 100;
+    if (!window.appState.config.deductions) window.appState.config.deductions = {};
+    if (!window.appState.config.deductions[nameUpper]) window.appState.config.deductions[nameUpper] = {};
+    window.appState.config.deductions[nameUpper].EPF   = Math.round(totalIncome * epfRate * 100) / 100;
+    window.appState.config.deductions[nameUpper].SOCSO = Math.round(totalIncome * 0.005 * 100) / 100;
+    saveConfig();
+    renderSalaryConfigs();
+}
+
+function updateEPFRate(name, value) {
+    const nameUpper = name.toUpperCase();
+    if (!window.appState.config.deductionRates) window.appState.config.deductionRates = {};
+    if (!window.appState.config.deductionRates[nameUpper]) window.appState.config.deductionRates[nameUpper] = {};
+    window.appState.config.deductionRates[nameUpper].EPF_RATE = parseFloat(value) || 11;
+    saveConfig();
+    // Recalculate EPF amount
+    const salary = window.appState.config.base_salaries?.[nameUpper] || 0;
+    const allowances = window.appState.config.allowances?.[nameUpper] || {};
+    const totalIncome = salary + Object.values(allowances).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+    const epfRate = (parseFloat(value) || 11) / 100;
+    if (!window.appState.config.deductions) window.appState.config.deductions = {};
+    if (!window.appState.config.deductions[nameUpper]) window.appState.config.deductions[nameUpper] = {};
+    window.appState.config.deductions[nameUpper].EPF = Math.round(totalIncome * epfRate * 100) / 100;
+    saveConfig();
+    renderSalaryConfigs();
+}
+
+function updateDeduction(name, key, value) {
+    const nameUpper = name.toUpperCase();
+    if (!window.appState.config.deductions) window.appState.config.deductions = {};
+    if (!window.appState.config.deductions[nameUpper]) window.appState.config.deductions[nameUpper] = {};
+    window.appState.config.deductions[nameUpper][key] = parseFloat(value) || 0;
+    saveConfig();
+}
+
+// Missing functions
+function onSalespersonNameChange(index) {
+    updateSalespersonData(index);
+    autoFillLockedFields(index);
+}
+
+function renderSalespersonCards() {
+    renderAllSalespeopleCards();
+}
+
+function viewHistoryReport(index) {
+    // Implementation for viewing historical reports
+    console.log('Viewing history report at index:', index);
+    showToast('ℹ️', 'History report view feature not yet implemented');
+}
+
+function deleteHistoryReport(index) {
+    if (confirm('Are you sure you want to delete this history record?')) {
+        window.appState.config.reportHistory.splice(index, 1);
+        saveConfig();
+        loadQuickCalculateHistory();
+        showToast('✅', 'History record deleted');
+    }
+}
+
+// Show loading
 function showLoading(message) {
-    // 简单实现
+    // Simple implementation
     console.log('⏳', message);
 }
 
-// 隐藏加载
+// Hide loading
 function hideLoading() {
-    // 简单实现
+    // Simple implementation
 }
 
-// 加载历史记录
+// Load history records
 function loadQuickCalculateHistory() {
     const historyList = document.getElementById('history-list');
     if (!historyList) return;
     
     if (!window.appState.config.reportHistory || window.appState.config.reportHistory.length === 0) {
-        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>暂无历史记录</p></div>';
+        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
         return;
     }
     
@@ -1647,3 +2360,59 @@ function loadQuickCalculateHistory() {
         </div>
     `).join('');
 }
+
+// ==================== Global Function Export ====================
+
+window.initApp = initApp;
+window.switchView = switchView;
+window.addSalespersonCard = addSalespersonCard;
+window.deleteSalespersonCard = deleteSalespersonCard;
+window.clearAllQuickCalculateData = clearAllQuickCalculateData;
+window._doClearAllData = _doClearAllData;
+window.exportTemplate = exportTemplate;
+window.importFromExcel = importFromExcel;
+window.addNewPerson = addNewPerson;
+window.deleteSalespersonConfig = deleteSalespersonConfig;
+window.updateSalary = updateSalary;
+window.updateAllowance = updateAllowance;
+window.updateEPFRate = updateEPFRate;
+window.updateDeduction = updateDeduction;
+window.updateSalespersonData = updateSalespersonData;
+window.onSalespersonNameChange = onSalespersonNameChange;
+window.renderSalespersonCards = renderSalespersonCards;
+window.viewHistoryReport = viewHistoryReport;
+window.deleteHistoryReport = deleteHistoryReport;
+window.updateCommissionLabel = updateCommissionLabel;
+window.updateCommissionTier = updateCommissionTier;
+window.updateIncentiveLabel = updateIncentiveLabel;
+window.updateIncentiveTier = updateIncentiveTier;
+window.addCommissionTier = addCommissionTier;
+window.removeCommissionTier = removeCommissionTier;
+window.addIncentiveTier = addIncentiveTier;
+window.removeIncentiveTier = removeIncentiveTier;
+
+// Backup functions
+window.exportFullBackup = exportFullBackup;
+window.importBackup = importBackup;
+window.showAutoBackups = showAutoBackups;
+window.createManualBackup = createManualBackup;
+window.exportConfigOnly = exportConfigOnly;
+window.importConfigOnly = importConfigOnly;
+window.quickRecovery = quickRecovery;
+window.selectBackup = selectBackup;
+window.closeBackupModal = closeBackupModal;
+window.restoreSelectedBackup = restoreSelectedBackup;
+
+// Initialize after DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📋 DOM loaded, starting initialization...');
+    
+    // Delay initialization to avoid race conditions
+    setTimeout(() => {
+        if (typeof initApp === 'function') {
+            initApp();
+        } else {
+            console.error('initApp function not defined');
+        }
+    }, 100);
+});

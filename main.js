@@ -26,7 +26,7 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
 
-    // 开发时打开 DevTools
+    // Open DevTools during development
     // mainWindow.webContents.openDevTools();
 
     mainWindow.on('closed', () => {
@@ -35,13 +35,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-    // 确保配置文件存在
+    // Ensure config file exists
     try {
         const configPath = path.join(app.getPath('userData'), 'config.json');
         await fs.access(configPath);
         console.log('Config file exists:', configPath);
     } catch (error) {
-        // 如果配置文件不存在，创建默认配置
+        // Create default config if it doesn't exist
         console.log('Creating default config file...');
         await fs.writeFile(configPath, JSON.stringify(getDefaultConfig(), null, 2));
     }
@@ -62,19 +62,19 @@ app.on('activate', () => {
 
 // ========== IPC Handlers ==========
 
-// 加载配置
+// Load configuration
 ipcMain.handle('load-config', async () => {
     try {
         const configPath = path.join(app.getPath('userData'), 'config.json');
         const data = await fs.readFile(configPath, 'utf-8');
         return JSON.parse(data);
     } catch (error) {
-        // 返回默认配置
+        // Return default configuration
         return getDefaultConfig();
     }
 });
 
-// 保存配置
+// Save configuration
 ipcMain.handle('save-config', async (event, config) => {
     try {
         const configPath = path.join(app.getPath('userData'), 'config.json');
@@ -85,7 +85,7 @@ ipcMain.handle('save-config', async (event, config) => {
     }
 });
 
-// 加载多语言资源
+// Load localization resources
 ipcMain.handle('load-locale', async (event, lang = 'en') => {
     try {
         const localePath = path.join(__dirname, '..', 'src', 'locales', `${lang}.json`);
@@ -93,7 +93,7 @@ ipcMain.handle('load-locale', async (event, lang = 'en') => {
         return JSON.parse(localeData);
     } catch (error) {
         console.error(`Failed to load locale ${lang}:`, error);
-        // 返回基本的英文本地化
+        // Return basic English localization
         return {
             app: {
                 title: 'Sales Calculator',
@@ -106,7 +106,7 @@ ipcMain.handle('load-locale', async (event, lang = 'en') => {
     }
 });
 
-// 选择文件
+// Select file
 ipcMain.handle('select-file', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
@@ -123,13 +123,13 @@ ipcMain.handle('select-file', async () => {
     return { success: false };
 });
 
-// 导入销售数据
+// Import sales data
 ipcMain.handle('import-sales-data', async (event, filePath) => {
     try {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(filePath);
         
-        // 自动尝试多个sheet名，找不到就用第一个sheet
+        // Automatically try multiple sheet names, use first sheet if not found
         const possibleNames = ['Sheet1', 'Sheet2', 'Data Sheet', 'data sheet', 'Sheet 1', 'DATA SHEET'];
         let dataSheet = null;
         for (const name of possibleNames) {
@@ -144,7 +144,7 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
         let personData = null;
         const MONTHS = new Set(['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']);
 
-        // 解析单元格值（处理公式、数字、null）
+        // Parse cell values (handle formulas, numbers, null)
         const getCellNum = (cell) => {
             const v = cell.value;
             if (v === null || v === undefined) return 0;
@@ -156,24 +156,24 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
             const rawA = row.getCell(1).value;
             const rawB = row.getCell(2).value;
 
-            // 跳过完全空行
+            // Skip completely empty rows
             if (!rawA && !rawB) return;
 
             const cellA = rawA ? rawA.toString().trim() : '';
             const cellB = rawB ? rawB.toString().trim().toUpperCase() : '';
 
-            // 跳过表头行和Total行
+            // Skip header rows and Total rows
             if (cellB === 'MONTH' || cellA.toUpperCase().includes('SALE TEAM')) return;
             if (cellB === 'TOTAL') return;
 
-            // 新销售员：A列有名字且不是月份
+            // New salesperson: Column A has a name and it's not a month
             if (cellA && !MONTHS.has(cellA.toUpperCase())) {
                 if (personData) salesData.push(personData);
                 currentPerson = cellA.toUpperCase();
                 personData = { name: currentPerson, months: [] };
             }
 
-            // 有月份就记录数据
+            // Record data if there's a month
             if (MONTHS.has(cellB) && personData) {
                 personData.months.push({
                     month: cellB,
@@ -184,7 +184,7 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
             }
         });
 
-        // 加入最后一个人
+        // Add the last person
         if (personData) salesData.push(personData);
 
         return { success: true, data: salesData };
@@ -194,70 +194,70 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
     }
 });
 
-// 生成工资模板 - 包含详细调试
+// Generate salary template - with detailed debugging
 ipcMain.handle('generate-salary-template', async (event, data) => {
-    // ========== 🔍 详细调试 ==========
+    // ========== 🔍 Detailed Debugging ==========
     console.log('\n\n' + '='.repeat(60));
-    console.log('🔍 generate-salary-template 被调用');
+    console.log('🔍 generate-salary-template called');
     console.log('='.repeat(60));
     
-    console.log('\n📋 收到的完整数据结构:');
+    console.log('\n📋 Complete data structure received:');
     console.log(JSON.stringify(data, null, 2));
     
-    console.log('\n📊 关键信息摘要:');
-    console.log('- 月份:', data.month || '未设置');
-    console.log('- 销售员数量:', data.salespeople?.length || 0);
+    console.log('\n📊 Key information summary:');
+    console.log('- Month:', data.month || 'Not set');
+    console.log('- Number of salespeople:', data.salespeople?.length || 0);
     
-    // 检查 config 对象
-    console.log('\n🔍 检查 config 对象:');
-    console.log('- 是否有 config?', !!data.config);
-    console.log('- config 类型:', typeof data.config);
+    // Check config object
+    console.log('\n🔍 Checking config object:');
+    console.log('- Has config?', !!data.config);
+    console.log('- Config type:', typeof data.config);
     
     if (data.config && typeof data.config === 'object') {
-        console.log('- config 的所有键:', Object.keys(data.config));
-        console.log('- config 内容:', JSON.stringify(data.config, null, 2));
+        console.log('- All keys in config:', Object.keys(data.config));
+        console.log('- Config content:', JSON.stringify(data.config, null, 2));
         
-        // 专门查找 EPF 相关键
+        // Specifically look for EPF-related keys
         const epfKeys = Object.keys(data.config).filter(key => 
             key.toLowerCase().includes('epf') || 
             key.toLowerCase().includes('pf') ||
             key.toLowerCase().includes('rate')
         );
-        console.log('- 可能的 EPF 相关键:', epfKeys);
+        console.log('- Possible EPF-related keys:', epfKeys);
         
         if (epfKeys.length > 0) {
             epfKeys.forEach(key => {
                 const value = data.config[key];
-                console.log(`  - ${key}:`, value, `(类型: ${typeof value})`);
+                console.log(`  - ${key}:`, value, `(type: ${typeof value})`);
                 if (typeof value === 'number') {
-                    console.log(`    相当于 ${value * 100}%`);
+                    console.log(`    Equivalent to ${value * 100}%`);
                 }
             });
         } else {
-            console.log('- ⚠️ 未找到 EPF 相关键');
+            console.log('- ⚠️ No EPF-related keys found');
         }
     } else {
-        console.log('- ⚠️ config 为空或不是对象');
+        console.log('- ⚠️ Config is empty or not an object');
     }
     
-    // 检查第一个销售员的数据
+    // Check first salesperson's data
     if (data.salespeople && data.salespeople.length > 0) {
-        console.log('\n🔍 检查第一个销售员的数据:');
+        console.log('\n🔍 Checking first salesperson data:');
         const firstPerson = data.salespeople[0];
-        console.log('- 姓名:', firstPerson.name);
-        console.log('- 所有键:', Object.keys(firstPerson));
+        console.log('- Name:', firstPerson.name);
+        console.log('- All keys:', Object.keys(firstPerson));
         
-        // 检查销售员是否有自己的 EPF 设置
+        // Check if salesperson has their own EPF settings
         if (firstPerson.deductions) {
             console.log('- deductions:', JSON.stringify(firstPerson.deductions, null, 2));
         }
         
-        // 检查是否有 epfRate 直接挂在 person 上
+        // Check if epfRate is directly attached to person
         const personEpfKeys = Object.keys(firstPerson).filter(key => 
             key.toLowerCase().includes('epf') || key.toLowerCase().includes('pf')
         );
         if (personEpfKeys.length > 0) {
-            console.log('- 销售员自身的 EPF 键:', personEpfKeys);
+            console.log('- Salesperson own EPF keys:', personEpfKeys);
             personEpfKeys.forEach(key => {
                 console.log(`  - ${key}:`, firstPerson[key]);
             });
@@ -265,7 +265,7 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
     }
     
     console.log('\n' + '='.repeat(60));
-    console.log('🚀 开始生成模板...');
+    console.log('🚀 Starting template generation...');
     console.log('='.repeat(60) + '\n');
     // =================================
     
@@ -281,24 +281,24 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
 
         const workbook = new ExcelJS.Workbook();
         
-        // 计算团队总销售额
+        // Calculate total team sales
         const totalTeamSales = data.salespeople.reduce((sum, person) => {
             return sum + (parseFloat(person.sales) || 0);
         }, 0);
         
-        console.log('📊 团队总销售额:', totalTeamSales);
+        console.log('📊 Total team sales:', totalTeamSales);
         
-        // 为每个销售员创建工作表
+        // Create worksheet for each salesperson
         for (const person of data.salespeople) {
             const sheet = workbook.addWorksheet(person.name.substring(0, 31));
             await createSalarySheet(sheet, person, data.config, data.month, totalTeamSales);
         }
 
-        // Group Summary sheet (Book3 格式)
+        // Group Summary sheet (Book3 format)
         const groupSheet = workbook.addWorksheet('Group Summary');
         await createGroupSummarySheet(groupSheet, data.salespeople, data.config, data.month);
 
-        // Commission Summary sheet (Book2 格式)
+        // Commission Summary sheet (Book2 format)
         const commSheet = workbook.addWorksheet('Commission Summary');
         await createCommissionSummarySheet(commSheet, data.salespeople, data.config, data.month);
 
@@ -310,12 +310,12 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
             message: 'Template generated successfully!'
         };
     } catch (error) {
-        console.error('❌ 生成模板时出错:', error);
+        console.error('❌ Error generating template:', error);
         return { success: false, error: error.message };
     }
 });
 
-// 导出 PDF 报告
+// Export PDF report
 ipcMain.handle('export-pdf', async (event, data) => {
     try {
         const result = await dialog.showSaveDialog(mainWindow, {
@@ -327,7 +327,7 @@ ipcMain.handle('export-pdf', async (event, data) => {
             return { success: false };
         }
 
-        // 使用 Electron 的打印功能生成 PDF
+        // Use Electron's print function to generate PDF
         const pdfData = await mainWindow.webContents.printToPDF({
             printBackground: true,
             landscape: false
@@ -341,19 +341,341 @@ ipcMain.handle('export-pdf', async (event, data) => {
     }
 });
 
+// ========== New IPC Handlers for Backup System ==========
+
+// Print Excel - Export data to Excel file
+ipcMain.handle('print-excel', async (event, data) => {
+    try {
+        console.log('🖨️ Received print-excel request');
+        console.log('Data received:', data);
+        
+        // If data is a string, try to parse JSON
+        let printData;
+        if (typeof data === 'string') {
+            try {
+                printData = JSON.parse(data);
+            } catch (parseError) {
+                console.error('Failed to parse print data:', parseError);
+                return { success: false, error: 'Invalid JSON data' };
+            }
+        } else {
+            printData = data;
+        }
+
+        // Validate data
+        if (!printData || !printData.salespeople || !Array.isArray(printData.salespeople)) {
+            return { 
+                success: false, 
+                error: 'Invalid data format. Expected object with salespeople array.' 
+            };
+        }
+
+        console.log(`Printing ${printData.salespeople.length} salespeople`);
+        
+        // Create new workbook
+        const workbook = new ExcelJS.Workbook();
+        
+        // Create summary sheet
+        const summarySheet = workbook.addWorksheet('Summary');
+        
+        // Set up headers
+        const headers = ['Name', 'Target (RM)', 'Sales (RM)', 'Achievement %', 'Commission (RM)', 'Total Commission (RM)'];
+        summarySheet.getRow(1).values = headers;
+        
+        // Style header row
+        summarySheet.getRow(1).font = { bold: true };
+        summarySheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4F81BD' }
+        };
+        
+        // Add data rows
+        let rowNumber = 2;
+        printData.salespeople.forEach(person => {
+            const target = parseFloat(person.target) || 0;
+            const sales = parseFloat(person.sales) || 0;
+            const achievement = target > 0 ? (sales / target) * 100 : 0;
+            const commission = parseFloat(person.commission) || 0;
+            const totalCommission = parseFloat(person.totalCommission) || 0;
+            
+            summarySheet.getRow(rowNumber).values = [
+                person.name || 'Unknown',
+                target,
+                sales,
+                achievement,
+                commission,
+                totalCommission
+            ];
+            
+            rowNumber++;
+        });
+        
+        // Add totals row
+        const totalTarget = printData.salespeople.reduce((sum, p) => sum + (parseFloat(p.target) || 0), 0);
+        const totalSales = printData.salespeople.reduce((sum, p) => sum + (parseFloat(p.sales) || 0), 0);
+        const totalCommission = printData.salespeople.reduce((sum, p) => sum + (parseFloat(p.totalCommission) || 0), 0);
+        
+        summarySheet.getRow(rowNumber).values = [
+            'TOTAL',
+            totalTarget,
+            totalSales,
+            totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0,
+            '',
+            totalCommission
+        ];
+        
+        summarySheet.getRow(rowNumber).font = { bold: true };
+        summarySheet.getRow(rowNumber).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF2F2F2' }
+        };
+        
+        // Auto-size columns
+        summarySheet.columns.forEach(column => {
+            column.width = 15;
+        });
+        
+        // Save file
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: `Sales_Report_${new Date().getFullYear()}_${new Date().getMonth() + 1}.xlsx`,
+            filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+        });
+        
+        if (result.canceled) {
+            return { success: false, message: 'Cancelled by user' };
+        }
+        
+        await workbook.xlsx.writeFile(result.filePath);
+        return { success: true, path: result.filePath };
+        
+    } catch (error) {
+        console.error('❌ Error in print-excel:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Save JSON backup file
+ipcMain.handle('saveJSONFile', async (event, jsonString) => {
+    try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: `sales_calculator_backup_${new Date().toISOString().split('T')[0]}.json`,
+            filters: [{ name: 'JSON Files', extensions: ['json'] }]
+        });
+        
+        if (result.canceled) {
+            return { success: false, message: 'Cancelled' };
+        }
+        
+        await fs.writeFile(result.filePath, jsonString, 'utf-8');
+        return { success: true, path: result.filePath };
+    } catch (error) {
+        console.error('Save JSON error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Select JSON file for import
+ipcMain.handle('selectJSONFile', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'JSON Files', extensions: ['json'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+        return { success: true, path: result.filePaths[0] };
+    }
+    return { success: false };
+});
+
+// Load JSON file
+ipcMain.handle('loadJSONFile', async (event, filePath) => {
+    try {
+        const data = await fs.readFile(filePath, 'utf-8');
+        return { success: true, data: JSON.parse(data) };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Create auto backup
+ipcMain.handle('createAutoBackup', async (event, jsonString) => {
+    try {
+        const backupDir = path.join(app.getPath('userData'), 'backups');
+        
+        // Create backup directory if it doesn't exist
+        try {
+            await fs.access(backupDir);
+        } catch {
+            await fs.mkdir(backupDir, { recursive: true });
+        }
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(backupDir, `auto_backup_${timestamp}.json`);
+        await fs.writeFile(backupPath, jsonString, 'utf-8');
+        
+        // Clean up old backups (keep only last 10)
+        const files = await fs.readdir(backupDir);
+        const backupFiles = files.filter(f => f.startsWith('auto_backup_')).sort();
+        
+        if (backupFiles.length > 10) {
+            const filesToDelete = backupFiles.slice(0, backupFiles.length - 10);
+            for (const file of filesToDelete) {
+                await fs.unlink(path.join(backupDir, file));
+            }
+        }
+        
+        return { success: true, path: backupPath };
+    } catch (error) {
+        console.error('Auto backup error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Get latest backup
+ipcMain.handle('getLatestBackup', async () => {
+    try {
+        const backupDir = path.join(app.getPath('userData'), 'backups');
+        
+        // Check if backup directory exists
+        try {
+            await fs.access(backupDir);
+        } catch {
+            return { success: false, error: 'No backup directory found' };
+        }
+        
+        const files = await fs.readdir(backupDir);
+        const backupFiles = files.filter(f => f.startsWith('auto_backup_')).sort().reverse();
+        
+        if (backupFiles.length === 0) {
+            return { success: false, error: 'No backup files found' };
+        }
+        
+        const latestFile = backupFiles[0];
+        const filePath = path.join(backupDir, latestFile);
+        const data = await fs.readFile(filePath, 'utf-8');
+        
+        return { 
+            success: true, 
+            data: JSON.parse(data),
+            path: filePath,
+            timestamp: latestFile.replace('auto_backup_', '').replace('.json', '')
+        };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Get backup list
+ipcMain.handle('getBackupList', async () => {
+    try {
+        const backupDir = path.join(app.getPath('userData'), 'backups');
+        
+        // Check if backup directory exists
+        try {
+            await fs.access(backupDir);
+        } catch {
+            return { success: true, backups: [] };
+        }
+        
+        const files = await fs.readdir(backupDir);
+        const backupFiles = files.filter(f => f.startsWith('auto_backup_')).sort().reverse();
+        
+        const backups = [];
+        for (const file of backupFiles) {
+            try {
+                const filePath = path.join(backupDir, file);
+                const stats = await fs.stat(filePath);
+                const data = await fs.readFile(filePath, 'utf-8');
+                const jsonData = JSON.parse(data);
+                
+                backups.push({
+                    name: file,
+                    path: filePath,
+                    timestamp: jsonData.timestamp || file.replace('auto_backup_', '').replace('.json', ''),
+                    size: stats.size,
+                    salespeopleCount: jsonData.salespeopleCount || 0,
+                    reportCount: jsonData.reportCount || 0
+                });
+            } catch (error) {
+                console.error(`Error reading backup ${file}:`, error);
+            }
+        }
+        
+        return { success: true, backups };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Restore backup
+ipcMain.handle('restoreBackup', async (event, backupKey) => {
+    try {
+        const filePath = path.join(app.getPath('userData'), 'backups', backupKey);
+        const data = await fs.readFile(filePath, 'utf-8');
+        return { success: true, data: JSON.parse(data) };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Delete backup
+ipcMain.handle('deleteBackup', async (event, backupKey) => {
+    try {
+        const filePath = path.join(app.getPath('userData'), 'backups', backupKey);
+        await fs.unlink(filePath);
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Save backup file (for manual backup)
+ipcMain.handle('saveBackupFile', async (event, options) => {
+    try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: options.filename || `backup_${new Date().toISOString().split('T')[0]}.json`,
+            filters: [{ name: 'JSON Files', extensions: ['json'] }]
+        });
+        
+        if (result.canceled) {
+            return { success: false, message: 'Cancelled' };
+        }
+        
+        await fs.writeFile(result.filePath, options.data, 'utf-8');
+        return { success: true, path: result.filePath };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Read backup file
+ipcMain.handle('readBackupFile', async (event, filePath) => {
+    try {
+        const data = await fs.readFile(filePath, 'utf-8');
+        return { success: true, data };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
 // ========== Helper Functions ==========
 
 async function createSalarySheet(sheet, person, config, month, totalTeamSales = 0) {
-    // 确保 EPF 率正确
-    let epfRate = 0.11; // 默认 11%
+    // Ensure EPF rate is correct
+    let epfRate = 0.11; // Default 11%
     let epfSource = 'default 11%';
     
-    // 尝试从 config 获取 EPF 率
+    // Try to get EPF rate from config
     if (config && config.epfRate !== undefined) {
         epfRate = parseFloat(config.epfRate) || 0.11;
     }
     
-    // 尝试从 person.deductions 获取
+    // Try to get from person.deductions
     if (person.deductions && person.deductions.epfRate !== undefined) {
         epfRate = parseFloat(person.deductions.epfRate) || 0.11;
     }
@@ -362,9 +684,9 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     
     
     
-    // 方法1：从 config 中查找
+    // Method 1: Look for EPF rate from config
     if (config && typeof config === 'object') {
-        console.log('\n🔍 尝试从 config 中查找 EPF 费率:');
+        console.log('\n🔍 Trying to find EPF rate from config:');
         
         const possibleKeys = [
             'epfRate', 'EPFRate', 'epf_rate', 'EPF_RATE', 'epfRate', 'epfRate',
@@ -379,36 +701,36 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
                 if (!isNaN(value) && value > 0) {
                     epfRate = value;
                     epfSource = `config.${key} = ${value}`;
-                    console.log(`✅ 找到: ${key} = ${value} (${value * 100}%)`);
+                    console.log(`✅ Found: ${key} = ${value} (${value * 100}%)`);
                     break;
                 }
             }
         }
     }
     
-    // 方法2：从 person 对象中查找
+    // Method 2: Look for EPF rate from person object
     if (epfRate === 0.02) {
-        console.log('\n🔍 尝试从 person 中查找 EPF 费率:');
+        console.log('\n🔍 Trying to find EPF rate from person:');
         
-        // 检查 person.deductions
+        // Check person.deductions
         if (person.deductions && typeof person.deductions === 'object') {
             console.log('- person.deductions:', JSON.stringify(person.deductions, null, 2));
             
             if (person.deductions.epfRate !== undefined) {
                 epfRate = parseFloat(person.deductions.epfRate) || 0.02;
                 epfSource = `person.deductions.epfRate = ${epfRate}`;
-                console.log(`✅ 从 deductions.epfRate 找到: ${epfRate}`);
+                console.log(`✅ Found from deductions.epfRate: ${epfRate}`);
             }
             
-            // 检查百分比值
+            // Check percentage values
             for (const [key, value] of Object.entries(person.deductions)) {
                 if (typeof value === 'number' && value > 0 && value <= 1) {
-                    console.log(`- ${key}: ${value} (可能是费率)`);
+                    console.log(`- ${key}: ${value} (could be a rate)`);
                 }
             }
         }
         
-        // 检查 person 的其他属性
+        // Check other properties of person
         const personEpfKeys = Object.keys(person).filter(key => 
             key.toLowerCase().includes('epf') || 
             key.toLowerCase().includes('pf') ||
@@ -416,10 +738,10 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         );
         
         if (personEpfKeys.length > 0) {
-            console.log('- person 中的相关键:', personEpfKeys);
+            console.log('- Related keys in person:', personEpfKeys);
             personEpfKeys.forEach(key => {
                 const value = person[key];
-                console.log(`  - ${key}:`, value, `(类型: ${typeof value})`);
+                console.log(`  - ${key}:`, value, `(type: ${typeof value})`);
                 if (typeof value === 'number' && value > 0 && value <= 1) {
                     epfRate = value;
                     epfSource = `person.${key} = ${value}`;
@@ -428,7 +750,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         }
     }
     
-    // 从 config.deductionRates 读取该人的 EPF Rate
+    // Read EPF Rate from config.deductionRates for this person
     const nameUpper = (person.name || '').toUpperCase();
     if (config && config.deductionRates && config.deductionRates[nameUpper] && config.deductionRates[nameUpper].EPF_RATE !== undefined) {
         epfRate = parseFloat(config.deductionRates[nameUpper].EPF_RATE) / 100;
@@ -436,13 +758,13 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         console.log(`✅ EPF Rate: ${config.deductionRates[nameUpper].EPF_RATE}% → ${epfRate}`);
     }
     
-    console.log('\n📊 最终使用的 EPF 费率:');
-    console.log('- 值:', epfRate);
-    console.log('- 百分比:', epfRate * 100, '%');
-    console.log('- 来源:', epfSource);
+    console.log('\n📊 Final EPF rate used:');
+    console.log('- Value:', epfRate);
+    console.log('- Percentage:', epfRate * 100, '%');
+    console.log('- Source:', epfSource);
     // ========================================
     
-    // 继续原有的数据验证日志
+    // Continue with existing data validation logs
     console.log('\n\n========== 🔍 REAR-END: createSalarySheet DEBUG ==========');
     console.log('Person name:', person.name);
     console.log('Person salary:', person.salary, typeof person.salary);
@@ -457,7 +779,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         console.error('⚠️ WARNING: person.sales is LESS than person.commission! They might be swapped!');
     }
     
-    // 逐个检查allowances中的每一项
+    // Check each allowance item individually
     if (person.allowances) {
         console.log('\n--- Checking individual allowance values ---');
         console.log('HP:', person.allowances.HP, '(type:', typeof person.allowances.HP, ')');
@@ -469,18 +791,18 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         console.log('OTHERS:', person.allowances.OTHERS, '(type:', typeof person.allowances.OTHERS, ')');
     }
     
-    // 设置列宽
+    // Set column widths
     sheet.columns = [
         { width: 25 }, { width: 15 }, { width: 15 }, 
         { width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }
     ];
 
-    // ========== 计算各个单元格的值 ==========
+    // ========== Calculate cell values ==========
     
     // D4: SALARY
     const salary = person.salary || 0;
     
-    // D5-D12: 各项津贴
+    // D5-D12: Allowances
     const allowances = person.allowances || {};
     const allowanceVals = {
         HP: parseFloat(allowances.HP) || 0,                 // D5
@@ -502,32 +824,32 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         allowanceVals.FOOD + 
         allowanceVals.OTHERS;
     
-    // 计算个人销售额
+    // Calculate personal sales
     const personMonthlySales = parseFloat(person.sales) || 0;
 
-    // D17: 佣金 (COMMISSION AMOUNT)
+    // D17: Commission (COMMISSION AMOUNT)
     const commission = parseFloat(person.commission) || 0;
     
-    // D19: 收款激励 (COLLECTION)
+    // D19: Collection incentive
     const collectionIncentive = parseFloat(person.collectionIncentive) || 0;
     
-    // D20: 活跃电话激励 (ACTIVE CALL)
+    // D20: Active call incentive
     const activeCallIncentive = parseFloat(person.activeCallIncentive) || 0;
     
-    // D21: 季度奖金 (QUATERLY)
+    // D21: Quarterly bonus
     const quarterlyBonus = parseFloat(person.quarterlyBonus) || 0;
     
     // D23: TOTAL = D14 + D17 + D19 + D20 + D21
     const totalExtraIncome = totalFixedIncome + commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
     
-    // D25: EPF = D23 × EPF费率
+    // D25: EPF = D23 × EPF rate
     const epfAmount = totalExtraIncome * epfRate;
     const epfLabel = `EPF ${(epfRate * 100)}%`;
     
     // D27: GRAND TOTAL PAYABLE = D23 - D25
     const grandTotalPayable = totalExtraIncome - epfAmount;
 
-    console.log('\n📊 Excel 单元格计算值:');
+    console.log('\n📊 Excel cell calculations:');
     console.log('- D4 (SALARY):', salary);
     console.log('- D5 (HP):', allowanceVals.HP);
     console.log('- D6 (CAR):', allowanceVals.CAR);
@@ -543,15 +865,15 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     console.log('- D21 (QUATERLY):', quarterlyBonus);
     console.log('- D23 (TOTAL):', totalExtraIncome);
     console.log('- D23 (TOTAL):', totalExtraIncome);
-    console.log('- D25 (EPF):', epfAmount, `(费率: ${epfRate * 100}%) = ${totalExtraIncome} × ${epfRate}`);
+    console.log('- D25 (EPF):', epfAmount, `(rate: ${epfRate * 100}%) = ${totalExtraIncome} × ${epfRate}`);
     console.log('- D27 (GRAND TOTAL PAYABLE):', grandTotalPayable, `= ${totalExtraIncome} - ${epfAmount}`);
 
-    // 使用预定义样式
+    // Use predefined styles
     const headerStyle = styles.headerStyle;
     const sectionStyle = styles.subHeaderStyle;
     const totalStyle = styles.totalStyle;
 
-    // 辅助函数：应用样式
+    // Helper function: Apply styles
     function applyStyle(cell, styleObj) {
         try {
             if (styleObj && styleObj.fill && styleObj.fill.fgColor) {
@@ -580,7 +902,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         }
     }
 
-    // 第1行：月份
+    // Row 1: Month
     const monthCell = sheet.getCell('A1');
     monthCell.value = month.toUpperCase() + ' SALARY REPORT';
     monthCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
@@ -591,7 +913,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     };
     monthCell.alignment = { horizontal: 'center', vertical: 'middle' };
     
-    // 安全地合并单元格
+    // Safely merge cells
     try {
         sheet.mergeCells('A1:G1');
     } catch (err) {
@@ -599,12 +921,12 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     }
 
     const rows = [
-        // 第2-4行
+        // Rows 2-4
         { label: 'INCOME', type: 'header' },
         { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'INDV%', 'TEAM%'] },
         { label: 'SALARY', value: salary }, // D4
         
-        // 第5-13行
+        // Rows 5-13
         { label: 'ALLOWANCES', type: 'header' },
         { label: 'HP', value: allowanceVals.HP },        // D5
         { label: 'CAR', value: allowanceVals.CAR },      // D6
@@ -616,7 +938,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         { label: '', type: 'empty' },
         { label: 'TOTAL FIXED INCOME', value: totalFixedIncome, type: 'total' }, // D14
         
-        // 第15-24行
+        // Rows 15-24
         { label: '', type: 'empty' },
         { label: 'COMMISSION', type: 'header' },
         { label: 'COMMISSION AMOUNT', value: commission }, // D17
@@ -627,7 +949,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         { label: '', type: 'empty' },
         { label: 'TOTAL', value: totalExtraIncome, type: 'total' }, // D23
         
-        // 第25-27行
+        // Rows 25-27
         { label: '', type: 'empty' },
         { label: epfLabel, value: epfAmount, type: 'epf' }, // D25
         { label: '', type: 'empty' },
@@ -677,14 +999,14 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             }
         }
         
-        // 添加其他列的值
+        // Add other column values
         if (row.col4 !== undefined) {
             const cell4 = sheet.getCell(rowNum, 4);
             cell4.value = parseFloat(row.col4) || 0;
             cell4.numFmt = '#,##0.00';
         }
         
-        // 计算 INDV% = 该项金额 ÷ 个人销售额 × 100%
+        // Calculate INDV% = Amount ÷ Personal Sales × 100%
         if (row.value !== undefined && personMonthlySales > 0) {
             const cell5 = sheet.getCell(rowNum, 5);
             const indvPercent = (row.value / personMonthlySales) * 100;
@@ -697,7 +1019,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             cell5.numFmt = '0.00%';
         }
         
-        // 计算 TEAM% = 该项金额 ÷ 团队总销售额 × 100%
+        // Calculate TEAM% = Amount ÷ Team Total Sales × 100%
         if (row.value !== undefined && totalTeamSales > 0) {
             const cell6 = sheet.getCell(rowNum, 6);
             const teamPercent = (row.value / totalTeamSales) * 100;
@@ -714,29 +1036,29 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     }
     
     console.log('\n' + '='.repeat(60));
-    console.log(`✅ 完成创建工资表: ${person.name}`);
+    console.log(`✅ Completed salary sheet: ${person.name}`);
     console.log('='.repeat(60));
 }
 
 function getDefaultConfig() {
     return {
         base_salaries: {
-            // 用户可以在应用中添加
+            // Users can add in the app
         },
         allowances: {
-            // 用户可以在应用中添加
+            // Users can add in the app
         },
         deductions: {
-            // 自动生成
+            // Auto-generated
         },
         deductionRates: {
-            // 自动生成
+            // Auto-generated
         },
         earnings: {
-            // 自动生成
+            // Auto-generated
         },
         active_call_targets: {
-            // 每个销售员的 Active Call 月度目标
+            // Monthly active call targets per salesperson
         },
         reportHistory: [],
         monthly_commission_rates: [
@@ -761,8 +1083,8 @@ function getDefaultConfig() {
             { min: 90, incentive: 100, label: '90%-99%' },
             { min: 0, incentive: 0, label: '<90%' }
         ],
-        // 添加 EPF 费率配置
-        epfRate: 0.02  // 默认 2%
+        // Add EPF rate configuration
+        epfRate: 0.02  // Default 2%
     };
 }
 
@@ -771,13 +1093,13 @@ async function createGroupSummarySheet(sheet, salespeople, config, currentMonth)
     const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const currentIdx = months.indexOf((currentMonth || '').toUpperCase());
 
-    // 从 reportHistory 汇总每月数据
+    // Aggregate monthly data from reportHistory
     const monthlyData = {};
     months.forEach(m => {
         monthlyData[m] = { target: 0, sales: 0 };
     });
 
-    // 填入历史记录里的数据
+    // Fill in data from historical records
     if (config.reportHistory) {
         config.reportHistory.forEach(report => {
             const m = (report.month || '').toUpperCase();
@@ -790,7 +1112,7 @@ async function createGroupSummarySheet(sheet, salespeople, config, currentMonth)
         });
     }
 
-    // 当前月用传入的 salespeople 数据（覆盖历史）
+    // Current month uses the passed salespeople data (overwrites history)
     if (currentMonth && monthlyData[currentMonth.toUpperCase()]) {
         monthlyData[currentMonth.toUpperCase()].target = 0;
         monthlyData[currentMonth.toUpperCase()].sales = 0;
