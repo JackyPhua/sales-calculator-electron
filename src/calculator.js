@@ -190,6 +190,29 @@ function initQuickCalculate() {
     const monthSelect = document.getElementById('report-month');
     if (monthSelect) {
         monthSelect.value = currentMonth;
+
+        // When month changes, re-fill cards from imported Excel data or recalc locked fields
+        if (!monthSelect._hasAutoFillListener) {
+            monthSelect.addEventListener('change', function() {
+                const newMonth = this.value.toUpperCase();
+                console.log('📅 Month changed to', newMonth);
+
+                // If we have imported Excel data, refill cards for the new month
+                if (window.appState.importedExcelData && window.appState.importedExcelData.length > 0) {
+                    console.log('📂 Refilling cards from imported Excel data for', newMonth);
+                    fillCardsFromImportedData(newMonth);
+                } else {
+                    // No imported data — just recalculate locked fields (quarterly, collection)
+                    window.appState.salespeople.forEach((p, idx) => {
+                        if (p.name) {
+                            autoFillLockedFields(idx);
+                            updateSalespersonData(idx);
+                        }
+                    });
+                }
+            });
+            monthSelect._hasAutoFillListener = true;
+        }
     }
     
     const container = document.getElementById('salespeople-container');
@@ -750,6 +773,54 @@ function updateSalespersonData(index) {
     person.name = nameInput.value;
     person.target = parseFloat(targetInput.value) || 0;
     person.sales = parseFloat(salesInput.value) || 0;
+
+    // ── Re-calculate quarterly fields if quarter-end month ──
+    // (current month target/sales may have changed, so re-accumulate)
+    const _curMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
+    if (['MAR','JUN','SEP','DEC'].includes(_curMonth) && person.name) {
+        const _months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const _ci = _months.indexOf(_curMonth);
+        const _history = window.appState.config.reportHistory || [];
+        const _nameUpper = person.name.toUpperCase();
+
+        // Helper: get data from Excel first, then history
+        function _getData(monthName) {
+            // Try imported Excel data first
+            const exData = window.appState.importedExcelData;
+            if (exData) {
+                const personEx = exData.find(p => (p.name || '').toUpperCase() === _nameUpper);
+                if (personEx) {
+                    const md = personEx.months.find(m => m.month === monthName);
+                    if (md) return { target: parseFloat(md.target) || 0, sales: parseFloat(md.sales) || 0 };
+                }
+            }
+            // Fallback to history
+            const entries = _history.filter(r => (r.month || '').toUpperCase() === monthName);
+            if (entries.length > 0) {
+                const pd = (entries[entries.length - 1].data || []).find(p => (p.name || '').toUpperCase() === _nameUpper);
+                if (pd) return { target: parseFloat(pd.target) || 0, sales: parseFloat(pd.sales) || 0 };
+            }
+            return null;
+        }
+
+        let _qT = 0, _qS = 0;
+        for (let mi = _ci - 2; mi <= _ci; mi++) {
+            if (mi < 0) continue;
+            const qm = _months[mi];
+            if (qm === _curMonth) {
+                _qT += person.target;
+                _qS += person.sales;
+            } else {
+                const d = _getData(qm);
+                if (d) { _qT += d.target; _qS += d.sales; }
+            }
+        }
+        const _qtEl = document.getElementById('quarterly-target-' + index);
+        const _qsEl = document.getElementById('quarterly-sales-' + index);
+        if (_qtEl) { _qtEl.value = _qT || ''; person.quarterlyTarget = _qT; }
+        if (_qsEl) { _qsEl.value = _qS || ''; person.quarterlySales = _qS; }
+    }
+
     person.quarterlyTarget = parseFloat(document.getElementById(`quarterly-target-${index}`).value) || 0;
     person.quarterlySales = parseFloat(document.getElementById(`quarterly-sales-${index}`).value) || 0;
     person.collectionTarget = parseFloat(document.getElementById(`collection-target-${index}`).value) || 0;
@@ -2112,43 +2183,101 @@ function addQuickRecoveryButton() {
 function autoFillLockedFields(index) {
     const person = window.appState.salespeople[index];
     if (!person) return;
-    const nameUpper = person.name.toUpperCase();
+    const nameUpper = (person.name || '').toUpperCase();
+    if (!nameUpper) return;
     const month = (document.getElementById('report-month')?.value || '').toUpperCase();
     const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const qTarget = window.appState.config.quarterly_targets?.[nameUpper] || 0;
-    const qEl = document.getElementById('quarterly-target-' + index);
-    if (qEl) {
-        qEl.value = qTarget;
-        qEl.readOnly = true;
-        qEl.style.backgroundColor = '#f3f4f6';
-        qEl.title = 'Set in Salary & Allowances tab';
-        person.quarterlyTarget = qTarget;
-    }
     const currentIdx = months.indexOf(month);
+    const history = window.appState.config.reportHistory || [];
+
+    // ── Helper: find from imported Excel data ──
+    function getExcelData(monthName) {
+        const exData = window.appState.importedExcelData;
+        if (!exData) return null;
+        const personEx = exData.find(p => (p.name || '').toUpperCase() === nameUpper);
+        if (!personEx) return null;
+        return personEx.months.find(m => m.month === monthName) || null;
+    }
+
+    // ── Helper: find from reportHistory ──
+    function getHistoryData(monthName) {
+        const entries = history.filter(r => (r.month || '').toUpperCase() === monthName);
+        if (entries.length === 0) return null;
+        const latest = entries[entries.length - 1];
+        return (latest.data || []).find(p => (p.name || '').toUpperCase() === nameUpper) || null;
+    }
+
+    // ── Helper: get data from Excel first, then history ──
+    function getData(monthName) {
+        const exd = getExcelData(monthName);
+        if (exd) return { target: parseFloat(exd.target) || 0, sales: parseFloat(exd.sales) || 0, source: 'excel' };
+        const hd = getHistoryData(monthName);
+        if (hd) return { target: parseFloat(hd.target) || 0, sales: parseFloat(hd.sales) || 0, source: 'history' };
+        return null;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // Quarterly Target / Sales — auto-accumulate 3 months
+    // ══════════════════════════════════════════════════════
+    const quarterEndMonths = ['MAR','JUN','SEP','DEC'];
+    const isQuarterEnd = quarterEndMonths.includes(month);
+    const qTargetEl = document.getElementById('quarterly-target-' + index);
+    const qSalesEl = document.getElementById('quarterly-sales-' + index);
+
+    if (isQuarterEnd && currentIdx >= 0) {
+        const qStartIdx = currentIdx - 2;
+        const qMonths = [months[qStartIdx], months[qStartIdx + 1], months[qStartIdx + 2]];
+        let qTarget = 0, qSales = 0;
+        const details = [];
+
+        for (const qm of qMonths) {
+            if (qm === month) {
+                const curTarget = parseFloat(document.getElementById('target-' + index)?.value) || 0;
+                const curSales = parseFloat(document.getElementById('sales-' + index)?.value) || 0;
+                qTarget += curTarget;
+                qSales += curSales;
+                details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current)');
+            } else {
+                const d = getData(qm);
+                if (d) {
+                    qTarget += d.target;
+                    qSales += d.sales;
+                    details.push(qm + ': T=' + d.target.toLocaleString() + ' S=' + d.sales.toLocaleString() + ' (' + d.source + ')');
+                } else {
+                    details.push(qm + ': No data');
+                }
+            }
+        }
+
+        const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
+        if (qTargetEl) { qTargetEl.value = qTarget || ''; qTargetEl.readOnly = true; qTargetEl.style.backgroundColor = '#f0fdf4'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
+        if (qSalesEl) { qSalesEl.value = qSales || ''; qSalesEl.readOnly = true; qSalesEl.style.backgroundColor = '#f0fdf4'; qSalesEl.title = tooltip; person.quarterlySales = qSales; }
+        console.log(`📊 Quarterly auto-fill for ${nameUpper} (${month}):`, details);
+    } else {
+        if (qTargetEl) { qTargetEl.value = ''; qTargetEl.readOnly = false; qTargetEl.style.backgroundColor = ''; qTargetEl.title = 'Quarterly bonus only applies in MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
+        if (qSalesEl) { qSalesEl.value = ''; qSalesEl.readOnly = false; qSalesEl.style.backgroundColor = ''; qSalesEl.title = 'Quarterly bonus only applies in MAR/JUN/SEP/DEC'; person.quarterlySales = 0; }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // Collection Target — auto from 2 months ago sales
+    // ══════════════════════════════════════════════════════
     let collTarget = 0, collLabel = '';
     if (currentIdx >= 0) {
-        let twoMonthsAgo, twoMonthsYear = new Date().getFullYear();
+        let twoMonthsAgo;
         if (currentIdx >= 2) { twoMonthsAgo = months[currentIdx - 2]; }
-        else if (currentIdx === 1) { twoMonthsAgo = months[11]; twoMonthsYear--; }
-        else { twoMonthsAgo = months[10]; twoMonthsYear--; }
-        const history = window.appState.config.reportHistory || [];
-        const histEntry = history.find(r => r.month?.toUpperCase() === twoMonthsAgo) ;
-        if (histEntry) {
-            const personHist = (histEntry.data || []).find(p => p.name?.toUpperCase() === nameUpper);
-            if (personHist) {
-                collTarget = parseFloat(personHist.sales) || 0;
-                collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString();
-            } else { collLabel = 'No ' + twoMonthsAgo + ' data for ' + nameUpper; }
-        } else { collLabel = 'No history for ' + twoMonthsAgo; }
+        else if (currentIdx === 1) { twoMonthsAgo = months[11]; }
+        else { twoMonthsAgo = months[10]; }
+
+        const d = getData(twoMonthsAgo);
+        if (d) {
+            collTarget = d.sales;
+            collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString() + ' (' + d.source + ')';
+        } else {
+            collLabel = 'No data for ' + twoMonthsAgo;
+        }
     }
     const cEl = document.getElementById('collection-target-' + index);
-    if (cEl) {
-        cEl.value = collTarget || '';
-        cEl.readOnly = true;
-        cEl.style.backgroundColor = '#f3f4f6';
-        cEl.title = collLabel;
-        person.collectionTarget = collTarget;
-    }
+    if (cEl) { cEl.value = collTarget || ''; cEl.readOnly = true; cEl.style.backgroundColor = '#f3f4f6'; cEl.title = collLabel; person.collectionTarget = collTarget; }
 }
 
 // Import Excel
@@ -2173,72 +2302,190 @@ async function importFromExcel() {
             return;
         }
 
+        // ── Store full imported Excel data for month-switching ──
+        window.appState.importedExcelData = data;
+        console.log('📂 Stored imported Excel data:', data.length, 'people,', 
+            data.map(p => p.name + '(' + p.months.length + ' months)').join(', '));
+
         // 3. Find current selected month
         const currentMonth = document.getElementById('report-month')
             ? document.getElementById('report-month').value.toUpperCase()
             : '';
 
-        // 4. Clear existing cards
-        const container = document.getElementById('salespeople-container');
-        if (container) container.innerHTML = '';
-        window.appState.salespeople = [];
-
-        // 5. Create cards for each person and fill data
-        let loaded = 0;
-        data.forEach(person => {
-            // Find this person's current month data
-            const monthData = person.months.find(m => m.month === currentMonth);
-            if (!monthData && !person.months.length) return;
-
-            const md = monthData || person.months[person.months.length - 1];
-
-            // Add card
-            addSalespersonCard();
-            const idx = window.appState.salespeople.length - 1;
-
-            // Fill name
-            const nameEl = document.getElementById('name-' + idx);
-            if (nameEl) {
-                // Find matching option
-                const option = Array.from(nameEl.options).find(o => o.value.toUpperCase() === person.name.toUpperCase());
-                if (option) {
-                    nameEl.value = option.value;
-                } else {
-                    // This person is not configured, add a temporary option
-                    const opt = document.createElement('option');
-                    opt.value = person.name;
-                    opt.text = person.name;
-                    nameEl.appendChild(opt);
-                    nameEl.value = person.name;
-                }
-                // Trigger name change, automatically fill quarterly target and collection target
-                if (typeof autoFillLockedFields === 'function') autoFillLockedFields(idx);
-            }
-
-            // Fill target and sales
-            const targetEl = document.getElementById('target-' + idx);
-            const salesEl = document.getElementById('sales-' + idx);
-            const collAmtEl = document.getElementById('collection-amount-' + idx);
-
-            if (targetEl) { targetEl.value = md.target || ''; targetEl.readOnly = false; targetEl.style.backgroundColor = ''; }
-            if (salesEl) { salesEl.value = md.sales || ''; salesEl.readOnly = false; salesEl.style.backgroundColor = ''; }
-            if (collAmtEl && md.collection) collAmtEl.value = md.collection;
-
-            // Update calculation
-            updateSalespersonData(idx);
-            loaded++;
-        });
-
-        if (loaded > 0) {
-            showToast('✅', `Imported ${loaded} salespeople for ${currentMonth}`);
-        } else {
-            showToast('⚠️', `No data found for ${currentMonth}`);
-        }
+        // 4. Fill cards for the selected month
+        fillCardsFromImportedData(currentMonth);
 
     } catch (e) {
         showToast('❌', 'Error: ' + e.message);
         console.error('Import error:', e);
     }
+}
+
+// ── Fill cards from stored imported Excel data for a given month ──
+function fillCardsFromImportedData(targetMonth) {
+    const data = window.appState.importedExcelData;
+    if (!data || data.length === 0) return;
+
+    const currentMonth = targetMonth.toUpperCase();
+
+    // Clear existing cards
+    const container = document.getElementById('salespeople-container');
+    if (container) container.innerHTML = '';
+    window.appState.salespeople = [];
+
+    // Create cards for each person and fill data
+    let loaded = 0;
+    data.forEach(person => {
+        // Find this person's data for the target month
+        const monthData = person.months.find(m => m.month === currentMonth);
+        if (!monthData && !person.months.length) return;
+
+        const md = monthData || person.months[person.months.length - 1];
+
+        // Add card
+        addSalespersonCard();
+        const idx = window.appState.salespeople.length - 1;
+
+        // Fill name
+        const nameEl = document.getElementById('name-' + idx);
+        if (nameEl) {
+            // Find matching option
+            const option = Array.from(nameEl.options).find(o => o.value.toUpperCase() === person.name.toUpperCase());
+            if (option) {
+                nameEl.value = option.value;
+            } else {
+                // This person is not configured, add a temporary option
+                const opt = document.createElement('option');
+                opt.value = person.name;
+                opt.text = person.name;
+                nameEl.appendChild(opt);
+                nameEl.value = person.name;
+            }
+        }
+
+        // Fill target, sales, collection from Excel data
+        const targetEl = document.getElementById('target-' + idx);
+        const salesEl = document.getElementById('sales-' + idx);
+        const collAmtEl = document.getElementById('collection-amount-' + idx);
+
+        if (targetEl) { targetEl.value = md.target || ''; targetEl.readOnly = false; targetEl.style.backgroundColor = ''; }
+        if (salesEl) { salesEl.value = md.sales || ''; salesEl.readOnly = false; salesEl.style.backgroundColor = ''; }
+        if (collAmtEl && md.collection) collAmtEl.value = md.collection;
+
+        // ── Auto-fill quarterly from imported Excel data (not just history) ──
+        autoFillLockedFieldsWithExcel(idx, person.months, currentMonth);
+
+        // Update calculation
+        updateSalespersonData(idx);
+        loaded++;
+    });
+
+    if (loaded > 0) {
+        showToast('✅', `Imported ${loaded} salespeople for ${currentMonth}`);
+    } else {
+        showToast('⚠️', `No data found for ${currentMonth}`);
+    }
+}
+
+// ── Auto-fill quarterly fields using imported Excel data + history ──
+function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
+    const person = window.appState.salespeople[index];
+    if (!person) return;
+    const nameUpper = (person.name || '').toUpperCase();
+    const month = currentMonth.toUpperCase();
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const currentIdx = months.indexOf(month);
+    const history = window.appState.config.reportHistory || [];
+
+    // Helper: find from reportHistory
+    function getHistoryData(monthName) {
+        const entries = history.filter(r => (r.month || '').toUpperCase() === monthName);
+        if (entries.length === 0) return null;
+        return (entries[entries.length - 1].data || []).find(p => (p.name || '').toUpperCase() === nameUpper) || null;
+    }
+
+    // Helper: find from imported Excel data
+    function getExcelData(monthName) {
+        if (!excelMonths) return null;
+        return excelMonths.find(m => m.month === monthName) || null;
+    }
+
+    // ── Quarterly Target/Sales ──
+    const quarterEndMonths = ['MAR','JUN','SEP','DEC'];
+    const isQuarterEnd = quarterEndMonths.includes(month);
+    const qTargetEl = document.getElementById('quarterly-target-' + index);
+    const qSalesEl = document.getElementById('quarterly-sales-' + index);
+
+    if (isQuarterEnd && currentIdx >= 0) {
+        const qStartIdx = currentIdx - 2;
+        const qMonths = [months[qStartIdx], months[qStartIdx + 1], months[qStartIdx + 2]];
+        let qTarget = 0, qSales = 0;
+        const details = [];
+
+        for (const qm of qMonths) {
+            if (qm === month) {
+                // Current month: from card inputs
+                const curTarget = parseFloat(document.getElementById('target-' + index)?.value) || 0;
+                const curSales = parseFloat(document.getElementById('sales-' + index)?.value) || 0;
+                qTarget += curTarget;
+                qSales += curSales;
+                details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current)');
+            } else {
+                // Previous months: try Excel data first, then history
+                const exd = getExcelData(qm);
+                if (exd) {
+                    const et = parseFloat(exd.target) || 0;
+                    const es = parseFloat(exd.sales) || 0;
+                    qTarget += et;
+                    qSales += es;
+                    details.push(qm + ': T=' + et.toLocaleString() + ' S=' + es.toLocaleString() + ' (excel)');
+                } else {
+                    const hd = getHistoryData(qm);
+                    if (hd) {
+                        const ht = parseFloat(hd.target) || 0;
+                        const hs = parseFloat(hd.sales) || 0;
+                        qTarget += ht;
+                        qSales += hs;
+                        details.push(qm + ': T=' + ht.toLocaleString() + ' S=' + hs.toLocaleString() + ' (history)');
+                    } else {
+                        details.push(qm + ': No data');
+                    }
+                }
+            }
+        }
+
+        const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
+        if (qTargetEl) { qTargetEl.value = qTarget || ''; qTargetEl.readOnly = true; qTargetEl.style.backgroundColor = '#f0fdf4'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
+        if (qSalesEl) { qSalesEl.value = qSales || ''; qSalesEl.readOnly = true; qSalesEl.style.backgroundColor = '#f0fdf4'; qSalesEl.title = tooltip; person.quarterlySales = qSales; }
+    } else {
+        if (qTargetEl) { qTargetEl.value = ''; qTargetEl.readOnly = false; qTargetEl.style.backgroundColor = ''; qTargetEl.title = 'Quarterly bonus only in MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
+        if (qSalesEl) { qSalesEl.value = ''; qSalesEl.readOnly = false; qSalesEl.style.backgroundColor = ''; qSalesEl.title = 'Quarterly bonus only in MAR/JUN/SEP/DEC'; person.quarterlySales = 0; }
+    }
+
+    // ── Collection Target — from 2 months ago (try Excel first, then history) ──
+    let collTarget = 0, collLabel = '';
+    if (currentIdx >= 0) {
+        let twoMonthsAgo;
+        if (currentIdx >= 2) { twoMonthsAgo = months[currentIdx - 2]; }
+        else if (currentIdx === 1) { twoMonthsAgo = months[11]; }
+        else { twoMonthsAgo = months[10]; }
+
+        const exd = getExcelData(twoMonthsAgo);
+        if (exd) {
+            collTarget = parseFloat(exd.sales) || 0;
+            collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString() + ' (excel)';
+        } else {
+            const personHist = getHistoryData(twoMonthsAgo);
+            if (personHist) {
+                collTarget = parseFloat(personHist.sales) || 0;
+                collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString() + ' (history)';
+            } else {
+                collLabel = 'No data for ' + twoMonthsAgo;
+            }
+        }
+    }
+    const cEl = document.getElementById('collection-target-' + index);
+    if (cEl) { cEl.value = collTarget || ''; cEl.readOnly = true; cEl.style.backgroundColor = '#f3f4f6'; cEl.title = collLabel; person.collectionTarget = collTarget; }
 }
 
 // Salary & Allowances update functions
@@ -2402,6 +2649,10 @@ window.quickRecovery = quickRecovery;
 window.selectBackup = selectBackup;
 window.closeBackupModal = closeBackupModal;
 window.restoreSelectedBackup = restoreSelectedBackup;
+
+// Import/month-switch functions
+window.fillCardsFromImportedData = fillCardsFromImportedData;
+window.autoFillLockedFieldsWithExcel = autoFillLockedFieldsWithExcel;
 
 // Initialize after DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
