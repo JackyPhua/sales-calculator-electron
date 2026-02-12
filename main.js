@@ -944,25 +944,61 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         const rowNum = idx + 2;
         const target = parseFloat(person.target) || 0;
         const sales = parseFloat(person.sales) || 0;
-        const achievement = target > 0 ? sales / target : 0;
+        const achievement = target > 0 ? (sales / target) * 100 : 0;
         const comm = parseFloat(person.commission) || 0;
         const qtr = parseFloat(person.quarterlyBonus) || 0;
         const coll = parseFloat(person.collectionIncentive) || 0;
         const call = parseFloat(person.activeCallIncentive) || 0;
         const total = comm + qtr + coll + call;
 
+        // Col 1: Name
         sheet.getCell(rowNum, 1).value = person.name;
+        // Col 2: Target
         sheet.getCell(rowNum, 2).value = target;
+        // Col 3: Sales
         sheet.getCell(rowNum, 3).value = sales;
-        sheet.getCell(rowNum, 4).value = achievement > 0 ? achievement : '';
+        // Col 4: Achievement %
+        sheet.getCell(rowNum, 4).value = achievement > 0 ? achievement / 100 : '';
+
+        // Col 5-8: Commission placed in the correct tier column
+        // Col 5 = 80%-89%, Col 6 = 90%-100%, Col 7 = 100%-104%, Col 8 = 106%+
+        sheet.getCell(rowNum, 5).value = '';
+        sheet.getCell(rowNum, 6).value = '';
+        sheet.getCell(rowNum, 7).value = '';
+        sheet.getCell(rowNum, 8).value = '';
+        if (comm > 0) {
+            if (achievement >= 106) {
+                sheet.getCell(rowNum, 8).value = comm;
+            } else if (achievement >= 100) {
+                sheet.getCell(rowNum, 7).value = comm;
+            } else if (achievement >= 90) {
+                sheet.getCell(rowNum, 6).value = comm;
+            } else if (achievement >= 80) {
+                sheet.getCell(rowNum, 5).value = comm;
+            }
+        }
+
+        // Col 9: Quarterly Incentive
+        sheet.getCell(rowNum, 9).value = qtr || '';
+        // Col 10: Collection Incentive
+        sheet.getCell(rowNum, 10).value = coll || '';
+        // Col 11: Active Call Incentive
+        sheet.getCell(rowNum, 11).value = call || '';
+        // Col 12: Total
         sheet.getCell(rowNum, 12).value = total;
         
-        for (let col = 2; col <= 12; col++) {
+        // Apply formatting and borders
+        for (let col = 1; col <= 12; col++) {
+            const cell = sheet.getCell(rowNum, col);
             if (col === 4) {
-                sheet.getCell(rowNum, col).numFmt = '0.00%';
-            } else if (col >= 2 && col <= 12 && col !== 4) {
-                sheet.getCell(rowNum, col).numFmt = '#,##0.00';
+                cell.numFmt = '0.00%';
+            } else if (col >= 2) {
+                cell.numFmt = '#,##0.00';
             }
+            cell.border = {
+                top: {style:'thin'}, bottom: {style:'thin'},
+                left: {style:'thin'}, right: {style:'thin'}
+            };
         }
     });
 }

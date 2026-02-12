@@ -482,6 +482,9 @@ function _doClearAllData() {
     // Reset state
     window.appState.salespeople = [];
 
+    // Clear imported Excel data so new cards are fully editable
+    window.appState.importedExcelData = null;
+
     // Completely replace the container to avoid any stale DOM/event issues
     const oldContainer = document.getElementById('salespeople-container');
     if (oldContainer) {
