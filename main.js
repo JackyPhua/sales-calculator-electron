@@ -191,7 +191,7 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
     
     try {
         const result = await dialog.showSaveDialog(mainWindow, {
-            defaultPath: `Commission_Report_${data.month || 'ALL'}_${new Date().getFullYear()}.xlsx`,
+            defaultPath: data.suggestedFilename || `Commission_Report_${data.month || 'ALL'}_${new Date().getFullYear()}.xlsx`,
             filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
         });
 
@@ -231,6 +231,352 @@ ipcMain.handle('generate-salary-template', async (event, data) => {
         };
     } catch (error) {
         console.error('❌ Error generating template:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// ── Batch Summary Excel (all months combined in one file) ──
+ipcMain.handle('generate-batch-summary', async (event, data) => {
+    try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: data.suggestedFilename || `Commission_Summary_${new Date().getFullYear()}.xlsx`,
+            filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+        });
+
+        if (result.canceled) {
+            return { success: false, message: 'Cancelled' };
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const monthsData = data.monthsData; // [{month, salespeople}, ...]
+
+        const headerStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' } },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } },
+            alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+            border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+        };
+        const totalStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' } },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } },
+            border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+        };
+        const monthHeaderStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF365F91' } },
+            alignment: { horizontal: 'center', vertical: 'middle' },
+            border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+        };
+        const dataBorder = { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} };
+
+        // ── Sheet 1: Commission Summary (all months stacked) ──
+        const summarySheet = workbook.addWorksheet('Commission Summary');
+        const colWidths = [14, 14, 14, 10, 12, 12, 12, 12, 16, 20, 20, 14];
+        colWidths.forEach((w, i) => { summarySheet.getColumn(i + 1).width = w; });
+
+        const headers = ['TARGET', 'SALES ACH', '', '80%-89%', '90%-100%', '100%-104%', '106% Above',
+                         'QTR INCENTIVE', 'COLLECTION INCENTIVE', 'ACTIVE CALL INCENTIVE', 'TOTAL'];
+
+        let row = 1;
+        let grandTarget = 0, grandSales = 0, grandComm = 0, grandQtr = 0, grandColl = 0, grandCall = 0, grandTotal = 0;
+
+        monthsData.forEach(md => {
+            const month = (md.month || '').toUpperCase();
+            const people = md.salespeople || [];
+
+            // Month header row
+            summarySheet.mergeCells(row, 1, row, 12);
+            summarySheet.getCell(row, 1).value = `── ${month} ──`;
+            Object.assign(summarySheet.getCell(row, 1), monthHeaderStyle);
+            summarySheet.getRow(row).height = 28;
+            row++;
+
+            // Column headers
+            summarySheet.getCell(row, 1).value = month;
+            Object.assign(summarySheet.getCell(row, 1), headerStyle);
+            headers.forEach((h, i) => {
+                const cell = summarySheet.getCell(row, i + 2);
+                cell.value = h;
+                Object.assign(cell, headerStyle);
+            });
+            summarySheet.getRow(row).height = 26;
+            row++;
+
+            let mTarget = 0, mSales = 0, mCol5 = 0, mCol6 = 0, mCol7 = 0, mCol8 = 0, mQtr = 0, mColl = 0, mCall = 0, mTotal = 0;
+
+            people.forEach(person => {
+                const target = parseFloat(person.target) || 0;
+                const sales = parseFloat(person.sales) || 0;
+                const achievement = target > 0 ? (sales / target) * 100 : 0;
+                const comm = parseFloat(person.commission) || 0;
+                const qtr = parseFloat(person.quarterlyBonus) || 0;
+                const coll = parseFloat(person.collectionIncentive) || 0;
+                const call = parseFloat(person.activeCallIncentive) || 0;
+                const total = comm + qtr + coll + call;
+
+                summarySheet.getCell(row, 1).value = person.name;
+                summarySheet.getCell(row, 2).value = target;
+                summarySheet.getCell(row, 3).value = sales;
+                summarySheet.getCell(row, 4).value = achievement > 0 ? achievement / 100 : '';
+
+                summarySheet.getCell(row, 5).value = '';
+                summarySheet.getCell(row, 6).value = '';
+                summarySheet.getCell(row, 7).value = '';
+                summarySheet.getCell(row, 8).value = '';
+                if (comm > 0) {
+                    if (achievement >= 106) summarySheet.getCell(row, 8).value = comm;
+                    else if (achievement >= 100) summarySheet.getCell(row, 7).value = comm;
+                    else if (achievement >= 90) summarySheet.getCell(row, 6).value = comm;
+                    else if (achievement >= 80) summarySheet.getCell(row, 5).value = comm;
+                }
+                summarySheet.getCell(row, 9).value = qtr || '';
+                summarySheet.getCell(row, 10).value = coll || '';
+                summarySheet.getCell(row, 11).value = call || '';
+                summarySheet.getCell(row, 12).value = total;
+
+                for (let col = 1; col <= 12; col++) {
+                    const cell = summarySheet.getCell(row, col);
+                    if (col === 4) cell.numFmt = '0.00%';
+                    else if (col >= 2) cell.numFmt = '#,##0.00';
+                    cell.border = dataBorder;
+                }
+
+                mTarget += target; mSales += sales;
+                if (comm > 0) {
+                    if (achievement >= 106) mCol8 += comm;
+                    else if (achievement >= 100) mCol7 += comm;
+                    else if (achievement >= 90) mCol6 += comm;
+                    else if (achievement >= 80) mCol5 += comm;
+                }
+                mQtr += qtr; mColl += coll; mCall += call; mTotal += total;
+                row++;
+            });
+
+            // Monthly total row
+            summarySheet.getCell(row, 1).value = `${month} TOTAL`;
+            summarySheet.getCell(row, 2).value = mTarget;
+            summarySheet.getCell(row, 3).value = mSales;
+            summarySheet.getCell(row, 4).value = mTarget > 0 ? mSales / mTarget : '';
+            summarySheet.getCell(row, 5).value = mCol5 || '';
+            summarySheet.getCell(row, 6).value = mCol6 || '';
+            summarySheet.getCell(row, 7).value = mCol7 || '';
+            summarySheet.getCell(row, 8).value = mCol8 || '';
+            summarySheet.getCell(row, 9).value = mQtr || '';
+            summarySheet.getCell(row, 10).value = mColl || '';
+            summarySheet.getCell(row, 11).value = mCall || '';
+            summarySheet.getCell(row, 12).value = mTotal;
+            for (let col = 1; col <= 12; col++) {
+                const cell = summarySheet.getCell(row, col);
+                Object.assign(cell, totalStyle);
+                if (col === 4) cell.numFmt = '0.00%';
+                else if (col >= 2) cell.numFmt = '#,##0.00';
+            }
+            row++;
+
+            grandTarget += mTarget; grandSales += mSales;
+            grandComm += mCol5 + mCol6 + mCol7 + mCol8;
+            grandQtr += mQtr; grandColl += mColl; grandCall += mCall; grandTotal += mTotal;
+
+            // Blank row between months
+            row++;
+        });
+
+        // ── GRAND TOTAL row ──
+        const grandTotalStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B3A5C' } },
+            border: { top: {style:'medium'}, bottom: {style:'medium'}, left: {style:'medium'}, right: {style:'medium'} }
+        };
+        summarySheet.getCell(row, 1).value = 'GRAND TOTAL';
+        summarySheet.getCell(row, 2).value = grandTarget;
+        summarySheet.getCell(row, 3).value = grandSales;
+        summarySheet.getCell(row, 4).value = grandTarget > 0 ? grandSales / grandTarget : '';
+        summarySheet.getCell(row, 12).value = grandTotal;
+        for (let col = 1; col <= 12; col++) {
+            const cell = summarySheet.getCell(row, col);
+            Object.assign(cell, grandTotalStyle);
+            if (col === 4) cell.numFmt = '0.00%';
+            else if (col >= 2) cell.numFmt = '#,##0.00';
+        }
+        summarySheet.getRow(row).height = 30;
+
+        // ── Sheet 2: Per-Person Summary (each person's totals across months) ──
+        const personSheet = workbook.addWorksheet('Per-Person Summary');
+        const months = monthsData.map(m => (m.month || '').toUpperCase());
+        const personNames = [...new Set(monthsData.flatMap(m => (m.salespeople || []).map(p => p.name)))];
+
+        // Per month: Target, Sales, Comm, Qtr, Coll, Call, Total = 7 cols
+        // Grand Total: Target, Sales, Comm, Qtr, Coll, Call, Total = 7 cols
+        // Then: Comm%, Team%
+        const perMonthCols = 7;
+        const subHeaders = ['Target', 'Sales', 'Comm', 'Qtr', 'Coll', 'Call', 'Total'];
+
+        const pColWidths = [14];
+        months.forEach(() => { pColWidths.push(12, 12, 12, 12, 12, 12, 14); });
+        pColWidths.push(14, 14, 14, 14, 14, 14, 16); // Grand total
+        pColWidths.push(14, 14); // % columns
+        pColWidths.forEach((w, i) => { personSheet.getColumn(i + 1).width = w; });
+
+        // Row 1: Month group headers
+        let pCol = 2;
+        months.forEach(m => {
+            personSheet.mergeCells(1, pCol, 1, pCol + perMonthCols - 1);
+            personSheet.getCell(1, pCol).value = m;
+            Object.assign(personSheet.getCell(1, pCol), headerStyle);
+            pCol += perMonthCols;
+        });
+        const grandStartCol = pCol;
+        personSheet.mergeCells(1, pCol, 1, pCol + perMonthCols - 1);
+        personSheet.getCell(1, pCol).value = 'GRAND TOTAL';
+        Object.assign(personSheet.getCell(1, pCol), grandTotalStyle);
+        const pctStartCol = pCol + perMonthCols;
+
+        personSheet.getCell(1, pctStartCol).value = 'Comm %';
+        Object.assign(personSheet.getCell(1, pctStartCol), headerStyle);
+        personSheet.getCell(1, pctStartCol + 1).value = 'Team %';
+        Object.assign(personSheet.getCell(1, pctStartCol + 1), headerStyle);
+
+        personSheet.getCell(1, 1).value = 'Name';
+        Object.assign(personSheet.getCell(1, 1), headerStyle);
+
+        // Row 2: Sub-headers
+        pCol = 2;
+        months.forEach(() => {
+            subHeaders.forEach((h, hi) => {
+                personSheet.getCell(2, pCol + hi).value = h;
+                Object.assign(personSheet.getCell(2, pCol + hi), headerStyle);
+            });
+            pCol += perMonthCols;
+        });
+        subHeaders.forEach((h, hi) => {
+            personSheet.getCell(2, grandStartCol + hi).value = h;
+            Object.assign(personSheet.getCell(2, grandStartCol + hi), grandTotalStyle);
+        });
+        personSheet.getCell(2, pctStartCol).value = 'of Sales';
+        Object.assign(personSheet.getCell(2, pctStartCol), headerStyle);
+        personSheet.getCell(2, pctStartCol + 1).value = 'of Team';
+        Object.assign(personSheet.getCell(2, pctStartCol + 1), headerStyle);
+
+        personSheet.getRow(1).height = 26;
+        personSheet.getRow(2).height = 22;
+
+        // Pre-calculate team totals across all months
+        let teamTotalSales = 0, teamTotalComm = 0;
+        monthsData.forEach(md => {
+            (md.salespeople || []).forEach(p => {
+                teamTotalSales += parseFloat(p.sales) || 0;
+                teamTotalComm += (parseFloat(p.commission) || 0) + (parseFloat(p.quarterlyBonus) || 0) + (parseFloat(p.collectionIncentive) || 0) + (parseFloat(p.activeCallIncentive) || 0);
+            });
+        });
+
+        // Accumulators for TOTAL row
+        let allGTarget = 0, allGSales = 0, allGComm = 0, allGQtr = 0, allGColl = 0, allGCall = 0, allGTotal = 0;
+
+        // Data rows
+        personNames.forEach((name, pIdx) => {
+            const pRow = pIdx + 3;
+            personSheet.getCell(pRow, 1).value = name;
+            personSheet.getCell(pRow, 1).border = dataBorder;
+            let gTarget = 0, gSales = 0, gComm = 0, gQtr = 0, gColl = 0, gCall = 0, gTotal = 0;
+
+            pCol = 2;
+            months.forEach(m => {
+                const md = monthsData.find(x => (x.month || '').toUpperCase() === m);
+                const person = md ? (md.salespeople || []).find(p => p.name === name) : null;
+                const target = person ? (parseFloat(person.target) || 0) : 0;
+                const sales = person ? (parseFloat(person.sales) || 0) : 0;
+                const comm = person ? (parseFloat(person.commission) || 0) : 0;
+                const qtr = person ? (parseFloat(person.quarterlyBonus) || 0) : 0;
+                const coll = person ? (parseFloat(person.collectionIncentive) || 0) : 0;
+                const call = person ? (parseFloat(person.activeCallIncentive) || 0) : 0;
+                const total = comm + qtr + coll + call;
+
+                const vals = [target, sales, comm, qtr, coll, call, total];
+                vals.forEach((v, vi) => {
+                    personSheet.getCell(pRow, pCol + vi).value = v || '';
+                    personSheet.getCell(pRow, pCol + vi).numFmt = '#,##0.00';
+                    personSheet.getCell(pRow, pCol + vi).border = dataBorder;
+                });
+
+                gTarget += target; gSales += sales; gComm += comm;
+                gQtr += qtr; gColl += coll; gCall += call; gTotal += total;
+                pCol += perMonthCols;
+            });
+
+            // Grand total columns
+            const gVals = [gTarget, gSales, gComm, gQtr, gColl, gCall, gTotal];
+            gVals.forEach((v, vi) => {
+                const cell = personSheet.getCell(pRow, grandStartCol + vi);
+                cell.value = v;
+                cell.numFmt = '#,##0.00';
+                cell.font = { bold: true };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
+                cell.border = dataBorder;
+            });
+
+            // Comm % of Sales (个人 total commission / 个人 total sales)
+            const commPctOfSales = gSales > 0 ? gTotal / gSales : 0;
+            const cellPctSales = personSheet.getCell(pRow, pctStartCol);
+            cellPctSales.value = commPctOfSales;
+            cellPctSales.numFmt = '0.00%';
+            cellPctSales.border = dataBorder;
+            cellPctSales.alignment = { horizontal: 'center' };
+
+            // Team % (个人 total commission / team total sales)
+            const commPctOfTeam = teamTotalSales > 0 ? gTotal / teamTotalSales : 0;
+            const cellPctTeam = personSheet.getCell(pRow, pctStartCol + 1);
+            cellPctTeam.value = commPctOfTeam;
+            cellPctTeam.numFmt = '0.00%';
+            cellPctTeam.border = dataBorder;
+            cellPctTeam.alignment = { horizontal: 'center' };
+
+            // Accumulate for TOTAL row
+            allGTarget += gTarget; allGSales += gSales; allGComm += gComm;
+            allGQtr += gQtr; allGColl += gColl; allGCall += gCall; allGTotal += gTotal;
+        });
+
+        // ── TOTAL row at bottom ──
+        const tRow = personNames.length + 3;
+        personSheet.getCell(tRow, 1).value = 'TOTAL';
+        Object.assign(personSheet.getCell(tRow, 1), grandTotalStyle);
+
+        // Grand total columns for TOTAL row
+        const allGVals = [allGTarget, allGSales, allGComm, allGQtr, allGColl, allGCall, allGTotal];
+        allGVals.forEach((v, vi) => {
+            const cell = personSheet.getCell(tRow, grandStartCol + vi);
+            cell.value = v;
+            cell.numFmt = '#,##0.00';
+            Object.assign(cell, grandTotalStyle);
+        });
+
+        // Total Comm % and Team %
+        const tPctSales = allGSales > 0 ? allGTotal / allGSales : 0;
+        const tCellPctSales = personSheet.getCell(tRow, pctStartCol);
+        tCellPctSales.value = tPctSales;
+        tCellPctSales.numFmt = '0.00%';
+        Object.assign(tCellPctSales, grandTotalStyle);
+        tCellPctSales.alignment = { horizontal: 'center' };
+
+        const tCellPctTeam = personSheet.getCell(tRow, pctStartCol + 1);
+        tCellPctTeam.value = allGSales > 0 ? allGTotal / allGSales : 0; // Team total comm / team total sales
+        tCellPctTeam.numFmt = '0.00%';
+        Object.assign(tCellPctTeam, grandTotalStyle);
+        tCellPctTeam.alignment = { horizontal: 'center' };
+
+        // Fill empty cols in TOTAL row with style
+        for (let c = 2; c < grandStartCol; c++) {
+            const cell = personSheet.getCell(tRow, c);
+            if (!cell.value) cell.value = '';
+            Object.assign(cell, grandTotalStyle);
+            cell.numFmt = '#,##0.00';
+        }
+        personSheet.getRow(tRow).height = 26;
+
+        await workbook.xlsx.writeFile(result.filePath);
+        return { success: true, path: result.filePath };
+
+    } catch (error) {
+        console.error('❌ Batch summary error:', error);
         return { success: false, error: error.message };
     }
 });
@@ -1001,4 +1347,58 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
             };
         }
     });
+
+    // ── TOTAL Row ──
+    const totalRowNum = salespeople.length + 2;
+    let totTarget = 0, totSales = 0, totCol5 = 0, totCol6 = 0, totCol7 = 0, totCol8 = 0, totQtr = 0, totColl = 0, totCall = 0, totTotal = 0;
+
+    salespeople.forEach(person => {
+        const target = parseFloat(person.target) || 0;
+        const sales = parseFloat(person.sales) || 0;
+        const achievement = target > 0 ? (sales / target) * 100 : 0;
+        const comm = parseFloat(person.commission) || 0;
+        const qtr = parseFloat(person.quarterlyBonus) || 0;
+        const coll = parseFloat(person.collectionIncentive) || 0;
+        const call = parseFloat(person.activeCallIncentive) || 0;
+        const total = comm + qtr + coll + call;
+
+        totTarget += target;
+        totSales += sales;
+        if (comm > 0) {
+            if (achievement >= 106) totCol8 += comm;
+            else if (achievement >= 100) totCol7 += comm;
+            else if (achievement >= 90) totCol6 += comm;
+            else if (achievement >= 80) totCol5 += comm;
+        }
+        totQtr += qtr;
+        totColl += coll;
+        totCall += call;
+        totTotal += total;
+    });
+
+    const totalStyle = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } },
+        border: { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} }
+    };
+
+    sheet.getCell(totalRowNum, 1).value = 'TOTAL';
+    sheet.getCell(totalRowNum, 2).value = totTarget;
+    sheet.getCell(totalRowNum, 3).value = totSales;
+    sheet.getCell(totalRowNum, 4).value = totTarget > 0 ? totSales / totTarget : '';
+    sheet.getCell(totalRowNum, 5).value = totCol5 || '';
+    sheet.getCell(totalRowNum, 6).value = totCol6 || '';
+    sheet.getCell(totalRowNum, 7).value = totCol7 || '';
+    sheet.getCell(totalRowNum, 8).value = totCol8 || '';
+    sheet.getCell(totalRowNum, 9).value = totQtr || '';
+    sheet.getCell(totalRowNum, 10).value = totColl || '';
+    sheet.getCell(totalRowNum, 11).value = totCall || '';
+    sheet.getCell(totalRowNum, 12).value = totTotal;
+
+    for (let col = 1; col <= 12; col++) {
+        const cell = sheet.getCell(totalRowNum, col);
+        Object.assign(cell, totalStyle);
+        if (col === 4) { cell.numFmt = '0.00%'; }
+        else if (col >= 2) { cell.numFmt = '#,##0.00'; }
+    }
 }

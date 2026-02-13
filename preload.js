@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // ========== Excel 导出 ==========
     generateSalaryTemplate: (data) => ipcRenderer.invoke('generate-salary-template', data),
+    generateBatchSummary: (data) => ipcRenderer.invoke('generate-batch-summary', data),
     
     // ========== PDF 导出 ==========
     exportPDF: (data) => ipcRenderer.invoke('export-pdf', data),

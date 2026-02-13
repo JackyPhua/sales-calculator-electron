@@ -482,9 +482,6 @@ function _doClearAllData() {
     // Reset state
     window.appState.salespeople = [];
 
-    // Clear imported Excel data so new cards are fully editable
-    window.appState.importedExcelData = null;
-
     // Completely replace the container to avoid any stale DOM/event issues
     const oldContainer = document.getElementById('salespeople-container');
     if (oldContainer) {
@@ -1545,6 +1542,428 @@ function addNewPerson() {
     renderSalaryConfigs();
     
     showToast('✅', `${name} added successfully!`);
+}
+
+// ==================== Batch Export (Multi-Month) ====================
+
+function showBatchExportModal() {
+    // Check data sources
+    const hasExcelData = window.appState.importedExcelData && window.appState.importedExcelData.length > 0;
+    const hasHistory = window.appState.config.reportHistory && window.appState.config.reportHistory.length > 0;
+    const hasCurrent = window.appState.salespeople && window.appState.salespeople.length > 0 && window.appState.salespeople.some(p => p.name && p.sales > 0);
+
+    if (!hasExcelData && !hasHistory && !hasCurrent) {
+        showToast('⚠️', 'No data available. Please import Excel or enter data first.');
+        return;
+    }
+
+    // Find which months have data
+    const availableMonths = new Set();
+    if (hasExcelData) {
+        window.appState.importedExcelData.forEach(p => {
+            (p.months || []).forEach(m => availableMonths.add(m.month));
+        });
+    }
+    if (hasHistory) {
+        window.appState.config.reportHistory.forEach(r => {
+            if (r.month) availableMonths.add(r.month.toUpperCase());
+        });
+    }
+    if (hasCurrent) {
+        const curMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
+        if (curMonth) availableMonths.add(curMonth);
+    }
+
+    const allMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+    // Remove existing modal
+    const existing = document.getElementById('batch-export-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'batch-export-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:16px;padding:0;max-width:500px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,#f97316,#ea580c);padding:20px 24px;color:white;">
+                <h3 style="margin:0;font-size:18px;font-weight:700;">📦 Batch Export — Select Months</h3>
+                <p style="margin:6px 0 0;font-size:12px;opacity:0.9;">Each selected month generates an independent Excel file</p>
+            </div>
+
+            <div style="padding:20px 24px;">
+                <!-- Quick Select Buttons -->
+                <div style="margin-bottom:16px;">
+                    <p style="font-size:12px;color:#6b7280;margin:0 0 8px;font-weight:600;">QUICK SELECT</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        <button onclick="batchSelectMonths(['JAN','FEB','MAR'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">Q1</button>
+                        <button onclick="batchSelectMonths(['APR','MAY','JUN'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">Q2</button>
+                        <button onclick="batchSelectMonths(['JUL','AUG','SEP'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">Q3</button>
+                        <button onclick="batchSelectMonths(['OCT','NOV','DEC'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">Q4</button>
+                        <div style="width:1px;height:28px;background:#e5e7eb;margin:0 2px;"></div>
+                        <button onclick="batchSelectMonths(['JAN','FEB','MAR','APR','MAY','JUN'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">H1 (Jan-Jun)</button>
+                        <button onclick="batchSelectMonths(['JUL','AUG','SEP','OCT','NOV','DEC'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">H2 (Jul-Dec)</button>
+                        <button onclick="batchSelectMonths(['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">Full Year</button>
+                        <button onclick="batchSelectMonths([])" class="batch-quick-btn" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;font-weight:600;color:#ef4444;transition:all 0.2s;">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Month Checkboxes -->
+                <div style="margin-bottom:16px;">
+                    <p style="font-size:12px;color:#6b7280;margin:0 0 8px;font-weight:600;">SELECT MONTHS</p>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+                        ${allMonths.map(m => {
+                            const hasData = availableMonths.has(m);
+                            return `
+                                <label style="display:flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid ${hasData ? '#d1d5db' : '#f3f4f6'};border-radius:8px;cursor:${hasData ? 'pointer' : 'not-allowed'};background:${hasData ? '#fff' : '#f9fafb'};transition:all 0.2s;" 
+                                       class="batch-month-label" data-month="${m}">
+                                    <input type="checkbox" id="batch-${m}" value="${m}" ${hasData ? '' : 'disabled'} 
+                                           onchange="updateBatchExportUI()"
+                                           style="width:16px;height:16px;cursor:${hasData ? 'pointer' : 'not-allowed'};">
+                                    <span style="font-size:13px;font-weight:600;color:${hasData ? '#1f2937' : '#d1d5db'};">${m}</span>
+                                    ${hasData ? '<span style="font-size:9px;color:#10b981;">●</span>' : ''}
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                    <p style="font-size:11px;color:#9ca3af;margin:6px 0 0;"><span style="color:#10b981;">●</span> = Data available</p>
+                </div>
+
+                <!-- Selected count -->
+                <div id="batch-export-status" style="padding:10px 14px;background:#f0fdf4;border-radius:8px;margin-bottom:16px;font-size:13px;color:#166534;font-weight:500;">
+                    No months selected
+                </div>
+
+                <!-- Buttons -->
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button onclick="closeBatchExportModal()" 
+                            style="padding:10px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;">
+                        Cancel
+                    </button>
+                    <button id="batch-export-btn" onclick="executeBatchExport()" disabled
+                            style="padding:10px 24px;border:none;border-radius:8px;background:#f97316;color:#fff;cursor:pointer;font-size:14px;font-weight:600;opacity:0.5;">
+                        📦 Export Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeBatchExportModal(); });
+}
+
+function closeBatchExportModal() {
+    const modal = document.getElementById('batch-export-modal');
+    if (modal) modal.remove();
+}
+
+function batchSelectMonths(months) {
+    const allMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    allMonths.forEach(m => {
+        const cb = document.getElementById('batch-' + m);
+        if (cb && !cb.disabled) {
+            cb.checked = months.includes(m);
+        }
+    });
+    updateBatchExportUI();
+}
+
+function updateBatchExportUI() {
+    const allMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const selected = allMonths.filter(m => {
+        const cb = document.getElementById('batch-' + m);
+        return cb && cb.checked;
+    });
+
+    const statusEl = document.getElementById('batch-export-status');
+    const btnEl = document.getElementById('batch-export-btn');
+
+    if (selected.length === 0) {
+        statusEl.textContent = 'No months selected';
+        statusEl.style.background = '#f3f4f6';
+        statusEl.style.color = '#6b7280';
+        btnEl.disabled = true;
+        btnEl.style.opacity = '0.5';
+    } else {
+        statusEl.textContent = `${selected.length} month(s) selected: ${selected.join(', ')}`;
+        statusEl.style.background = '#f0fdf4';
+        statusEl.style.color = '#166534';
+        btnEl.disabled = false;
+        btnEl.style.opacity = '1';
+    }
+
+    // Highlight selected month labels
+    document.querySelectorAll('.batch-month-label').forEach(label => {
+        const m = label.dataset.month;
+        const cb = document.getElementById('batch-' + m);
+        if (cb && cb.checked) {
+            label.style.borderColor = '#f97316';
+            label.style.background = '#fff7ed';
+        } else {
+            label.style.borderColor = cb && !cb.disabled ? '#d1d5db' : '#f3f4f6';
+            label.style.background = cb && !cb.disabled ? '#fff' : '#f9fafb';
+        }
+    });
+}
+
+async function executeBatchExport() {
+    const allMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const selectedMonths = allMonths.filter(m => {
+        const cb = document.getElementById('batch-' + m);
+        return cb && cb.checked;
+    });
+
+    if (selectedMonths.length === 0) {
+        showToast('⚠️', 'No months selected');
+        return;
+    }
+
+    closeBatchExportModal();
+
+    const excelData = window.appState.importedExcelData || [];
+    const history = window.appState.config.reportHistory || [];
+    const config = window.appState.config;
+    const curMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
+    const year = new Date().getFullYear();
+
+    // Build combined filename: commission_jan_feb_mar_2026.xlsx
+    const monthsStr = selectedMonths.map(m => m.toLowerCase()).join('_');
+    const combinedFilename = `commission_${monthsStr}_${year}.xlsx`;
+
+    showToast('⏳', `Exporting ${selectedMonths.length} month(s)...`);
+
+    let successCount = 0;
+    let failCount = 0;
+    const allMonthsData = []; // collect for batch summary
+
+    for (let i = 0; i < selectedMonths.length; i++) {
+        const month = selectedMonths[i];
+        try {
+            // Build sales data for this month
+            const salesData = buildSalesDataForMonth(month, excelData, history, config, curMonth);
+
+            if (!salesData || salesData.length === 0) {
+                console.warn(`⚠️ No data for ${month}, skipping`);
+                failCount++;
+                continue;
+            }
+
+            // Store for batch summary
+            allMonthsData.push({ month: month, salespeople: salesData });
+
+            // Generate filename for this month
+            let suggestedFilename;
+            if (selectedMonths.length === 1) {
+                suggestedFilename = combinedFilename;
+            } else {
+                suggestedFilename = `commission_${month.toLowerCase()}_${year}.xlsx`;
+            }
+
+            // Call electron API to generate Excel
+            const result = await window.electronAPI.generateSalaryTemplate({
+                salespeople: salesData,
+                config: config,
+                month: month,
+                suggestedFilename: suggestedFilename
+            });
+
+            if (result.success) {
+                successCount++;
+
+                // Save to history
+                if (!window.appState.config.reportHistory) {
+                    window.appState.config.reportHistory = [];
+                }
+                const totalCommission = salesData.reduce((sum, p) => sum + (p.totalCommission || 0), 0);
+                window.appState.config.reportHistory.push({
+                    month: month,
+                    timestamp: new Date().toISOString(),
+                    count: salesData.length,
+                    totalCommission: totalCommission,
+                    data: salesData
+                });
+            } else if (result.message === 'Cancelled') {
+                showToast('ℹ️', 'Export cancelled');
+                break;
+            } else {
+                failCount++;
+                console.error(`❌ Export failed for ${month}:`, result.error);
+            }
+        } catch (e) {
+            failCount++;
+            console.error(`❌ Error exporting ${month}:`, e);
+        }
+    }
+
+    // ── Generate Batch Summary Excel (all months combined) ──
+    if (allMonthsData.length >= 2 && window.electronAPI.generateBatchSummary) {
+        try {
+            showToast('⏳', 'Generating combined summary...');
+            const summaryFilename = `commission_summary_${monthsStr}_${year}.xlsx`;
+            const summaryResult = await window.electronAPI.generateBatchSummary({
+                monthsData: allMonthsData,
+                suggestedFilename: summaryFilename
+            });
+            if (summaryResult.success) {
+                successCount++;
+                console.log('✅ Batch summary generated');
+            } else if (summaryResult.message !== 'Cancelled') {
+                console.warn('⚠️ Batch summary skipped or failed');
+            }
+        } catch (e) {
+            console.error('❌ Batch summary error:', e);
+        }
+    }
+
+    // Save updated history
+    if (successCount > 0) {
+        await saveConfig();
+        if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+    }
+
+    // Show result
+    if (successCount > 0 && failCount === 0) {
+        showToast('✅', `Successfully exported ${successCount} file(s)!`);
+    } else if (successCount > 0) {
+        showToast('⚠️', `Exported ${successCount} file(s), ${failCount} month(s) skipped`);
+    } else {
+        showToast('❌', 'Export failed — no data found for selected months');
+    }
+}
+
+// Build sales data for a specific month from all available sources
+function buildSalesDataForMonth(month, excelData, history, config, currentCardMonth) {
+    const monthUpper = month.toUpperCase();
+    const configuredPeople = Object.keys(config.base_salaries || {});
+    const quarterEndMonths = ['MAR','JUN','SEP','DEC'];
+    const allMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const monthIdx = allMonths.indexOf(monthUpper);
+    const isQuarterEnd = quarterEndMonths.includes(monthUpper);
+
+    // Helper: get person data from Excel
+    function getExcelMonth(personName, m) {
+        const p = excelData.find(x => (x.name || '').toUpperCase() === personName.toUpperCase());
+        if (!p) return null;
+        return p.months.find(x => x.month === m) || null;
+    }
+
+    // Helper: get person data from history
+    function getHistoryMonth(personName, m) {
+        const entries = history.filter(r => (r.month || '').toUpperCase() === m);
+        if (entries.length === 0) return null;
+        return (entries[entries.length - 1].data || []).find(p => (p.name || '').toUpperCase() === personName.toUpperCase()) || null;
+    }
+
+    // Helper: get data from either source (Excel first, then history)
+    function getMonthData(personName, m) {
+        const ex = getExcelMonth(personName, m);
+        if (ex) return { target: parseFloat(ex.target) || 0, sales: parseFloat(ex.sales) || 0, collection: parseFloat(ex.collection) || 0, source: 'excel' };
+        const hi = getHistoryMonth(personName, m);
+        if (hi) return { target: parseFloat(hi.target) || 0, sales: parseFloat(hi.sales) || 0, collection: 0, source: 'history' };
+        return null;
+    }
+
+    // Collect all person names from all sources
+    const personNames = new Set();
+    excelData.forEach(p => personNames.add((p.name || '').toUpperCase()));
+    configuredPeople.forEach(n => personNames.add(n.toUpperCase()));
+
+    // If this is the currently displayed month, also use card data
+    if (monthUpper === currentCardMonth) {
+        window.appState.salespeople.forEach(p => {
+            if (p.name) personNames.add(p.name.toUpperCase());
+        });
+    }
+
+    const result = [];
+
+    personNames.forEach(nameUpper => {
+        let target = 0, sales = 0, collection = 0;
+
+        // If this is current card month, try card data first
+        if (monthUpper === currentCardMonth) {
+            const cardPerson = window.appState.salespeople.find(p => (p.name || '').toUpperCase() === nameUpper);
+            if (cardPerson && cardPerson.target > 0) {
+                target = cardPerson.target;
+                sales = cardPerson.sales;
+                collection = cardPerson.collectionAmount || 0;
+            }
+        }
+
+        // If no card data, try Excel/history
+        if (target === 0) {
+            const md = getMonthData(nameUpper, monthUpper);
+            if (md) {
+                target = md.target;
+                sales = md.sales;
+                collection = md.collection;
+            }
+        }
+
+        // Skip if no data at all
+        if (target === 0 && sales === 0) return;
+
+        // Calculate commission
+        const achievement = target > 0 ? (sales / target) * 100 : 0;
+        const commission = calculateCommission(sales, target);
+
+        // Collection incentive (from 2 months ago)
+        let collTarget = 0;
+        if (monthIdx >= 2) {
+            const d = getMonthData(nameUpper, allMonths[monthIdx - 2]);
+            if (d) collTarget = d.sales;
+        } else if (monthIdx === 1) {
+            const d = getMonthData(nameUpper, allMonths[11]);
+            if (d) collTarget = d.sales;
+        } else {
+            const d = getMonthData(nameUpper, allMonths[10]);
+            if (d) collTarget = d.sales;
+        }
+        const collAchievement = collTarget > 0 ? (collection / collTarget) * 100 : 0;
+        const collectionIncentive = calculateIncentive(collAchievement, config.collection_incentive || []);
+
+        // Active call incentive (no data in batch — set 0)
+        const activeCallIncentive = 0;
+
+        // Quarterly bonus
+        let quarterlyBonus = 0;
+        if (isQuarterEnd) {
+            const qStart = monthIdx - 2;
+            let qTarget = 0, qSales = 0;
+            for (let i = qStart; i <= monthIdx; i++) {
+                if (i < 0) continue;
+                const qm = allMonths[i];
+                if (qm === monthUpper) {
+                    qTarget += target;
+                    qSales += sales;
+                } else {
+                    const d = getMonthData(nameUpper, qm);
+                    if (d) { qTarget += d.target; qSales += d.sales; }
+                }
+            }
+            const qAchievement = qTarget > 0 ? (qSales / qTarget) * 100 : 0;
+            quarterlyBonus = calculateIncentive(qAchievement, config.quarterly_incentive || []);
+        }
+
+        const totalCommission = commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
+
+        result.push({
+            name: nameUpper,
+            salary: config.base_salaries?.[nameUpper] || 0,
+            allowances: config.allowances?.[nameUpper] || {},
+            target: target,
+            sales: sales,
+            achievement: achievement,
+            commission: commission,
+            collectionIncentive: collectionIncentive,
+            activeCallIncentive: activeCallIncentive,
+            quarterlyBonus: quarterlyBonus,
+            deductions: config.deductions?.[nameUpper] || {},
+            totalCommission: totalCommission
+        });
+    });
+
+    return result;
 }
 
 // ==================== Export Function ====================
@@ -2656,6 +3075,14 @@ window.restoreSelectedBackup = restoreSelectedBackup;
 // Import/month-switch functions
 window.fillCardsFromImportedData = fillCardsFromImportedData;
 window.autoFillLockedFieldsWithExcel = autoFillLockedFieldsWithExcel;
+
+// Batch export functions
+window.showBatchExportModal = showBatchExportModal;
+window.closeBatchExportModal = closeBatchExportModal;
+window.batchSelectMonths = batchSelectMonths;
+window.updateBatchExportUI = updateBatchExportUI;
+window.executeBatchExport = executeBatchExport;
+window.buildSalesDataForMonth = buildSalesDataForMonth;
 
 // Initialize after DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
