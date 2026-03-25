@@ -744,6 +744,17 @@ async function exportTemplate() {
             console.log(`    - allowances:`, p.allowances);
         });
         
+        // 计算总佣金用于历史记录
+        const totalCommission = appState.salespeople.reduce((sum, person) => {
+            return sum + (parseFloat(person.commission) || 0) + 
+                        (parseFloat(person.collectionIncentive) || 0) + 
+                        (parseFloat(person.activeCallIncentive) || 0) + 
+                        (parseFloat(person.quarterlyBonus) || 0);
+        }, 0);
+        
+        // 保存到历史记录
+        saveReportToHistory(month, appState.salespeople, totalCommission);
+        
         const result = await window.electronAPI.generateSalaryTemplate({
             salespeople: salesData,
             config: appState.config,
@@ -751,7 +762,7 @@ async function exportTemplate() {
         });
         
         if (result.success) {
-            showToast('✅', 'Report generated successfully!');
+            showToast('✅', 'Report generated successfully! 📜 Added to History');
         } else {
             showToast('❌', 'Failed to generate report: ' + result.error);
         }

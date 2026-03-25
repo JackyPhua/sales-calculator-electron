@@ -621,6 +621,14 @@
                 };
             });
 
+            // 计算总佣金用于历史记录
+            const totalCommission = window.appState.salespeople.reduce((sum, person) => {
+                return sum + (parseFloat(person.commission) || 0) + 
+                            (parseFloat(person.collectionIncentive) || 0) + 
+                            (parseFloat(person.activeCallIncentive) || 0) + 
+                            (parseFloat(person.quarterlyBonus) || 0);
+            }, 0);
+
             const result = await window.electronAPI.generateSalaryTemplate({
                 salespeople: salesData,
                 config: window.appState.config,
@@ -633,12 +641,17 @@
                 return;
             }
 
+            // 保存到历史记录
+            if (typeof saveReportToHistory === 'function') {
+                saveReportToHistory(month, window.appState.salespeople, totalCommission);
+            }
+
             // Step 2: Open file for printing
             showToast('🖨️', 'Opening for print...');
             const printResult = await window.electronAPI.printExcel(result.path);
             
             if (printResult.success) {
-                showToast('✅', 'File opened — use Ctrl+P to print!');
+                showToast('✅', 'File opened — use Ctrl+P to print! 📜 Added to History');
             } else {
                 showToast('⚠️', 'Excel saved but could not open: ' + printResult.error);
             }
