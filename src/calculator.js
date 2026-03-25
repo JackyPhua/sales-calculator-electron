@@ -1,3 +1,20 @@
+// ── SQLite DB helpers ──
+async function dbSave(key, value) {
+    try {
+        if (window.electronAPI && window.electronAPI.dbSave)
+            await window.electronAPI.dbSave(key, value);
+    } catch(e) { console.warn('dbSave failed:', e); }
+}
+async function dbLoad(key) {
+    try {
+        if (window.electronAPI && window.electronAPI.dbLoad) {
+            const r = await window.electronAPI.dbLoad(key);
+            if (r && r.success) return r.value;
+        }
+    } catch(e) { console.warn('dbLoad failed:', e); }
+    return null;
+}
+
 // ==================== Global State Management ====================
 
 // Ensure appState exists
@@ -9,11 +26,248 @@ if (!window.appState) {
     };
 }
 
+// ==================== License System ====================
+window.licenseStatus = { status: 'loading' };
+
+async function checkLicenseStatus() {
+    try {
+        const status = await window.electronAPI.getLicenseStatus();
+        window.licenseStatus = status;
+        updateLicenseBadge();
+        console.log('🔑 License:', status.status, status.message);
+        return status;
+    } catch (e) {
+        console.error('License check error:', e);
+        window.licenseStatus = { status: 'trial', daysRemaining: 14 };
+        return window.licenseStatus;
+    }
+}
+
+function isPro() {
+    return window.licenseStatus && window.licenseStatus.status === 'pro';
+}
+
+function isTrialActive() {
+    return window.licenseStatus && window.licenseStatus.status === 'trial' 
+        && window.licenseStatus.daysRemaining > 0 
+        && window.licenseStatus.exportsRemaining > 0;
+}
+
+function canUseProFeature() {
+    return isPro() || isTrialActive();
+}
+
+function requirePro(featureName) {
+    if (canUseProFeature()) return true;
+    showLicenseModal(featureName);
+    return false;
+}
+
+function updateLicenseBadge() {
+    const badge = document.getElementById('license-badge');
+    if (!badge) return;
+
+    if (isPro()) {
+        badge.innerHTML = '🔑 <span style="color:#10b981;font-weight:600;">PRO</span>';
+        badge.title = 'Pro License activated';
+        badge.style.cursor = 'pointer';
+        badge.onclick = () => showLicenseInfoModal();
+    } else if (isTrialActive()) {
+        const days = window.licenseStatus.daysRemaining;
+        const exports = window.licenseStatus.exportsRemaining;
+        badge.innerHTML = `⏳ <span style="color:#f59e0b;font-weight:600;">TRIAL — ${days}d / ${exports} exports</span>`;
+        badge.title = `${days} days, ${exports} exports remaining. Click to activate license.`;
+        badge.style.cursor = 'pointer';
+        badge.onclick = () => showLicenseModal();
+    } else {
+        badge.innerHTML = '🔒 <span style="color:#ef4444;font-weight:600;">EXPIRED</span>';
+        badge.title = 'Trial expired. Click to activate license.';
+        badge.style.cursor = 'pointer';
+        badge.onclick = () => showLicenseModal();
+    }
+}
+
+function showLicenseModal(featureName) {
+    const existing = document.getElementById('license-modal');
+    if (existing) existing.remove();
+
+    const expiredMsg = featureName
+        ? `<p style="color:#f59e0b;font-size:13px;margin:0 0 16px;">⚠️ "${featureName}" requires a Pro license.</p>`
+        : '';
+
+    const modal = document.createElement('div');
+    modal.id = 'license-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;';
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:16px;padding:0;max-width:440px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);padding:24px 28px;color:white;">
+                <h3 style="margin:0;font-size:20px;font-weight:700;">🔑 Activate CommissionPro</h3>
+                <p style="margin:6px 0 0;font-size:13px;opacity:0.8;">Enter your license key to unlock all features</p>
+            </div>
+            <div style="padding:24px 28px;">
+                ${expiredMsg}
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">License Key</label>
+                    <input type="text" id="license-key-input" 
+                           placeholder="CPRO-XXXX-XXXX-XXXX-XXXX"
+                           style="width:100%;padding:12px 14px;border:2px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:'Courier New',monospace;letter-spacing:1px;text-transform:uppercase;outline:none;transition:border 0.2s;"
+                           onfocus="this.style.borderColor='#3b82f6'"
+                           onblur="this.style.borderColor='#e5e7eb'"
+                           maxlength="24">
+                </div>
+                <div id="license-error" style="display:none;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:13px;margin-bottom:12px;"></div>
+                <div id="license-success" style="display:none;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#16a34a;font-size:13px;margin-bottom:12px;"></div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button onclick="closeLicenseModal()" 
+                            style="padding:10px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;">
+                        Cancel
+                    </button>
+                    <button onclick="submitLicenseKey()" id="license-submit-btn"
+                            style="padding:10px 24px;border:none;border-radius:8px;background:#1e3a5f;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">
+                        Activate
+                    </button>
+                </div>
+                <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;text-align:center;">
+                    <a href="https://commissionpro.app" target="_blank" style="font-size:12px;color:#6b7280;text-decoration:none;">
+                        Don't have a key? <span style="color:#3b82f6;font-weight:600;">Buy License →</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeLicenseModal(); });
+
+    // Auto-format key input
+    const input = document.getElementById('license-key-input');
+    input.addEventListener('input', function() {
+        let val = this.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (val.length > 20) val = val.substring(0, 20);
+        // Insert dashes: CPRO-XXXX-XXXX-XXXX-XXXX
+        let formatted = '';
+        for (let i = 0; i < val.length; i++) {
+            if (i === 4 || i === 8 || i === 12 || i === 16) formatted += '-';
+            formatted += val[i];
+        }
+        this.value = formatted;
+    });
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') submitLicenseKey();
+    });
+
+    setTimeout(() => input.focus(), 100);
+}
+
+function closeLicenseModal() {
+    const modal = document.getElementById('license-modal');
+    if (modal) modal.remove();
+}
+
+async function submitLicenseKey() {
+    const input = document.getElementById('license-key-input');
+    const errorEl = document.getElementById('license-error');
+    const successEl = document.getElementById('license-success');
+    const btn = document.getElementById('license-submit-btn');
+
+    const key = input.value.trim();
+    errorEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    if (!key) {
+        errorEl.textContent = 'Please enter a license key';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    btn.textContent = 'Verifying...';
+    btn.disabled = true;
+
+    try {
+        const result = await window.electronAPI.activateLicense(key);
+        if (result.success) {
+            successEl.textContent = '✅ License activated successfully! Enjoy CommissionPro Pro.';
+            successEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            window.licenseStatus = { status: 'pro', key: result.key };
+            updateLicenseBadge();
+            setTimeout(closeLicenseModal, 1500);
+        } else {
+            errorEl.textContent = '❌ ' + (result.error || 'Invalid license key');
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = '❌ Error: ' + e.message;
+        errorEl.style.display = 'block';
+    }
+
+    btn.textContent = 'Activate';
+    btn.disabled = false;
+}
+
+function showLicenseInfoModal() {
+    const existing = document.getElementById('license-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'license-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;';
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:16px;padding:0;max-width:400px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#065f46,#064e3b);padding:24px 28px;color:white;">
+                <h3 style="margin:0;font-size:20px;font-weight:700;">✅ Pro License Active</h3>
+            </div>
+            <div style="padding:24px 28px;">
+                <div style="padding:12px;background:#f0fdf4;border-radius:10px;margin-bottom:16px;">
+                    <p style="margin:0;font-size:12px;color:#6b7280;">License Key</p>
+                    <p style="margin:4px 0 0;font-size:14px;font-family:'Courier New',monospace;font-weight:600;color:#111827;letter-spacing:1px;">${window.licenseStatus.key || 'N/A'}</p>
+                </div>
+                <p style="font-size:13px;color:#6b7280;margin:0 0 20px;">All Pro features are unlocked. Thank you for your purchase!</p>
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button onclick="deactivateAndClose()" 
+                            style="padding:8px 16px;border:1px solid #fecaca;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;color:#dc2626;">
+                        Deactivate
+                    </button>
+                    <button onclick="closeLicenseModal()" 
+                            style="padding:8px 20px;border:none;border-radius:8px;background:#065f46;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeLicenseModal(); });
+}
+
+async function deactivateAndClose() {
+    if (confirm('Are you sure you want to deactivate your license?')) {
+        await window.electronAPI.deactivateLicense();
+        await checkLicenseStatus();
+        closeLicenseModal();
+        showToast('ℹ️', 'License deactivated');
+    }
+}
+
+// Export license functions
+window.checkLicenseStatus = checkLicenseStatus;
+window.isPro = isPro;
+window.canUseProFeature = canUseProFeature;
+window.requirePro = requirePro;
+window.showLicenseModal = showLicenseModal;
+window.closeLicenseModal = closeLicenseModal;
+window.submitLicenseKey = submitLicenseKey;
+window.showLicenseInfoModal = showLicenseInfoModal;
+window.deactivateAndClose = deactivateAndClose;
+
 // Initialize application
 async function initApp() {
     console.log('🚀 Initializing application...');
     
     try {
+        // Check license status first
+        await checkLicenseStatus();
+        
         // Load configuration
         await loadConfig();
         
@@ -84,8 +338,7 @@ function ensureConfigStructure() {
         }
     });
     
-    // Ensure salespeople data is empty (do not load saved salesperson data)
-    config.quickCalculateData = null;
+    // Restore quickCalculateData if present (persists across restarts)
 }
 
 // Default configuration
@@ -182,7 +435,7 @@ function switchView(view) {
 // ==================== QUICK CALCULATE Fixed Version ====================
 
 // Initialize Quick Calculate
-function initQuickCalculate() {
+async function initQuickCalculate() {
     console.log('📊 Initializing Quick Calculate');
     
     // Set current month
@@ -227,21 +480,58 @@ function initQuickCalculate() {
         return;
     }
     
-    // First time init - start with one blank card
+    // First time init — restore from DB first, fallback to config
     window.appState.salespeople = [];
-    if (container) {
-        container.innerHTML = '';
+    if (container) container.innerHTML = '';
+
+    // Try DB first
+    var dbQcd = await dbLoad('quickCalculateData');
+    var dbHist = await dbLoad('reportHistory');
+    if (dbQcd) {
+        window.appState.config.quickCalculateData = dbQcd;
+        console.log('✅ Restored quickCalculateData from DB');
     }
-    addSalespersonCard();
-    
+    if (dbHist && Array.isArray(dbHist)) {
+        window.appState.config.reportHistory = dbHist;
+        console.log('✅ Restored reportHistory from DB, entries:', dbHist.length);
+    }
+
+    var saved = window.appState.config.quickCalculateData;
+    if (saved && saved.salespeople && saved.salespeople.length > 0) {
+        if (saved.month) { var ms=document.getElementById('report-month'); if(ms) ms.value=saved.month; }
+        saved.salespeople.forEach(function(sp) {
+            var newId=window.appState.salespeople.length+1;
+            window.appState.salespeople.push(Object.assign({id:newId},sp));
+        });
+        renderAllSalespeopleCards();
+        saved.salespeople.forEach(function(sp,idx) {
+            var nameEl=document.getElementById('name-'+idx);
+            if(nameEl&&sp.name) nameEl.value=sp.name;
+            var set=function(id,v){var el=document.getElementById(id+'-'+idx);if(el&&v!=null&&v!=='')el.value=v;};
+            set('target',sp.target); set('sales',sp.sales);
+            set('quarterly-target',sp.quarterlyTarget); set('quarterly-sales',sp.quarterlySales);
+            set('collection-target',sp.collectionTarget); set('collection-amount',sp.collectionAmount);
+            set('call-target',sp.callTarget); set('call-actual',sp.callActual);
+            updateSalespersonData(idx);
+        });
+        updateSummaryView();
+    } else {
+        createBlankSalespersonCard();
+    }
     // Update summary
     updateSummaryView();
     
     console.log('✅ Quick Calculate initialization completed');
 }
 
-// Add salesperson card (fixed version - blank card)
+// 用户点击按钮时调用的函数 - 弹出模态框
 function addSalespersonCard() {
+    // 显示快速添加人员模态框
+    showQuickAddPersonModal();
+}
+
+// 创建空白卡片（初始化时使用，不弹出模态框）
+function createBlankSalespersonCard() {
     const container = document.getElementById('salespeople-container');
     if (!container) return;
     
@@ -407,6 +697,12 @@ function addSalespersonCard() {
                     <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                 </div>
             </div>
+            <div class="mt-3 text-right">
+                <button onclick="showPayslipPreview(${index})" 
+                        class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
+                    📄 Preview Payslip
+                </button>
+            </div>
         </div>
     `;
     
@@ -443,6 +739,150 @@ function addSalespersonCard() {
     
     console.log(`➕ Added blank salesperson card #${newId}`);
     return newId;
+}
+
+// ==================== Quick Add Person Modal ====================
+
+// Show quick add person modal
+function showQuickAddPersonModal() {
+    var existing = document.getElementById('quick-add-person-modal');
+    if (existing) existing.remove();
+
+    var IS = 'width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;background:#fff;color:#111827;display:block;';
+    function mkInp(id, type, val, ph, extra) {
+        var i = document.createElement('input');
+        i.id = id; i.type = type; i.value = val; i.placeholder = ph;
+        i.style.cssText = IS + (extra || '');
+        i.addEventListener('focus', function() { this.style.borderColor = '#10b981'; });
+        i.addEventListener('blur',  function() { this.style.borderColor = '#e5e7eb'; });
+        return i;
+    }
+    function mkRow(lhtml, el, mb) {
+        var d = document.createElement('div');
+        d.style.marginBottom = mb || '12px';
+        var l = document.createElement('label');
+        l.style.cssText = 'display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:5px;';
+        l.innerHTML = lhtml; d.appendChild(l); d.appendChild(el);
+        return d;
+    }
+    function mkBox(bg, border, title, tc) {
+        var b = document.createElement('div');
+        b.style.cssText = 'background:'+bg+';border:1px solid '+border+';border-radius:10px;padding:14px 16px;margin-bottom:14px;';
+        var t = document.createElement('div');
+        t.style.cssText = 'font-size:12px;font-weight:700;color:'+tc+';margin-bottom:10px;';
+        t.textContent = title; b.appendChild(t); return b;
+    }
+
+    var modal = document.createElement('div');
+    modal.id = 'quick-add-person-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:16px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;';
+    card.addEventListener('click', function(e) { e.stopPropagation(); });
+
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:linear-gradient(135deg,#10b981,#059669);padding:18px 24px;color:#fff;flex-shrink:0;';
+    hdr.innerHTML = '<div style="font-size:18px;font-weight:700;">Add New Salesperson</div><div style="font-size:13px;margin-top:4px;opacity:0.9;">Fill in salary & allowances</div>';
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:20px 24px;overflow-y:auto;flex:1;';
+
+    body.appendChild(mkRow('Name <span style="color:#ef4444">*</span>', mkInp('quick-person-name','text','','e.g., CHONG JIA YING')));
+
+    var salBox = mkBox('#f0fdf4','#bbf7d0','SALARY','#065f46');
+    salBox.appendChild(mkRow('Base Salary (RM) <span style="color:#ef4444">*</span>', mkInp('quick-person-salary','number','1700','1700'), '0'));
+    body.appendChild(salBox);
+
+    var alBox = mkBox('#eff6ff','#bfdbfe','ALLOWANCES (RM)','#1e40af');
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+    [['HP','quick-allow-hp'],['Car','quick-allow-car'],
+     ['Local Fuel','quick-allow-localfuel'],['Outstation Fuel','quick-allow-outfuel'],
+     ['Housing','quick-allow-housing'],['Food','quick-allow-food']
+    ].forEach(function(p) { grid.appendChild(mkRow(p[0], mkInp(p[1],'number','0','0'), '0')); });
+    alBox.appendChild(grid);
+    var ow = document.createElement('div'); ow.style.marginTop='10px';
+    ow.appendChild(mkRow('Others', mkInp('quick-allow-others','number','0','0'), '0'));
+    alBox.appendChild(ow); body.appendChild(alBox);
+
+    var epfBox = mkBox('#fafafa','#e5e7eb','DEDUCTION','#374151');
+    epfBox.appendChild(mkRow('EPF Rate (%)', mkInp('quick-person-epf','number','11','11','max-width:120px;'), '0'));
+    body.appendChild(epfBox);
+
+    var errDiv = document.createElement('div');
+    errDiv.id = 'quick-add-error';
+    errDiv.style.cssText = 'display:none;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:13px;margin-bottom:10px;';
+    body.appendChild(errDiv);
+
+    var ftr = document.createElement('div');
+    ftr.style.cssText = 'padding:16px 24px;border-top:1px solid #f3f4f6;display:flex;gap:12px;justify-content:flex-end;flex-shrink:0;background:#fff;';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:10px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;font-weight:500;';
+    cancelBtn.addEventListener('click', function() { closeQuickAddPersonModal(); });
+    var submitBtn = document.createElement('button');
+    submitBtn.id = 'quick-add-submit-btn';
+    submitBtn.textContent = '+ Add Person';
+    submitBtn.style.cssText = 'padding:10px 24px;border:none;border-radius:8px;background:#10b981;color:#fff;cursor:pointer;font-size:14px;font-weight:600;';
+    submitBtn.addEventListener('click', function() { quickAddPersonSubmit(); });
+    ftr.appendChild(cancelBtn); ftr.appendChild(submitBtn);
+    card.appendChild(hdr); card.appendChild(body); card.appendChild(ftr);
+    modal.appendChild(card); document.body.appendChild(modal);
+    modal.addEventListener('click', function() { closeQuickAddPersonModal(); });
+    setTimeout(function() { var n=document.getElementById('quick-person-name'); if(n) n.focus(); }, 50);
+}
+
+// Close modal
+function closeQuickAddPersonModal() {
+    const modal = document.getElementById('quick-add-person-modal');
+    if (modal) modal.remove();
+}
+
+// Submit add person
+async function quickAddPersonSubmit() {
+    var nameInput   = document.getElementById('quick-person-name');
+    var salaryInput = document.getElementById('quick-person-salary');
+    var errorEl     = document.getElementById('quick-add-error');
+    var btn         = document.getElementById('quick-add-submit-btn');
+    var name   = nameInput.value.trim();
+    var salary = parseFloat(salaryInput.value) || 1700;
+    var allowances = {
+        HP:                parseFloat((document.getElementById('quick-allow-hp')       ||{}).value)||0,
+        CAR:               parseFloat((document.getElementById('quick-allow-car')      ||{}).value)||0,
+        'LOCAL FUEL':      parseFloat((document.getElementById('quick-allow-localfuel')||{}).value)||0,
+        'OUTSTATION FUEL': parseFloat((document.getElementById('quick-allow-outfuel')  ||{}).value)||0,
+        HOUSING:           parseFloat((document.getElementById('quick-allow-housing')  ||{}).value)||0,
+        FOOD:              parseFloat((document.getElementById('quick-allow-food')     ||{}).value)||0,
+        OTHERS:            parseFloat((document.getElementById('quick-allow-others')   ||{}).value)||0
+    };
+    var epfRate = parseFloat((document.getElementById('quick-person-epf')||{}).value)||11;
+    if (!name) { errorEl.textContent='Please enter a name'; errorEl.style.display='block'; nameInput.focus(); return; }
+    var nameUpper = name.toUpperCase();
+    if (window.appState.config.base_salaries && window.appState.config.base_salaries[nameUpper]) {
+        errorEl.textContent='"'+name+'" already exists'; errorEl.style.display='block'; nameInput.focus(); return;
+    }
+    btn.disabled=true; btn.style.opacity='0.6'; btn.textContent='Adding...';
+    try {
+        if (!window.appState.config.base_salaries)  window.appState.config.base_salaries={};
+        if (!window.appState.config.allowances)      window.appState.config.allowances={};
+        if (!window.appState.config.deductions)      window.appState.config.deductions={};
+        if (!window.appState.config.deductionRates)  window.appState.config.deductionRates={};
+        window.appState.config.base_salaries[nameUpper] = salary;
+        window.appState.config.allowances[nameUpper]    = allowances;
+        var totalIncome = salary + Object.values(allowances).reduce(function(a,b){return a+b;},0);
+        window.appState.config.deductions[nameUpper]     = {EPF:Math.round(totalIncome*(epfRate/100)*100)/100,SOCSO:Math.round(totalIncome*0.005*100)/100,PCB:0,EIS:0};
+        window.appState.config.deductionRates[nameUpper] = {EPF_RATE:epfRate};
+        await saveConfig();
+        closeQuickAddPersonModal();
+        showToast('✅', '"'+name+'" added! Select from the dropdown.');
+        var people = Object.keys(window.appState.config.base_salaries||{});
+        var opts = '<option value="">Select...</option>'+people.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
+        document.querySelectorAll('[id^="name-"]').forEach(function(sel){var cur=sel.value;sel.innerHTML=opts;sel.value=cur;});
+    } catch(error) {
+        errorEl.textContent='Failed: '+error.message; errorEl.style.display='block';
+        btn.disabled=false; btn.style.opacity='1'; btn.textContent='+ Add Person';
+    }
 }
 
 // Clear all data - custom modal (no confirm() to avoid Electron timing issues)
@@ -492,7 +932,7 @@ function _doClearAllData() {
     }
 
     // Add one fresh blank card
-    addSalespersonCard();
+    createBlankSalespersonCard();
 
     // Clear saved data
     if (window.appState.config && window.appState.config.quickCalculateData) {
@@ -721,6 +1161,12 @@ function renderAllSalespeopleCards() {
                         <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                     </div>
                 </div>
+                <div class="mt-3 text-right">
+                    <button onclick="showPayslipPreview(${index})" 
+                            class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
+                        📄 Preview Payslip
+                    </button>
+                </div>
             </div>
         `;
         
@@ -840,7 +1286,7 @@ function updateSalespersonData(index) {
         const callAchievement = person.callTarget > 0 ? (person.callActual / person.callTarget) * 100 : 0;
         
         // Commission calculation
-        const commission = calculateCommission(person.sales, person.target);
+        const commission = calculateCommission(person.sales, person.target, person.name);
         const collectionBonus = calculateIncentive(collectionAchievement, window.appState.config.collection_incentive);
         const callBonus = calculateIncentive(callAchievement, window.appState.config.active_call_incentive);
         // Quarterly bonus only in quarter-end months MAR/JUN/SEP/DEC
@@ -899,21 +1345,31 @@ function updateSalespersonData(index) {
     
     // Update summary
     updateSummaryView();
+
+    // Auto-save debounced 500ms
+    if (window._autoSaveTimer) clearTimeout(window._autoSaveTimer);
+    window._autoSaveTimer = setTimeout(function() {
+        var _snap = {
+            month: ((document.getElementById('report-month')||{}).value||'').toUpperCase(),
+            salespeople: window.appState.salespeople.map(function(p){return Object.assign({},p);})
+        };
+        window.appState.config.quickCalculateData = _snap;
+        saveConfig().catch(function(){});
+        dbSave('quickCalculateData', _snap).catch(function(){});
+    }, 500);
 }
 
 // Calculate commission
-function calculateCommission(sales, target) {
+function calculateCommission(sales, target, personName) {
     if (target <= 0 || sales <= 0) return 0;
-    
     const achievement = (sales / target) * 100;
-    const rates = window.appState.config.monthly_commission_rates || [];
-    
+    const nu = personName ? personName.toUpperCase() : null;
+    let rates = window.appState.config.monthly_commission_rates || [];
+    if (nu && window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[nu])
+        rates = window.appState.config.person_commission_rates[nu];
     for (const tier of rates) {
-        if (achievement >= tier.min && achievement <= tier.max) {
-            return sales * (tier.rate || 0);
-        }
+        if (achievement >= tier.min && achievement <= tier.max) return sales * (tier.rate || 0);
     }
-    
     return 0;
 }
 
@@ -948,66 +1404,108 @@ function formatCurrency(amount) {
 function updateSummaryView() {
     const summaryContainer = document.getElementById('summary-view');
     if (!summaryContainer) return;
-    
-    // Only calculate salespeople with valid data
-    const validSalespeople = window.appState.salespeople.filter(p => 
-        p.name && p.target > 0 && p.sales > 0
-    );
-    
-    const totalPeople = window.appState.salespeople.length;
-    const validMembers = validSalespeople.length;
-    
-    // Calculate total commission (only valid data)
-    let totalCommission = 0;
-    validSalespeople.forEach(person => {
-        totalCommission += (person.totalCommission || 0);
-    });
-    
-    // Update display
-    const summaryCount = document.getElementById('summary-count');
-    const summaryCommission = document.getElementById('summary-commission');
-    
-    if (summaryCount) summaryCount.textContent = totalPeople;
-    if (summaryCommission) summaryCommission.textContent = formatCurrency(totalCommission);
-    
-    // Update detailed summary
-    const existingDetails = summaryContainer.querySelector('.summary-details');
-    if (existingDetails) {
-        existingDetails.remove();
+
+    const allPeople = window.appState.salespeople;
+    const validAll  = allPeople.filter(p => p.name && p.target > 0 && p.sales > 0);
+
+    // Determine view mode — default 'current' if only 1 person, else show toggle
+    if (!window._summaryMode) window._summaryMode = 'current';
+    const mode = window._summaryMode;
+
+    // Current person = index 0 (only card)
+    const curPerson = allPeople[0] || null;
+    const curValid  = curPerson && curPerson.name && curPerson.target > 0 && curPerson.sales > 0;
+
+    // Compute totals for "all" mode from reportHistory for current month
+    const month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    const histEntry = (window.appState.config.reportHistory||[]).find(r=>(r.month||'').toUpperCase()===month);
+    const histPeople = histEntry ? histEntry.data || [] : [];
+
+    // Determine display values
+    let dispPeople, dispCommission, dispTarget, dispSales, dispLabel;
+
+    if (mode === 'all' && histPeople.length > 0) {
+        dispPeople     = histPeople.length;
+        dispTarget     = histPeople.reduce((s,p)=>s+(parseFloat(p.target)||0),0);
+        dispSales      = histPeople.reduce((s,p)=>s+(parseFloat(p.sales)||0),0);
+        dispCommission = validAll.reduce((s,p)=>s+(p.totalCommission||0),0);
+        // For all mode, sum commissions from history using global config
+        if (histPeople.length > 0) {
+            dispCommission = histPeople.reduce((s,p) => {
+                const ach = p.target>0?(p.sales/p.target)*100:0;
+                const comm = calculateCommission(p.sales||0, p.target||0, p.name);
+                const collAch = p.collectionTarget>0?(p.collectionAmount/p.collectionTarget)*100:0;
+                const callAch = p.callTarget>0?(p.callActual||0)/p.callTarget*100:0;
+                const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
+                const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
+                return s + comm + coll + call;
+            }, 0);
+        }
+        dispLabel = month + ' — All (' + dispPeople + ' people)';
+    } else {
+        // Current person
+        dispPeople     = curPerson ? 1 : 0;
+        dispTarget     = curPerson ? (curPerson.target||0) : 0;
+        dispSales      = curPerson ? (curPerson.sales||0) : 0;
+        dispCommission = curValid  ? (curPerson.totalCommission||0) : 0;
+        dispLabel      = curPerson && curPerson.name ? curPerson.name : 'No data';
     }
-    
-    if (validMembers > 0) {
-        // Calculate average achievement rate
-        let totalTarget = 0;
-        let totalSales = 0;
-        validSalespeople.forEach(person => {
-            totalTarget += (person.target || 0);
-            totalSales += (person.sales || 0);
-        });
-        
-        const averageAchievement = totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0;
-        
+
+    const achievement = dispTarget > 0 ? (dispSales / dispTarget * 100) : 0;
+    const hasHistory  = histPeople.length > 1 || (histPeople.length === 1 && (!curPerson || (histPeople[0].name||'') !== (curPerson.name||'').toUpperCase()));
+
+    // Update summary count and commission
+    const summaryCount = document.getElementById('summary-count');
+    const summaryComm  = document.getElementById('summary-commission');
+    if (summaryCount) summaryCount.textContent = dispPeople;
+    if (summaryComm)  summaryComm.textContent  = formatCurrency(dispCommission);
+
+    // Remove old details + toggle
+    summaryContainer.querySelectorAll('.summary-details,.summary-toggle').forEach(el=>el.remove());
+
+    // Toggle button (only show if there's history data for other people)
+    if (hasHistory) {
+        const toggleDiv = document.createElement('div');
+        toggleDiv.className = 'summary-toggle flex gap-2 mt-3';
+        toggleDiv.innerHTML =
+            '<button onclick="setSummaryMode(\'current\')" style="flex:1;padding:6px 0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
+            + (mode==='current'?'background:#ffffff;color:#2563eb;border:2px solid #fff;':'background:rgba(255,255,255,0.2);color:#fff;border:2px solid rgba(255,255,255,0.4);')
+            + '">Current Person</button>'
+            + '<button onclick="setSummaryMode(\'all\')" style="flex:1;padding:6px 0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
+            + (mode==='all'?'background:#ffffff;color:#2563eb;border:2px solid #fff;':'background:rgba(255,255,255,0.2);color:#fff;border:2px solid rgba(255,255,255,0.4);')
+            + '">All People</button>';
+        summaryContainer.insertAdjacentElement('afterbegin', toggleDiv);
+    }
+
+    // Details section
+    if (dispPeople > 0 && dispTarget > 0) {
         const detailsHtml = `
             <div class="summary-details mt-4 pt-4 border-t border-blue-400">
+                <div class="text-sm text-blue-100 mb-1">${dispLabel}</div>
                 <div class="text-sm">
                     <div class="flex justify-between mb-1">
-                        <span class="text-blue-100">Valid Entries:</span>
-                        <span>${validMembers}/${totalPeople}</span>
+                        <span class="text-blue-100">Target:</span>
+                        <span>${formatCurrency(dispTarget)}</span>
                     </div>
                     <div class="flex justify-between mb-1">
-                        <span class="text-blue-100">Total Sales:</span>
-                        <span>RM ${totalSales.toLocaleString()}</span>
+                        <span class="text-blue-100">Sales:</span>
+                        <span>${formatCurrency(dispSales)}</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-blue-100">Avg Achievement:</span>
-                        <span class="${getAchievementColor(averageAchievement)}">${averageAchievement.toFixed(1)}%</span>
+                    <div class="flex justify-between mb-1">
+                        <span class="text-blue-100">Achievement:</span>
+                        <span class="font-bold ${achievement>=100?'text-green-300':achievement>=90?'text-yellow-200':'text-red-300'}">${achievement.toFixed(1)}%</span>
                     </div>
                 </div>
-            </div>
-        `;
+            </div>`;
         summaryContainer.insertAdjacentHTML('beforeend', detailsHtml);
     }
 }
+
+function setSummaryMode(mode) {
+    window._summaryMode = mode;
+    updateSummaryView();
+}
+
 
 // ==================== COMMISSION & INCENTIVE Page ====================
 
@@ -1016,28 +1514,47 @@ function initCommissionView() {
     renderCommissionConfigs();
 }
 
-function renderCommissionConfigs() {
+function renderCommissionConfigs(selectedName) {
     const container = document.getElementById('commission-config-container');
-    if (!container) {
-        console.error('Commission configuration container not found');
-        return;
+    if (!container) { console.error('Commission config container not found'); return; }
+    const people = Object.keys(window.appState.config.base_salaries || {});
+    if (!selectedName) { const sel=document.getElementById('commission-person-select'); selectedName=sel?sel.value:'__global__'; }
+    function getPCfg(gk,pk) {
+        const nu=selectedName&&selectedName!=='__global__'?selectedName.toUpperCase():null;
+        if(nu&&window.appState.config[pk]&&window.appState.config[pk][nu]) return JSON.parse(JSON.stringify(window.appState.config[pk][nu]));
+        return JSON.parse(JSON.stringify(window.appState.config[gk]||[]));
     }
-    
-    // Get configuration
-    const commissionRates = window.appState.config.monthly_commission_rates || [];
-    const quarterlyIncentive = window.appState.config.quarterly_incentive || [];
-    const collectionIncentive = window.appState.config.collection_incentive || [];
-    const activeCallIncentive = window.appState.config.active_call_incentive || [];
-    
-    container.innerHTML = `
+    const commissionRates     = getPCfg('monthly_commission_rates','person_commission_rates');
+    const quarterlyIncentive  = getPCfg('quarterly_incentive','person_quarterly_incentive');
+    const collectionIncentive = getPCfg('collection_incentive','person_collection_incentive');
+    const activeCallIncentive = getPCfg('active_call_incentive','person_call_incentive');
+    const sEnc = encodeURIComponent(selectedName||'__global__');
+    const isP  = selectedName && selectedName !== '__global__';
+    const hasOv= isP && ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].some(k=>window.appState.config[k]&&window.appState.config[k][selectedName.toUpperCase()]);
+    const ddOpts = ['<option value="__global__"'+(selectedName==='__global__'?' selected':'')+'>\u{1F310} Global (all)</option>'].concat(people.map(n=>'<option value="'+n+'"'+(n===selectedName?' selected':'')+'>'+n+'</option>')).join('');
+    const ddHtml = '<div class="mb-6 flex flex-wrap items-center gap-4"><div><label class="block text-sm font-medium text-gray-700 mb-1">Configure for</label>'
+        + '<select id="commission-person-select" onchange="renderCommissionConfigs(this.value)" class="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900" style="min-width:220px;">'
+        + ddOpts + '</select></div>'
+        + (isP ? '<div class="mt-5">'+(hasOv?'<span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm">✏️ Personal config</span><button onclick="clearPersonCommissionConfig(\'' + sEnc + '\')" class="ml-2 px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">Reset to global</button>':'<span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">Same as global setting</span>')+'</div>':'')
+        + '</div>';
+
+    // Temporarily set config to per-person values so existing render code works
+    const origCR=window.appState.config.monthly_commission_rates, origQI=window.appState.config.quarterly_incentive;
+    const origCI=window.appState.config.collection_incentive, origAI=window.appState.config.active_call_incentive;
+    window.appState.config.monthly_commission_rates=commissionRates;
+    window.appState.config.quarterly_incentive=quarterlyIncentive;
+    window.appState.config.collection_incentive=collectionIncentive;
+    window.appState.config.active_call_incentive=activeCallIncentive;
+
+    container.innerHTML = ddHtml + `
         <div class="space-y-6">
             <!-- Monthly commission settings -->
             <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold">💰 Monthly Commission Rates</h3>
-                    <button onclick="addCommissionTier()" 
+                    <h3 class="text-lg font-bold">\u{1F4B0} Monthly Commission Rates</h3>
+                    <button onclick="addCommissionTier('${sEnc}')"
                             class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                        ➕ Add Tier
+                        \u2795 Add Tier
                     </button>
                 </div>
                 <div class="space-y-3" id="commission-rates-container">
@@ -1046,339 +1563,172 @@ function renderCommissionConfigs() {
                             <div class="flex justify-between items-center mb-2">
                                 <div class="flex items-center gap-3">
                                     <span class="font-medium">Tier ${index + 1}:</span>
-                                    <input type="text" 
-                                           value="${tier.label || ''}" 
-                                           onchange="updateCommissionLabel(${index}, this.value)"
-                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                                           placeholder="Tier label">
+                                    <input type="text" value="${tier.label || ''}"
+                                           onchange="updateCommissionLabel(${index}, this.value, '${sEnc}')"
+                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" placeholder="Label">
                                 </div>
-                                <button onclick="removeCommissionTier(${index})" 
-                                        class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">
-                                    ✕ Remove
-                                </button>
+                                <button onclick="removeCommissionTier(${index}, '${sEnc}')"
+                                        class="text-red-500 hover:text-red-700 text-sm px-2">\u2715</button>
                             </div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div>
-                                    <label class="text-xs block mb-1">Min (%)</label>
-                                    <input type="number" 
-                                           value="${tier.min}" 
-                                           step="0.01"
-                                           onchange="updateCommissionTier(${index}, 'min', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs block mb-1">Max (%)</label>
-                                    <input type="number" 
-                                           value="${tier.max}" 
-                                           step="0.01"
-                                           onchange="updateCommissionTier(${index}, 'max', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs block mb-1">Rate (%)</label>
-                                    <input type="number" 
-                                           value="${(tier.rate * 100).toFixed(3)}" 
-                                           step="0.001"
-                                           onchange="updateCommissionTier(${index}, 'rate', this.value/100)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div><label class="text-xs text-gray-500">Min %</label>
+                                    <input type="number" value="${tier.min}" step="0.01"
+                                           onchange="updateCommissionTier(${index}, 'min', this.value, '${sEnc}')"
+                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm"></div>
+                                <div><label class="text-xs text-gray-500">Max %</label>
+                                    <input type="number" value="${tier.max}" step="0.01"
+                                           onchange="updateCommissionTier(${index}, 'max', this.value, '${sEnc}')"
+                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm"></div>
+                                <div><label class="text-xs text-gray-500">Rate %</label>
+                                    <input type="number" value="${(tier.rate * 100).toFixed(2)}" step="0.01"
+                                           onchange="updateCommissionTier(${index}, 'rate', this.value/100, '${sEnc}')"
+                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm"></div>
                             </div>
                         </div>
                     `).join('')}
                 </div>
             </div>
-            
-            <!-- Quarterly incentive -->
-            <div class="bg-green-50 rounded-lg p-4 border border-green-200">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold">🏆 Quarterly Incentive</h3>
-                    <button onclick="addIncentiveTier('quarterly')" 
-                            class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                        ➕ Add Tier
-                    </button>
-                </div>
-                <div class="space-y-3" id="quarterly-incentive-container">
-                    ${quarterlyIncentive.map((tier, index) => `
-                        <div class="bg-white p-3 rounded border border-gray-300">
-                            <div class="flex justify-between items-center mb-2">
-                                <div class="flex items-center gap-3">
-                                    <span class="font-medium">Tier ${index + 1}:</span>
-                                    <input type="text" 
-                                           value="${tier.label || ''}" 
-                                           onchange="updateIncentiveLabel('quarterly', ${index}, this.value)"
-                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                                           placeholder="Tier label">
-                                </div>
-                                <button onclick="removeIncentiveTier('quarterly', ${index})" 
-                                        class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">
-                                    ✕ Remove
-                                </button>
+            ${[
+                ['quarterly',   '\u{1F3C6} Quarterly Incentive',    'bg-green-50',  'border-green-200',  quarterlyIncentive],
+                ['collection',  '\u{1F4B5} Collection Incentive',   'bg-yellow-50', 'border-yellow-200', collectionIncentive],
+                ['active_call', '\u{1F4DE} Active Call Incentive',  'bg-purple-50', 'border-purple-200', activeCallIncentive]
+            ].map(([type, title, bg, border, tiers]) => `
+                <div class="${bg} rounded-lg p-4 border ${border}">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-lg font-bold">${title}</h3>
+                        <button onclick="addIncentiveTier('${type}', '${sEnc}')"
+                                class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">\u2795 Add Tier</button>
+                    </div>
+                    <div class="space-y-2">
+                        ${tiers.map((tier, i) => `
+                            <div class="bg-white p-3 rounded border border-gray-300 flex items-center gap-3">
+                                <input type="text" value="${tier.label||''}" placeholder="Label"
+                                       onchange="updateIncentiveLabel('${type}', ${i}, this.value, '${sEnc}')"
+                                       class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm">
+                                <div class="flex items-center gap-1"><label class="text-xs text-gray-500">Min%</label>
+                                    <input type="number" value="${tier.min}" step="1"
+                                           onchange="updateIncentiveTier('${type}', ${i}, 'min', this.value, '${sEnc}')"
+                                           class="w-20 px-2 py-1 border border-gray-300 rounded text-sm"></div>
+                                <div class="flex items-center gap-1"><label class="text-xs text-gray-500">RM</label>
+                                    <input type="number" value="${tier.incentive}" step="50"
+                                           onchange="updateIncentiveTier('${type}', ${i}, 'incentive', this.value, '${sEnc}')"
+                                           class="w-24 px-2 py-1 border border-gray-300 rounded text-sm"></div>
+                                <button onclick="removeIncentiveTier('${type}', ${i}, '${sEnc}')"
+                                        class="text-red-500 hover:text-red-700 text-sm px-2">\u2715</button>
                             </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="text-xs block mb-1">Min Achievement (%)</label>
-                                    <input type="number" 
-                                           value="${tier.min}" 
-                                           onchange="updateIncentiveTier('quarterly', ${index}, 'min', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs block mb-1">Incentive (RM)</label>
-                                    <input type="number" 
-                                           value="${tier.incentive}" 
-                                           onchange="updateIncentiveTier('quarterly', ${index}, 'incentive', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
+                        `).join('')}
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Collection incentive -->
-            <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold">💵 Collection Incentive</h3>
-                    <button onclick="addIncentiveTier('collection')" 
-                            class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                        ➕ Add Tier
-                    </button>
-                </div>
-                <div class="space-y-3" id="collection-incentive-container">
-                    ${collectionIncentive.map((tier, index) => `
-                        <div class="bg-white p-3 rounded border border-gray-300">
-                            <div class="flex justify-between items-center mb-2">
-                                <div class="flex items-center gap-3">
-                                    <span class="font-medium">Tier ${index + 1}:</span>
-                                    <input type="text" 
-                                           value="${tier.label || ''}" 
-                                           onchange="updateIncentiveLabel('collection', ${index}, this.value)"
-                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                                           placeholder="Tier label">
-                                </div>
-                                <button onclick="removeIncentiveTier('collection', ${index})" 
-                                        class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">
-                                    ✕ Remove
-                                </button>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="text-xs block mb-1">Min Achievement (%)</label>
-                                    <input type="number" 
-                                           value="${tier.min}" 
-                                           onchange="updateIncentiveTier('collection', ${index}, 'min', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs block mb-1">Incentive (RM)</label>
-                                    <input type="number" 
-                                           value="${tier.incentive}" 
-                                           onchange="updateIncentiveTier('collection', ${index}, 'incentive', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            
-            <!-- Active call incentive -->
-            <div class="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold">📞 Active Call Incentive</h3>
-                    <button onclick="addIncentiveTier('active_call')" 
-                            class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                        ➕ Add Tier
-                    </button>
-                </div>
-                <div class="space-y-3" id="active-call-incentive-container">
-                    ${activeCallIncentive.map((tier, index) => `
-                        <div class="bg-white p-3 rounded border border-gray-300">
-                            <div class="flex justify-between items-center mb-2">
-                                <div class="flex items-center gap-3">
-                                    <span class="font-medium">Tier ${index + 1}:</span>
-                                    <input type="text" 
-                                           value="${tier.label || ''}" 
-                                           onchange="updateIncentiveLabel('active_call', ${index}, this.value)"
-                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                                           placeholder="Tier label">
-                                </div>
-                                <button onclick="removeIncentiveTier('active_call', ${index})" 
-                                        class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">
-                                    ✕ Remove
-                                </button>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="text-xs block mb-1">Min Achievement (%)</label>
-                                    <input type="number" 
-                                           value="${tier.min}" 
-                                           onchange="updateIncentiveTier('active_call', ${index}, 'min', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs block mb-1">Incentive (RM)</label>
-                                    <input type="number" 
-                                           value="${tier.incentive}" 
-                                           onchange="updateIncentiveTier('active_call', ${index}, 'incentive', this.value)"
-                                           class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
+            `).join('')}
         </div>
     `;
-    
-    console.log('✅ Commission & Incentive page rendering completed');
+
+    // Restore original config
+    window.appState.config.monthly_commission_rates=origCR; window.appState.config.quarterly_incentive=origQI;
+    window.appState.config.collection_incentive=origCI; window.appState.config.active_call_incentive=origAI;
+    console.log('\u2705 Commission & Incentive page rendering completed');
+}
+
+function clearPersonCommissionConfig(pEnc) {
+    const nu = decodeURIComponent(pEnc).toUpperCase();
+    ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].forEach(k => {
+        if (window.appState.config[k] && window.appState.config[k][nu]) delete window.appState.config[k][nu];
+    });
+    saveConfig(); renderCommissionConfigs(decodeURIComponent(pEnc)); showToast('\u2705','Reset to global config');
 }
 
 // Add commission Tier
-function addCommissionTier() {
-    if (!window.appState.config.monthly_commission_rates) {
-        window.appState.config.monthly_commission_rates = [];
-    }
-    
-    // Get the maximum max value
-    const lastTier = window.appState.config.monthly_commission_rates.length > 0 
-        ? window.appState.config.monthly_commission_rates[window.appState.config.monthly_commission_rates.length - 1]
-        : { min: 0, max: 0 };
-    
-    const newMax = lastTier.max + 20; // Increase by 20%
-    
-    window.appState.config.monthly_commission_rates.push({
-        min: lastTier.max + 0.01,
-        max: newMax,
-        rate: 0.01, // Default 1%
-        label: `${lastTier.max + 0.01}%-${newMax}%`
-    });
-    
-    saveConfig();
-    renderCommissionConfigs();
-    showToast('✅', 'New commission Tier added successfully');
+function addCommissionTier(pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const gk='monthly_commission_rates', pk='person_commission_rates';
+    let rates;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));rates=window.appState.config[pk][nu];}
+    else{if(!window.appState.config[gk])window.appState.config[gk]=[];rates=window.appState.config[gk];}
+    const last=rates.length>0?rates[rates.length-1]:{max:0}; const newMin=(last.max||0)+0.01;
+    rates.push({min:newMin,max:newMin+9.99,rate:0,label:newMin.toFixed(0)+'%+'});
+    saveConfig(); showToast('\u2705','New commission Tier added successfully'); renderCommissionConfigs(pN);
 }
 
 // Remove commission Tier
-function removeCommissionTier(index) {
-    if (window.appState.config.monthly_commission_rates.length <= 1) {
-        showToast('⚠️', 'Cannot delete the last Tier');
-        return;
-    }
-    
-    if (confirm('Confirm to delete this Tier?')) {
-        window.appState.config.monthly_commission_rates.splice(index, 1);
-        saveConfig();
-        renderCommissionConfigs();
-        showToast('✅', 'Tier deleted successfully');
-    }
+function removeCommissionTier(index, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const gk='monthly_commission_rates', pk='person_commission_rates';
+    let rates;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));rates=window.appState.config[pk][nu];}
+    else rates=window.appState.config[gk];
+    if(!rates||rates.length<=1){showToast('\u26a0\ufe0f','Cannot delete the last Tier');return;}
+    rates.splice(index,1); saveConfig(); renderCommissionConfigs(pN); showToast('\u2705','Tier deleted');
 }
 
 // Add incentive Tier
-function addIncentiveTier(type) {
-    const typeMap = {
-        'quarterly': 'quarterly_incentive',
-        'collection': 'collection_incentive',
-        'active_call': 'active_call_incentive'
-    };
-    
-    const configKey = typeMap[type];
-    if (!configKey) return;
-    
-    if (!window.appState.config[configKey]) {
-        window.appState.config[configKey] = [];
-    }
-    
-    // Get the minimum min value
-    const tiers = window.appState.config[configKey];
-    const minValues = tiers.map(t => t.min).filter(m => m !== undefined);
-    const nextMin = minValues.length > 0 ? Math.min(...minValues) - 10 : 90;
-    
-    window.appState.config[configKey].push({
-        min: nextMin,
-        incentive: 100, // Default 100
-        label: `${nextMin}%+`
-    });
-    
-    // Sort by min value descending
-    window.appState.config[configKey].sort((a, b) => b.min - a.min);
-    
-    saveConfig();
-    renderCommissionConfigs();
-    showToast('✅', `New ${type} Tier added successfully`);
+function addIncentiveTier(type, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const tm={quarterly:'quarterly_incentive',collection:'collection_incentive',active_call:'active_call_incentive'};
+    const pm={quarterly:'person_quarterly_incentive',collection:'person_collection_incentive',active_call:'person_call_incentive'};
+    const gk=tm[type], pk=pm[type]; if(!gk)return;
+    let tiers;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));tiers=window.appState.config[pk][nu];}
+    else{if(!window.appState.config[gk])window.appState.config[gk]=[];tiers=window.appState.config[gk];}
+    const last=tiers.length>0?tiers[0]:{min:100};
+    tiers.unshift({min:Math.max(0,(last.min||0)-10),incentive:0,label:'New Tier'});
+    saveConfig(); showToast('\u2705','New '+type+' Tier added successfully'); renderCommissionConfigs(pN);
 }
 
 // Remove incentive Tier
-function removeIncentiveTier(type, index) {
-    const typeMap = {
-        'quarterly': 'quarterly_incentive',
-        'collection': 'collection_incentive',
-        'active_call': 'active_call_incentive'
-    };
-    
-    const configKey = typeMap[type];
-    if (!configKey || !window.appState.config[configKey]) return;
-    
-    if (window.appState.config[configKey].length <= 1) {
-        showToast('⚠️', 'Cannot delete the last Tier');
-        return;
-    }
-    
-    if (confirm('Confirm to delete this Tier?')) {
-        window.appState.config[configKey].splice(index, 1);
-        saveConfig();
-        renderCommissionConfigs();
-        showToast('✅', 'Tier deleted successfully');
-    }
+function removeIncentiveTier(type, index, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const tm={quarterly:'quarterly_incentive',collection:'collection_incentive',active_call:'active_call_incentive'};
+    const pm={quarterly:'person_quarterly_incentive',collection:'person_collection_incentive',active_call:'person_call_incentive'};
+    const gk=tm[type], pk=pm[type]; if(!gk)return;
+    let tiers;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));tiers=window.appState.config[pk][nu];}
+    else tiers=window.appState.config[gk];
+    if(!tiers||tiers.length<=1){showToast('\u26a0\ufe0f','Cannot delete the last Tier');return;}
+    tiers.splice(index,1); saveConfig(); renderCommissionConfigs(pN); showToast('\u2705','Tier deleted');
 }
 
 // Update commission label
-function updateCommissionLabel(index, value) {
-    if (!window.appState.config.monthly_commission_rates[index]) return;
-    window.appState.config.monthly_commission_rates[index].label = value;
-    saveConfig();
+function updateCommissionLabel(index, value, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const gk='monthly_commission_rates', pk='person_commission_rates';
+    let rates;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));rates=window.appState.config[pk][nu];}
+    else rates=window.appState.config[gk];
+    if(!rates||!rates[index])return; rates[index].label=value; saveConfig();
 }
 
 // Update commission tier
-function updateCommissionTier(index, field, value) {
-    if (!window.appState.config.monthly_commission_rates[index]) return;
-    window.appState.config.monthly_commission_rates[index][field] = parseFloat(value) || 0;
-    
-    const tier = window.appState.config.monthly_commission_rates[index];
-    if (tier.min !== undefined && tier.max !== undefined) {
-        tier.label = `${tier.min.toFixed(0)}%-${tier.max.toFixed(0)}%`;
-    }
-    
-    saveConfig();
-    renderCommissionConfigs();
+function updateCommissionTier(index, field, value, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const gk='monthly_commission_rates', pk='person_commission_rates';
+    let rates;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));rates=window.appState.config[pk][nu];}
+    else rates=window.appState.config[gk];
+    if(!rates||!rates[index])return; rates[index][field]=parseFloat(value)||0; saveConfig(); renderCommissionConfigs(pN);
 }
 
 // Update incentive label
-function updateIncentiveLabel(type, index, value) {
-    const typeMap = {
-        'quarterly': 'quarterly_incentive',
-        'collection': 'collection_incentive',
-        'active_call': 'active_call_incentive'
-    };
-    
-    if (!window.appState.config[typeMap[type]] || !window.appState.config[typeMap[type]][index]) return;
-    window.appState.config[typeMap[type]][index].label = value;
-    saveConfig();
+function updateIncentiveLabel(type, index, value, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const tm={quarterly:'quarterly_incentive',collection:'collection_incentive',active_call:'active_call_incentive'};
+    const pm={quarterly:'person_quarterly_incentive',collection:'person_collection_incentive',active_call:'person_call_incentive'};
+    const gk=tm[type], pk=pm[type]; if(!gk)return;
+    let tiers;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));tiers=window.appState.config[pk][nu];}
+    else tiers=window.appState.config[gk];
+    if(!tiers||!tiers[index])return; tiers[index].label=value; saveConfig();
 }
 
 // Update incentive tier
-function updateIncentiveTier(type, index, field, value) {
-    const typeMap = {
-        'quarterly': 'quarterly_incentive',
-        'collection': 'collection_incentive',
-        'active_call': 'active_call_incentive'
-    };
-    
-    if (!window.appState.config[typeMap[type]] || !window.appState.config[typeMap[type]][index]) return;
-    window.appState.config[typeMap[type]][index][field] = parseFloat(value) || 0;
-    
-    saveConfig();
-    renderCommissionConfigs();
+function updateIncentiveTier(type, index, field, value, pEnc) {
+    const pN=pEnc?decodeURIComponent(pEnc):'__global__', nu=pN!=='__global__'?pN.toUpperCase():null;
+    const tm={quarterly:'quarterly_incentive',collection:'collection_incentive',active_call:'active_call_incentive'};
+    const pm={quarterly:'person_quarterly_incentive',collection:'person_collection_incentive',active_call:'person_call_incentive'};
+    const gk=tm[type], pk=pm[type]; if(!gk)return;
+    let tiers;
+    if(nu){if(!window.appState.config[pk])window.appState.config[pk]={};if(!window.appState.config[pk][nu])window.appState.config[pk][nu]=JSON.parse(JSON.stringify(window.appState.config[gk]||[]));tiers=window.appState.config[pk][nu];}
+    else tiers=window.appState.config[gk];
+    if(!tiers||!tiers[index])return; tiers[index][field]=parseFloat(value)||0; saveConfig(); renderCommissionConfigs(pN);
 }
 
 // ==================== Other Page Functions ====================
@@ -1388,18 +1738,16 @@ function initSalaryView() {
     renderSalaryConfigs();
 }
 
-function renderSalaryConfigs() {
+function renderSalaryConfigs(selectedName) {
     const container = document.getElementById('salary-config-container');
     if (!container) return;
-    
     const people = Object.keys(window.appState.config.base_salaries || {});
-    
-    if (people.length === 0) {
-        container.innerHTML = '<div class="text-center py-12 text-gray-500"><p>No salespeople configured yet</p></div>';
-        return;
-    }
-    
-    container.innerHTML = people.map(name => {
+    if (people.length === 0) { container.innerHTML = '<div class="text-center py-12 text-gray-500"><p>No salespeople configured yet</p></div>'; return; }
+    if (!selectedName) { const sel=document.getElementById('salary-person-select'); selectedName=sel?sel.value:people[0]; }
+    if (!selectedName||!people.includes(selectedName)) selectedName=people[0];
+    const opts=people.map(n=>'<option value="'+n+'"'+(n===selectedName?' selected':'')+'>'+n+'</option>').join('');
+    const dropdown='<div class="mb-6"><label class="block text-sm font-medium text-gray-700 mb-2">Select Salesperson</label><select id="salary-person-select" onchange="renderSalaryConfigs(this.value)" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 bg-white text-gray-900" style="max-width:320px;">'+opts+'</select></div>';
+    container.innerHTML = dropdown + people.filter(n=>n===selectedName).map(name => {
         const nameUpper = name.toUpperCase();
         const salary = window.appState.config.base_salaries[nameUpper] || 0;
         const allowances = window.appState.config.allowances[nameUpper] || {};
@@ -1547,6 +1895,12 @@ function addNewPerson() {
 // ==================== Batch Export (Multi-Month) ====================
 
 function showBatchExportModal() {
+    // Pro feature check
+    if (!canUseProFeature()) {
+        showLicenseModal('Batch Export');
+        return;
+    }
+
     // Check data sources
     const hasExcelData = window.appState.importedExcelData && window.appState.importedExcelData.length > 0;
     const hasHistory = window.appState.config.reportHistory && window.appState.config.reportHistory.length > 0;
@@ -1770,6 +2124,11 @@ async function executeBatchExport() {
             if (result.success) {
                 successCount++;
 
+                // Increment trial export count
+                if (!isPro() && window.electronAPI.incrementExport) {
+                    await window.electronAPI.incrementExport();
+                }
+
                 // Save to history
                 if (!window.appState.config.reportHistory) {
                     window.appState.config.reportHistory = [];
@@ -1971,6 +2330,15 @@ function buildSalesDataForMonth(month, excelData, history, config, currentCardMo
 // Export to Excel
 async function exportTemplate() {
     try {
+        // Check trial limit
+        if (!isPro()) {
+            const status = await checkLicenseStatus();
+            if (status.status === 'expired') {
+                showLicenseModal('Export Excel');
+                return;
+            }
+        }
+
         showLoading('Generating Excel report...');
         
         const month = document.getElementById('report-month').value;
@@ -2014,6 +2382,12 @@ async function exportTemplate() {
         
         if (result.success) {
             showToast('✅', `Successfully exported ${salesData.length} records!`);
+            
+            // Increment trial export count
+            if (!isPro() && window.electronAPI.incrementExport) {
+                await window.electronAPI.incrementExport();
+                await checkLicenseStatus(); // refresh badge
+            }
             
             if (!window.appState.config.reportHistory) {
                 window.appState.config.reportHistory = [];
@@ -2699,7 +3073,11 @@ function autoFillLockedFields(index) {
         }
     }
     const cEl = document.getElementById('collection-target-' + index);
-    if (cEl) { cEl.value = collTarget || ''; cEl.readOnly = true; cEl.style.backgroundColor = '#f3f4f6'; cEl.title = collLabel; person.collectionTarget = collTarget; }
+    if (cEl) {
+        if (collTarget>0) { cEl.value=collTarget; cEl.readOnly=true; cEl.style.backgroundColor='#f3f4f6'; cEl.title=collLabel; }
+        else { cEl.value=''; cEl.readOnly=false; cEl.style.backgroundColor=''; cEl.title=''; }
+        person.collectionTarget=collTarget;
+    }
 }
 
 // Import Excel
@@ -2747,66 +3125,76 @@ async function importFromExcel() {
 function fillCardsFromImportedData(targetMonth) {
     const data = window.appState.importedExcelData;
     if (!data || data.length === 0) return;
-
     const currentMonth = targetMonth.toUpperCase();
+    if (!window.appState.config.reportHistory) window.appState.config.reportHistory = [];
+    if (!window.appState.config.base_salaries) window.appState.config.base_salaries = {};
+    if (!window.appState.config.allowances) window.appState.config.allowances = {};
+    if (!window.appState.config.deductions) window.appState.config.deductions = {};
+    if (!window.appState.config.deductionRates) window.appState.config.deductionRates = {};
 
-    // Clear existing cards
+    // Sync ALL months from ALL people into reportHistory + config
+    data.forEach(person => {
+        const nameUpper = person.name.toUpperCase();
+        if (!window.appState.config.base_salaries[nameUpper]) {
+            window.appState.config.base_salaries[nameUpper] = 1700;
+            window.appState.config.allowances[nameUpper] = {HP:0,CAR:0,'LOCAL FUEL':0,'OUTSTATION FUEL':0,HOUSING:0,FOOD:0,OTHERS:0};
+            window.appState.config.deductions[nameUpper] = {EPF:Math.round(1700*0.11*100)/100,SOCSO:Math.round(1700*0.005*100)/100,PCB:0,EIS:0};
+            window.appState.config.deductionRates[nameUpper] = {EPF_RATE:11};
+        }
+        person.months.forEach(md => {
+            if (!md.month) return;
+            const mKey = md.month.toUpperCase();
+            let mEntry = window.appState.config.reportHistory.find(r => (r.month||'').toUpperCase() === mKey);
+            if (!mEntry) { mEntry = {month:mKey,data:[]}; window.appState.config.reportHistory.push(mEntry); }
+            const ei = mEntry.data.findIndex(p => (p.name||'').toUpperCase() === nameUpper);
+            const entry = {name:nameUpper,target:md.target||0,sales:md.sales||0,collectionAmount:md.collection||0,callTarget:md.callTarget||0,collectionTarget:0,callActual:0};
+            if (ei >= 0) mEntry.data[ei] = entry; else mEntry.data.push(entry);
+            if (md.callTarget) {
+                if (!window.appState.config.active_call_targets) window.appState.config.active_call_targets = {};
+                window.appState.config.active_call_targets[nameUpper] = md.callTarget;
+            }
+        });
+    });
+    saveConfig();
+
+    // Keep only ONE card — fill with first person for current month
     const container = document.getElementById('salespeople-container');
     if (container) container.innerHTML = '';
     window.appState.salespeople = [];
-
-    // Create cards for each person and fill data
-    let loaded = 0;
-    data.forEach(person => {
-        // Find this person's data for the target month
-        const monthData = person.months.find(m => m.month === currentMonth);
-        if (!monthData && !person.months.length) return;
-
-        const md = monthData || person.months[person.months.length - 1];
-
-        // Add card
-        addSalespersonCard();
-        const idx = window.appState.salespeople.length - 1;
-
-        // Fill name
-        const nameEl = document.getElementById('name-' + idx);
-        if (nameEl) {
-            // Find matching option
-            const option = Array.from(nameEl.options).find(o => o.value.toUpperCase() === person.name.toUpperCase());
-            if (option) {
-                nameEl.value = option.value;
-            } else {
-                // This person is not configured, add a temporary option
-                const opt = document.createElement('option');
-                opt.value = person.name;
-                opt.text = person.name;
-                nameEl.appendChild(opt);
-                nameEl.value = person.name;
-            }
-        }
-
-        // Fill target, sales, collection from Excel data
-        const targetEl = document.getElementById('target-' + idx);
-        const salesEl = document.getElementById('sales-' + idx);
-        const collAmtEl = document.getElementById('collection-amount-' + idx);
-
-        if (targetEl) { targetEl.value = md.target || ''; targetEl.readOnly = false; targetEl.style.backgroundColor = ''; }
-        if (salesEl) { salesEl.value = md.sales || ''; salesEl.readOnly = false; salesEl.style.backgroundColor = ''; }
-        if (collAmtEl && md.collection) collAmtEl.value = md.collection;
-
-        // ── Auto-fill quarterly from imported Excel data (not just history) ──
-        autoFillLockedFieldsWithExcel(idx, person.months, currentMonth);
-
-        // Update calculation
-        updateSalespersonData(idx);
-        loaded++;
-    });
-
-    if (loaded > 0) {
-        showToast('✅', `Imported ${loaded} salespeople for ${currentMonth}`);
-    } else {
-        showToast('⚠️', `No data found for ${currentMonth}`);
+    const fp = data[0];
+    const fmd = fp.months.find(m => m.month === currentMonth) || fp.months[fp.months.length - 1];
+    createBlankSalespersonCard();
+    const nameEl0 = document.getElementById('name-0');
+    if (nameEl0) {
+        const opt0 = Array.from(nameEl0.options).find(o => o.value.toUpperCase() === fp.name.toUpperCase());
+        if (opt0) { nameEl0.value = opt0.value; }
+        else { const o=document.createElement('option'); o.value=fp.name; o.text=fp.name; nameEl0.appendChild(o); nameEl0.value=fp.name; }
     }
+    if (fmd) {
+        const s0=(id,v)=>{const el=document.getElementById(id+'-0');if(el&&v){el.value=v;el.readOnly=false;el.style.backgroundColor='';}};
+        s0('target',fmd.target); s0('sales',fmd.sales);
+        if(fmd.collection){const el=document.getElementById('collection-amount-0');if(el)el.value=fmd.collection;}
+        if(fmd.callTarget){const el=document.getElementById('call-target-0');if(el)el.value=fmd.callTarget;}
+        autoFillLockedFieldsWithExcel(0, fp.months, currentMonth);
+    }
+    updateSalespersonData(0);
+
+    // Force-save quickCalculateData immediately after import so data persists on restart
+    var _qcd = {
+        month: currentMonth,
+        salespeople: window.appState.salespeople.map(function(p){ return Object.assign({}, p); })
+    };
+    window.appState.config.quickCalculateData = _qcd;
+    saveConfig();
+    // Also persist to SQLite DB
+    dbSave('quickCalculateData', _qcd);
+    dbSave('reportHistory', window.appState.config.reportHistory || []);
+
+    if (document.getElementById('salary-person-select')) renderSalaryConfigs();
+    if (document.getElementById('commission-person-select')) renderCommissionConfigs();
+    if (document.getElementById('history-list')) loadQuickCalculateHistory();
+    const totalMonths = [...new Set(data.flatMap(p => p.months.map(m => m.month)))].length;
+    showToast('\u2705', `Imported ${data.length} people, ${totalMonths} months. Use name dropdown to switch.`);
 }
 
 // ── Auto-fill quarterly fields using imported Excel data + history ──
@@ -2907,7 +3295,11 @@ function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
         }
     }
     const cEl = document.getElementById('collection-target-' + index);
-    if (cEl) { cEl.value = collTarget || ''; cEl.readOnly = true; cEl.style.backgroundColor = '#f3f4f6'; cEl.title = collLabel; person.collectionTarget = collTarget; }
+    if (cEl) {
+        if (collTarget>0) { cEl.value=collTarget; cEl.readOnly=true; cEl.style.backgroundColor='#f3f4f6'; cEl.title=collLabel; }
+        else { cEl.value=''; cEl.readOnly=false; cEl.style.backgroundColor=''; cEl.title=''; }
+        person.collectionTarget=collTarget;
+    }
 }
 
 // Salary & Allowances update functions
@@ -2916,7 +3308,7 @@ function updateSalary(name, value) {
     if (!window.appState.config.base_salaries) window.appState.config.base_salaries = {};
     window.appState.config.base_salaries[nameUpper] = parseFloat(value) || 0;
     saveConfig();
-    renderSalaryConfigs();
+    renderSalaryConfigs(name);
 }
 
 function updateAllowance(name, key, value) {
@@ -2935,7 +3327,7 @@ function updateAllowance(name, key, value) {
     window.appState.config.deductions[nameUpper].EPF   = Math.round(totalIncome * epfRate * 100) / 100;
     window.appState.config.deductions[nameUpper].SOCSO = Math.round(totalIncome * 0.005 * 100) / 100;
     saveConfig();
-    renderSalaryConfigs();
+    renderSalaryConfigs(name);
 }
 
 function updateEPFRate(name, value) {
@@ -2953,7 +3345,7 @@ function updateEPFRate(name, value) {
     if (!window.appState.config.deductions[nameUpper]) window.appState.config.deductions[nameUpper] = {};
     window.appState.config.deductions[nameUpper].EPF = Math.round(totalIncome * epfRate * 100) / 100;
     saveConfig();
-    renderSalaryConfigs();
+    renderSalaryConfigs(name);
 }
 
 function updateDeduction(name, key, value) {
@@ -2966,6 +3358,53 @@ function updateDeduction(name, key, value) {
 
 // Missing functions
 function onSalespersonNameChange(index) {
+    var nameEl   = document.getElementById('name-'+index);
+    var newName  = nameEl ? nameEl.value : '';
+    var newUpper = newName.toUpperCase();
+    var month    = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var fields   = ['target','sales','quarterly-target','quarterly-sales','collection-target','collection-amount','call-target','call-actual'];
+
+    // Save previous person's data before switching
+    var person = window.appState.salespeople[index];
+    if (person && person.name && person.name !== newName) {
+        var prevUpper = person.name.toUpperCase();
+        var prevTarget = parseFloat((document.getElementById('target-'+index)||{}).value)||0;
+        var prevSales  = parseFloat((document.getElementById('sales-'+index)||{}).value)||0;
+        if (prevTarget>0||prevSales>0) {
+            if (!window.appState.config.reportHistory) window.appState.config.reportHistory=[];
+            var existIdx = window.appState.config.reportHistory.findIndex(function(r){return (r.month||'').toUpperCase()===month;});
+            var entry = {name:prevUpper,target:prevTarget,sales:prevSales,
+                collectionTarget:parseFloat((document.getElementById('collection-target-'+index)||{}).value)||0,
+                collectionAmount:parseFloat((document.getElementById('collection-amount-'+index)||{}).value)||0,
+                callTarget:parseFloat((document.getElementById('call-target-'+index)||{}).value)||0,
+                callActual:parseFloat((document.getElementById('call-actual-'+index)||{}).value)||0};
+            if (existIdx>=0) {
+                var data=window.appState.config.reportHistory[existIdx].data||[];
+                var pi=data.findIndex(function(p){return (p.name||'').toUpperCase()===prevUpper;});
+                if(pi>=0) data[pi]=entry; else data.push(entry);
+                window.appState.config.reportHistory[existIdx].data=data;
+            } else { window.appState.config.reportHistory.push({month:month,data:[entry]}); }
+            saveConfig().catch(function(){});
+        }
+    }
+
+    // Clear all fields
+    fields.forEach(function(f){var el=document.getElementById(f+'-'+index);if(el){el.value='';el.readOnly=false;el.style.backgroundColor='';}});
+
+    // Load saved data for new person
+    if (newUpper&&month) {
+        var history=window.appState.config.reportHistory||[];
+        var entries=history.filter(function(r){return (r.month||'').toUpperCase()===month;});
+        var saved=null;
+        for(var i=entries.length-1;i>=0;i--){var f=( entries[i].data||[]).find(function(p){return (p.name||'').toUpperCase()===newUpper;});if(f){saved=f;break;}}
+        if(saved){
+            var set=function(f,v){var el=document.getElementById(f+'-'+index);if(el&&v)el.value=v;};
+            set('target',saved.target);set('sales',saved.sales);
+            set('collection-target',saved.collectionTarget);set('collection-amount',saved.collectionAmount);
+            set('call-target',saved.callTarget);set('call-actual',saved.callActual);
+        }
+    }
+
     updateSalespersonData(index);
     autoFillLockedFields(index);
 }
@@ -3004,36 +3443,283 @@ function hideLoading() {
 function loadQuickCalculateHistory() {
     const historyList = document.getElementById('history-list');
     if (!historyList) return;
-    
-    if (!window.appState.config.reportHistory || window.appState.config.reportHistory.length === 0) {
+
+    const history = window.appState.config.reportHistory || [];
+    if (history.length === 0) {
         historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
         return;
     }
-    
-    historyList.innerHTML = window.appState.config.reportHistory.map((report, index) => `
-        <div class="bg-blue-50 rounded-lg p-4 border border-gray-200">
+
+    // Sort months in calendar order, filter out future months
+    const monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const currentMonthIdx = new Date().getMonth(); // 0=JAN, 11=DEC
+    const sorted = [...history]
+        .filter(r => monthOrder.indexOf((r.month||'').toUpperCase()) <= currentMonthIdx)
+        .sort((a,b) => {
+            const ai = monthOrder.indexOf((a.month||'').toUpperCase());
+            const bi = monthOrder.indexOf((b.month||'').toUpperCase());
+            return bi - ai; // newest month first
+        });
+
+    historyList.innerHTML = sorted.map((report, index) => {
+        const people = report.data || [];
+        const month  = (report.month || '').toUpperCase();
+
+        // Calculate total commission for each person
+        let totalComm = 0;
+        people.forEach(p => {
+            const comm = calculateCommission(p.sales||0, p.target||0, p.name);
+            const collAch = p.collectionTarget>0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
+            const callAch = p.callTarget>0 ? (p.callActual||0)/p.callTarget*100 : 0;
+            const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
+            const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
+            totalComm += comm + coll + call;
+        });
+
+        const realIndex = history.indexOf(report);
+
+        const peopleCards = people.map(p => {
+            const comm = calculateCommission(p.sales||0, p.target||0, p.name);
+            const ach  = p.target>0 ? (p.sales||0)/p.target*100 : 0;
+            return `<div class="bg-white rounded p-3 text-center border border-gray-100">
+                <div class="font-medium text-gray-800 text-sm">${p.name||'—'}</div>
+                <div class="text-xs text-gray-500 mt-1">Target: ${formatCurrency(p.target||0)}</div>
+                <div class="text-xs text-gray-500">Sales: ${formatCurrency(p.sales||0)}</div>
+                <div class="text-xs font-semibold mt-1 ${ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500'}">${ach.toFixed(1)}%</div>
+                <div class="text-xs text-indigo-600 font-medium">${formatCurrency(comm)}</div>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-4">
             <div class="flex justify-between items-start mb-3">
                 <div>
-                    <h4 class="font-semibold text-gray-900">${report.month} Report</h4>
-                    <p class="text-sm text-gray-600">${new Date(report.timestamp).toLocaleString()}</p>
+                    <h4 class="text-lg font-bold text-gray-900">${month}</h4>
+                    <p class="text-sm text-gray-500">${people.length} people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">${formatCurrency(totalComm)}</span></p>
                 </div>
-                <div class="flex space-x-2">
-                    <button onclick="viewHistoryReport(${index})" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">View</button>
-                    <button onclick="deleteHistoryReport(${index})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">Delete</button>
+                <div class="flex gap-2 flex-wrap justify-end">
+                    <button onclick="viewHistoryReport(${realIndex})" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>
+                    <button onclick="exportHistoryToExcel(${realIndex})" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>
+                    <button onclick="printHistoryReport(${realIndex})" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>
+                    <button onclick="deleteHistoryReport(${realIndex})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>
                 </div>
             </div>
-            <div class="text-sm text-gray-700">
-                <p>Members: ${report.count}</p>
-                <p>Total Commission: RM ${(report.totalCommission || 0).toFixed(2)}</p>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                ${peopleCards}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
+
 
 // ==================== Global Function Export ====================
 
 window.initApp = initApp;
 window.switchView = switchView;
+// ==================== Payslip Preview Modal ====================
+function showPayslipPreview(index) {
+    var person = window.appState.salespeople[index];
+    if (!person || !person.name) {
+        showToast('⚠️', 'Please select a name first');
+        return;
+    }
+
+    var config  = window.appState.config;
+    var nameUpper = person.name.toUpperCase();
+    var month   = ((document.getElementById('report-month')||{}).value || '').toUpperCase() || 'CURRENT';
+
+    // Salary & allowances
+    var salary     = config.base_salaries?.[nameUpper] || 0;
+    var allowances = config.allowances?.[nameUpper] || {};
+    var epfRate    = config.deductionRates?.[nameUpper]?.EPF_RATE || 11;
+
+    var allowList  = [
+        ['HP',               allowances.HP               || 0],
+        ['Car',              allowances.CAR              || 0],
+        ['Local Fuel',       allowances['LOCAL FUEL']    || 0],
+        ['Outstation Fuel',  allowances['OUTSTATION FUEL']|| 0],
+        ['Housing',          allowances.HOUSING          || 0],
+        ['Food',             allowances.FOOD             || 0],
+        ['Others',           allowances.OTHERS           || 0],
+    ];
+    var totalAllow = allowList.reduce(function(s,a){return s+a[1];}, 0);
+    var totalFixed = salary + totalAllow;
+
+    // Commission & incentives
+    var commission  = person.commission          || 0;
+    var collBonus   = person.collectionIncentive || 0;
+    var callBonus   = person.activeCallIncentive || 0;
+    var qtrBonus    = person.quarterlyBonus      || 0;
+    var totalComm   = commission + collBonus + callBonus + qtrBonus;
+
+    // EPF & grand total
+    var totalIncome = totalFixed + totalComm;
+    var epfAmt      = Math.round(totalIncome * (epfRate/100) * 100) / 100;
+    var grandTotal  = totalIncome - epfAmt;
+
+    var fmt = function(n) { return 'RM ' + parseFloat(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+
+    // Build allowance rows (only non-zero)
+    var allowRows = allowList.filter(function(a){return a[1]>0;}).map(function(a){
+        return '<tr><td style="padding:6px 12px;color:#6b7280;">'+a[0]+'</td><td style="padding:6px 12px;text-align:right;">'+fmt(a[1])+'</td></tr>';
+    }).join('');
+    if (!allowRows) allowRows = '<tr><td colspan="2" style="padding:6px 12px;color:#9ca3af;font-style:italic;">No allowances</td></tr>';
+
+    var existing = document.getElementById('payslip-modal');
+    if (existing) existing.remove();
+
+    var modal = document.createElement('div');
+    modal.id = 'payslip-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:16px;max-width:480px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,0.3);">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:20px 24px;color:#fff;flex-shrink:0;">
+                <div style="font-size:18px;font-weight:700;">📄 Payslip Preview</div>
+                <div style="font-size:13px;margin-top:4px;opacity:0.85;">${person.name} — ${month}</div>
+            </div>
+
+            <!-- Body -->
+            <div style="overflow-y:auto;flex:1;padding:0;">
+
+                <!-- Salary & Allowances -->
+                <div style="padding:16px 24px 0;">
+                    <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:8px;">SALARY & ALLOWANCES</div>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                    <tr style="background:#f9fafb;">
+                        <td style="padding:6px 12px 6px 24px;font-weight:600;">Base Salary</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;font-weight:600;">${fmt(salary)}</td>
+                    </tr>
+                    ${allowRows.replace(/padding:6px 12px/g,'padding:6px 12px 6px 24px')}
+                    <tr style="background:#eff6ff;border-top:2px solid #bfdbfe;">
+                        <td style="padding:8px 12px 8px 24px;font-weight:700;color:#1d4ed8;">Total Fixed Income</td>
+                        <td style="padding:8px 24px 8px 12px;text-align:right;font-weight:700;color:#1d4ed8;">${fmt(totalFixed)}</td>
+                    </tr>
+                </table>
+
+                <!-- Commission & Incentives -->
+                <div style="padding:16px 24px 0;margin-top:8px;">
+                    <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:8px;">COMMISSION & INCENTIVES</div>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                    <tr style="background:#f9fafb;">
+                        <td style="padding:6px 12px 6px 24px;">Commission (${person.achievement?person.achievement.toFixed(1)+'%':'—'})</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(commission)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 12px 6px 24px;">Collection Bonus</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(collBonus)}</td>
+                    </tr>
+                    <tr style="background:#f9fafb;">
+                        <td style="padding:6px 12px 6px 24px;">Active Call Bonus</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(callBonus)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 12px 6px 24px;">Quarterly Bonus</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(qtrBonus)}</td>
+                    </tr>
+                    <tr style="background:#f0fdf4;border-top:2px solid #bbf7d0;">
+                        <td style="padding:8px 12px 8px 24px;font-weight:700;color:#15803d;">Total Commission</td>
+                        <td style="padding:8px 24px 8px 12px;text-align:right;font-weight:700;color:#15803d;">${fmt(totalComm)}</td>
+                    </tr>
+                </table>
+
+                <!-- Deductions & Grand Total -->
+                <div style="padding:16px 24px 0;margin-top:8px;">
+                    <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:8px;">DEDUCTIONS</div>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                    <tr style="background:#fef2f2;">
+                        <td style="padding:6px 12px 6px 24px;color:#dc2626;">EPF (${epfRate}%)</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;color:#dc2626;">— ${fmt(epfAmt)}</td>
+                    </tr>
+                </table>
+
+                <!-- Grand Total -->
+                <div style="margin:12px 16px 16px;background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="color:#c7d2fe;font-size:13px;font-weight:600;">GRAND TOTAL PAYABLE</div>
+                    <div style="color:#fff;font-size:20px;font-weight:700;">${fmt(grandTotal)}</div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding:12px 24px;border-top:1px solid #f3f4f6;text-align:right;flex-shrink:0;">
+                <button onclick="document.getElementById('payslip-modal').remove()" 
+                        style="padding:8px 24px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;font-weight:500;">
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+}
+
+window.showPayslipPreview = showPayslipPreview;
+
+
+function exportHistoryToExcel(index) {
+    const report = (window.appState.config.reportHistory || [])[index];
+    if (!report) return;
+    const people = report.data || [];
+    const month  = report.month || '';
+    // Build salespeople array with commission calculated
+    const salespeople = people.map(p => {
+        const comm = calculateCommission(p.sales||0, p.target||0, p.name);
+        const collAch = p.collectionTarget>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
+        const callAch = p.callTarget>0?(p.callActual||0)/p.callTarget*100:0;
+        const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
+        const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
+        return Object.assign({}, p, {
+            commission: comm, collectionIncentive: coll, activeCallIncentive: call,
+            quarterlyBonus: 0, totalCommission: comm+coll+call,
+            achievement: p.target>0?(p.sales||0)/p.target*100:0
+        });
+    });
+    window.electronAPI.generateSalaryTemplate({
+        salespeople: salespeople,
+        config: window.appState.config,
+        month: month,
+        suggestedFilename: 'Commission_' + month + '.xlsx'
+    }).then(r => {
+        if (r.success) showToast('✅', month + ' exported!');
+        else showToast('❌', r.error || 'Export failed');
+    }).catch(e => showToast('❌', e.message));
+}
+
+function printHistoryReport(index) {
+    const report = (window.appState.config.reportHistory || [])[index];
+    if (!report) return;
+    window.electronAPI.exportPDF({ name: report.month + '_Report' })
+        .then(r => { if (r.success) showToast('✅', 'PDF saved!'); })
+        .catch(e => showToast('❌', e.message));
+}
+
+window.exportHistoryToExcel = exportHistoryToExcel;
+window.printHistoryReport   = printHistoryReport;
+
+function manualSave() {
+    var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    window.appState.salespeople.forEach(function(p, idx) { updateSalespersonData(idx); });
+    var snapshot = {
+        month: month,
+        salespeople: window.appState.salespeople.map(function(p){ return Object.assign({},p); })
+    };
+    window.appState.config.quickCalculateData = snapshot;
+    // saveConfig is in app.js and may not return a promise - call electronAPI directly
+    window.electronAPI.saveConfig(window.appState.config).then(function(r){
+        if(r && r.success) showToast('✅', 'Saved!');
+        else showToast('❌', 'Save failed: ' + (r && r.error || 'unknown'));
+    }).catch(function(e){ showToast('❌', e.message); });
+    // Also save to DB
+    dbSave('quickCalculateData', snapshot);
+    dbSave('reportHistory', window.appState.config.reportHistory || []);
+}
+window.manualSave = manualSave;
+
 window.addSalespersonCard = addSalespersonCard;
 window.deleteSalespersonCard = deleteSalespersonCard;
 window.clearAllQuickCalculateData = clearAllQuickCalculateData;
@@ -3083,6 +3769,12 @@ window.batchSelectMonths = batchSelectMonths;
 window.updateBatchExportUI = updateBatchExportUI;
 window.executeBatchExport = executeBatchExport;
 window.buildSalesDataForMonth = buildSalesDataForMonth;
+
+// Quick add person functions
+window.showQuickAddPersonModal = showQuickAddPersonModal;
+window.closeQuickAddPersonModal = closeQuickAddPersonModal;
+window.quickAddPersonSubmit = quickAddPersonSubmit;
+window.createBlankSalespersonCard = createBlankSalespersonCard;
 
 // Initialize after DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {

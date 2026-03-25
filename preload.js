@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generateSalaryTemplate: (data) => ipcRenderer.invoke('generate-salary-template', data),
     generateBatchSummary: (data) => ipcRenderer.invoke('generate-batch-summary', data),
     
+    // ========== License 系统 ==========
+    getLicenseStatus: () => ipcRenderer.invoke('license-get-status'),
+    activateLicense: (key) => ipcRenderer.invoke('license-activate', key),
+    deactivateLicense: () => ipcRenderer.invoke('license-deactivate'),
+    incrementExport: () => ipcRenderer.invoke('license-increment-export'),
+    
     // ========== PDF 导出 ==========
     exportPDF: (data) => ipcRenderer.invoke('export-pdf', data),
     
@@ -38,6 +44,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveBackupFile: (options) => ipcRenderer.invoke('saveBackupFile', options),
     readBackupFile: (filePath) => ipcRenderer.invoke('readBackupFile', filePath),
     
+    // ========== SQLite DB ==========
+    dbSave:   (key, value) => ipcRenderer.invoke('db-save', key, value),
+    dbLoad:   (key)        => ipcRenderer.invoke('db-load', key),
+    dbDelete: (key)        => ipcRenderer.invoke('db-delete', key),
+    dbList:   (prefix)     => ipcRenderer.invoke('db-list', prefix),
+
     // ========== 平台信息 ==========
     platform: process.platform
 });

@@ -105,6 +105,12 @@
                     </div>
                 </div>
                 
+                <!-- License Badge -->
+                <div id="license-badge" 
+                     style="padding:6px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;cursor:pointer;"
+                     onclick="showLicenseModal()">
+                    🔑 Loading...
+                </div>
 
             </div>
         </div>
@@ -173,12 +179,6 @@
                                     <span>Import Excel</span>
                                 </button>
                                 
-                                <button onclick="addSalespersonCard()" 
-                                        class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center space-x-2">
-                                    <span>➕</span>
-                                    <span>Add Person</span>
-                                </button>
-                                
                                 <button onclick="clearAllQuickCalculateData()" 
                                         class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center space-x-2"
                                         title="Clear all data">
@@ -186,21 +186,6 @@
                                     <span class="hidden sm:inline">Clear</span>
                                 </button>
 
-                                <div class="w-px h-8 bg-gray-300"></div>
-
-                                <button onclick="exportFullBackup()"
-                                        class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 flex items-center space-x-2"
-                                        title="Backup all data to JSON file">
-                                    <span>💾</span>
-                                    <span class="hidden sm:inline">Backup</span>
-                                </button>
-
-                                <button onclick="importBackup()"
-                                        class="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 flex items-center space-x-2"
-                                        title="Restore from JSON backup">
-                                    <span>📂</span>
-                                    <span class="hidden sm:inline">Restore</span>
-                                </button>
                             </div>
                         </div>
                     </div>

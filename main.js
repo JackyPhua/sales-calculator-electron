@@ -2,10 +2,177 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const fs = require('fs').promises;
+const crypto = require('crypto');
 const excelStyles = require('./src/excelStyles');
 const { styles } = excelStyles;
 
+// ── SQLite DB ──
+let db = null;
+try {
+    const Database = require('better-sqlite3');
+    const dbPath = require('path').join(require('electron').app.getPath
+        ? require('electron').app.getPath('userData')
+        : require('os').homedir(), 'commission_pro.db');
+    // We'll init db properly in app.whenReady
+    global._dbPath = dbPath;
+} catch(e) {
+    console.warn('better-sqlite3 not available:', e.message);
+}
+
 let mainWindow;
+
+// ══════════════════════════════════════════════════════
+// License System
+// ══════════════════════════════════════════════════════
+const LICENSE_SECRET = 'CP2026-xK9mQ4vR7nB2pL5w'; // Change this to your own secret
+const LICENSE_FILE = 'license.json';
+const TRIAL_DAYS = 7;
+const TRIAL_MAX_EXPORTS = 10;
+
+function getLicensePath() {
+    return path.join(app.getPath('userData'), LICENSE_FILE);
+}
+
+function generateKeySignature(keyBody) {
+    return crypto.createHmac('sha256', LICENSE_SECRET)
+        .update(keyBody)
+        .digest('hex')
+        .substring(0, 8)
+        .toUpperCase();
+}
+
+function validateLicenseKey(key) {
+    // Format: CPRO-XXXX-XXXX-XXXX-XXXX
+    if (!key || typeof key !== 'string') return { valid: false, reason: 'No key provided' };
+
+    const cleaned = key.trim().toUpperCase();
+    const parts = cleaned.split('-');
+    if (parts.length !== 5 || parts[0] !== 'CPRO') {
+        return { valid: false, reason: 'Invalid key format' };
+    }
+
+    // The last segment is a checksum of the first 4 segments (first 4 chars)
+    const keyBody = parts.slice(0, 4).join('-');
+    const expectedCheck = generateKeySignature(keyBody).substring(0, 4);
+    const actualCheck = parts[4];
+
+    if (actualCheck !== expectedCheck) {
+        return { valid: false, reason: 'Invalid license key' };
+    }
+
+    return { valid: true, key: cleaned };
+}
+
+async function loadLicenseData() {
+    try {
+        const data = await fs.readFile(getLicensePath(), 'utf-8');
+        return JSON.parse(data);
+    } catch {
+        return null;
+    }
+}
+
+async function saveLicenseData(data) {
+    await fs.writeFile(getLicensePath(), JSON.stringify(data, null, 2));
+}
+
+async function getLicenseStatus() {
+    let data = await loadLicenseData();
+
+    // First ever launch — start trial
+    if (!data) {
+        data = {
+            type: 'trial',
+            trialStart: new Date().toISOString(),
+            exportCount: 0,
+            activatedKey: null
+        };
+        await saveLicenseData(data);
+    }
+
+    // Ensure exportCount exists (for older license files)
+    if (data.exportCount === undefined) {
+        data.exportCount = 0;
+        await saveLicenseData(data);
+    }
+
+    // Already activated with a valid key
+    if (data.type === 'pro' && data.activatedKey) {
+        return {
+            status: 'pro',
+            key: data.activatedKey,
+            exportCount: data.exportCount,
+            message: 'Pro License activated'
+        };
+    }
+
+    // Trial — check remaining days
+    const trialStart = new Date(data.trialStart);
+    const now = new Date();
+    const daysPassed = Math.floor((now - trialStart) / (1000 * 60 * 60 * 24));
+    const daysRemaining = Math.max(0, TRIAL_DAYS - daysPassed);
+    const exportsRemaining = Math.max(0, TRIAL_MAX_EXPORTS - (data.exportCount || 0));
+
+    // Expired if either limit reached
+    if (daysRemaining <= 0 || exportsRemaining <= 0) {
+        const reason = daysRemaining <= 0 ? 'Trial period expired' : 'Export limit reached (10/10)';
+        return {
+            status: 'expired',
+            daysRemaining: daysRemaining,
+            exportsRemaining: 0,
+            exportCount: data.exportCount || 0,
+            message: `${reason}. Please activate a Pro license.`
+        };
+    }
+
+    return {
+        status: 'trial',
+        daysRemaining: daysRemaining,
+        exportsRemaining: exportsRemaining,
+        exportCount: data.exportCount || 0,
+        trialStart: data.trialStart,
+        message: `Trial: ${daysRemaining}d / ${exportsRemaining} exports left`
+    };
+}
+
+async function incrementExportCount() {
+    let data = await loadLicenseData();
+    if (!data) return;
+    if (data.type === 'pro') return; // Pro users unlimited
+    data.exportCount = (data.exportCount || 0) + 1;
+    await saveLicenseData(data);
+    return data.exportCount;
+}
+
+async function activateLicense(key) {
+    const validation = validateLicenseKey(key);
+    if (!validation.valid) {
+        return { success: false, error: validation.reason };
+    }
+
+    let data = await loadLicenseData();
+    if (!data) {
+        data = { trialStart: new Date().toISOString() };
+    }
+
+    data.type = 'pro';
+    data.activatedKey = validation.key;
+    data.activatedAt = new Date().toISOString();
+    await saveLicenseData(data);
+
+    return { success: true, status: 'pro', key: validation.key };
+}
+
+async function deactivateLicense() {
+    let data = await loadLicenseData();
+    if (data) {
+        data.type = 'trial';
+        data.activatedKey = null;
+        data.activatedAt = null;
+        await saveLicenseData(data);
+    }
+    return { success: true };
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -35,9 +202,27 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-    // 确保配置文件存在
+    // ── Init SQLite DB ──
     try {
-        const configPath = path.join(app.getPath('userData'), 'config.json');
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(app.getPath('userData'), 'commission_pro.db');
+        db = new Database(dbPath);
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS kv_store (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
+            );
+        `);
+        console.log('✅ SQLite DB ready:', dbPath);
+    } catch(e) {
+        console.warn('SQLite init failed, falling back to JSON:', e.message);
+        db = null;
+    }
+
+    // 确保配置文件存在
+    const configPath = path.join(app.getPath('userData'), 'config.json');
+    try {
         await fs.access(configPath);
         console.log('Config file exists:', configPath);
     } catch (error) {
@@ -57,6 +242,25 @@ app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
     }
+});
+
+// ══════════════════════════════════════════════════════
+// License IPC Handlers
+// ══════════════════════════════════════════════════════
+ipcMain.handle('license-get-status', async () => {
+    return await getLicenseStatus();
+});
+
+ipcMain.handle('license-activate', async (event, key) => {
+    return await activateLicense(key);
+});
+
+ipcMain.handle('license-deactivate', async () => {
+    return await deactivateLicense();
+});
+
+ipcMain.handle('license-increment-export', async () => {
+    return await incrementExportCount();
 });
 
 // ========== IPC Handlers ==========
@@ -170,7 +374,8 @@ ipcMain.handle('import-sales-data', async (event, filePath) => {
                     month: cellB,
                     target: getCellNum(row.getCell(3)),
                     sales: getCellNum(row.getCell(4)),
-                    collection: getCellNum(row.getCell(9))
+                    collection: getCellNum(row.getCell(9)),
+                    callTarget: getCellNum(row.getCell(11))
                 });
             }
         });
@@ -907,6 +1112,54 @@ ipcMain.handle('readBackupFile', async (event, filePath) => {
     }
 });
 
+// ========== SQLite DB IPC Handlers ==========
+
+ipcMain.handle('db-save', async (event, key, value) => {
+    try {
+        if (!db) return { success: false, error: 'DB not available' };
+        const json = typeof value === 'string' ? value : JSON.stringify(value);
+        db.prepare('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, strftime(\'%s\',\'now\'))').run(key, json);
+        return { success: true };
+    } catch(e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('db-load', async (event, key) => {
+    try {
+        if (!db) return { success: false, error: 'DB not available' };
+        const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get(key);
+        if (!row) return { success: false, error: 'Key not found' };
+        return { success: true, value: JSON.parse(row.value) };
+    } catch(e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('db-delete', async (event, key) => {
+    try {
+        if (!db) return { success: false, error: 'DB not available' };
+        db.prepare('DELETE FROM kv_store WHERE key = ?').run(key);
+        return { success: true };
+    } catch(e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('db-list', async (event, prefix) => {
+    try {
+        if (!db) return { success: false, error: 'DB not available' };
+        const rows = prefix
+            ? db.prepare("SELECT key, value FROM kv_store WHERE key LIKE ?").all(prefix + '%')
+            : db.prepare("SELECT key, value FROM kv_store").all();
+        const result = {};
+        rows.forEach(r => { try { result[r.key] = JSON.parse(r.value); } catch(e) { result[r.key] = r.value; } });
+        return { success: true, data: result };
+    } catch(e) {
+        return { success: false, error: e.message };
+    }
+});
+
 // ========== Helper Functions ==========
 
 async function createSalarySheet(sheet, person, config, month, totalTeamSales = 0) {
@@ -1274,6 +1527,7 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     const colWidths = [14, 14, 14, 10, 12, 12, 12, 12, 16, 20, 20, 14];
     colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
+    // ========== 第一部分：Commission Summary (从 A1 开始) ==========
     sheet.getCell(1, 1).value = month;
     Object.assign(sheet.getCell(1, 1), headerStyle);
 
@@ -1297,17 +1551,11 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         const call = parseFloat(person.activeCallIncentive) || 0;
         const total = comm + qtr + coll + call;
 
-        // Col 1: Name
         sheet.getCell(rowNum, 1).value = person.name;
-        // Col 2: Target
         sheet.getCell(rowNum, 2).value = target;
-        // Col 3: Sales
         sheet.getCell(rowNum, 3).value = sales;
-        // Col 4: Achievement %
         sheet.getCell(rowNum, 4).value = achievement > 0 ? achievement / 100 : '';
 
-        // Col 5-8: Commission placed in the correct tier column
-        // Col 5 = 80%-89%, Col 6 = 90%-100%, Col 7 = 100%-104%, Col 8 = 106%+
         sheet.getCell(rowNum, 5).value = '';
         sheet.getCell(rowNum, 6).value = '';
         sheet.getCell(rowNum, 7).value = '';
@@ -1324,16 +1572,11 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
             }
         }
 
-        // Col 9: Quarterly Incentive
         sheet.getCell(rowNum, 9).value = qtr || '';
-        // Col 10: Collection Incentive
         sheet.getCell(rowNum, 10).value = coll || '';
-        // Col 11: Active Call Incentive
         sheet.getCell(rowNum, 11).value = call || '';
-        // Col 12: Total
         sheet.getCell(rowNum, 12).value = total;
         
-        // Apply formatting and borders
         for (let col = 1; col <= 12; col++) {
             const cell = sheet.getCell(rowNum, col);
             if (col === 4) {
@@ -1348,7 +1591,7 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         }
     });
 
-    // ── TOTAL Row ──
+    // TOTAL Row
     const totalRowNum = salespeople.length + 2;
     let totTarget = 0, totSales = 0, totCol5 = 0, totCol6 = 0, totCol7 = 0, totCol8 = 0, totQtr = 0, totColl = 0, totCall = 0, totTotal = 0;
 
@@ -1401,4 +1644,189 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         if (col === 4) { cell.numFmt = '0.00%'; }
         else if (col >= 2) { cell.numFmt = '#,##0.00'; }
     }
+
+    // ========== 第二部分：费率表格 (从 A18 开始) ==========
+    const startRow = totalRowNum + 3; // 在TOTAL行下面空3行开始
+
+    // 表格1: Commission Rate Summary
+    let currentRow = startRow;
+    
+    // 标题
+    sheet.mergeCells(currentRow, 1, currentRow, 2);
+    const title1Cell = sheet.getCell(currentRow, 1);
+    title1Cell.value = 'COMMISSION RATE SUMMARY';
+    title1Cell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    title1Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    title1Cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    title1Cell.border = {
+        top: {style:'thin'}, bottom: {style:'thin'},
+        left: {style:'thin'}, right: {style:'thin'}
+    };
+    sheet.getRow(currentRow).height = 25;
+    currentRow++;
+
+    // 表头
+    sheet.getCell(currentRow, 1).value = 'Sale Achievement';
+    sheet.getCell(currentRow, 2).value = 'Commission Rate Summary';
+    sheet.getCell(currentRow, 1).font = { bold: true };
+    sheet.getCell(currentRow, 2).font = { bold: true };
+    sheet.getCell(currentRow, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    sheet.getCell(currentRow, 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    
+    for (let col = 1; col <= 2; col++) {
+        sheet.getCell(currentRow, col).border = {
+            top: {style:'thin'}, bottom: {style:'thin'},
+            left: {style:'thin'}, right: {style:'thin'}
+        };
+    }
+    currentRow++;
+
+    // 费率数据
+    const rateData = [
+        ['0%-79%', 'None'],
+        ['80%-89%', '0.60%'],
+        ['90%-99%', '0.70%'],
+        ['100%-105%', '0.80%'],
+        ['106% & Above', '1.00%']
+    ];
+
+    rateData.forEach((row, idx) => {
+        sheet.getCell(currentRow + idx, 1).value = row[0];
+        sheet.getCell(currentRow + idx, 2).value = row[1];
+        
+        for (let col = 1; col <= 2; col++) {
+            const cell = sheet.getCell(currentRow + idx, col);
+            cell.border = {
+                top: {style:'thin'}, bottom: {style:'thin'},
+                left: {style:'thin'}, right: {style:'thin'}
+            };
+        }
+        
+        if (row[1] !== 'None') {
+            sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF008000' }, bold: true };
+        }
+    });
+    
+    currentRow += rateData.length + 2; // 空两行
+
+    // 表格2: Quarter Incentive
+    sheet.mergeCells(currentRow, 1, currentRow, 2);
+    const title2Cell = sheet.getCell(currentRow, 1);
+    title2Cell.value = 'QUARTER INCENTIVE';
+    title2Cell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    title2Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    title2Cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    title2Cell.border = {
+        top: {style:'thin'}, bottom: {style:'thin'},
+        left: {style:'thin'}, right: {style:'thin'}
+    };
+    sheet.getRow(currentRow).height = 25;
+    currentRow++;
+
+    // 表头
+    sheet.getCell(currentRow, 1).value = 'Sale Achievement';
+    sheet.getCell(currentRow, 2).value = 'Incentive (RM)';
+    sheet.getCell(currentRow, 1).font = { bold: true };
+    sheet.getCell(currentRow, 2).font = { bold: true };
+    sheet.getCell(currentRow, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    sheet.getCell(currentRow, 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    
+    for (let col = 1; col <= 2; col++) {
+        sheet.getCell(currentRow, col).border = {
+            top: {style:'thin'}, bottom: {style:'thin'},
+            left: {style:'thin'}, right: {style:'thin'}
+        };
+    }
+    currentRow++;
+
+    // 季度奖励数据
+    const quarterData = [
+        ['90%-99%', 'RM200.00'],
+        ['100%', 'RM400.00']
+    ];
+
+    quarterData.forEach((row, idx) => {
+        sheet.getCell(currentRow + idx, 1).value = row[0];
+        sheet.getCell(currentRow + idx, 2).value = row[1];
+        
+        for (let col = 1; col <= 2; col++) {
+            const cell = sheet.getCell(currentRow + idx, col);
+            cell.border = {
+                top: {style:'thin'}, bottom: {style:'thin'},
+                left: {style:'thin'}, right: {style:'thin'}
+            };
+            if (col === 2) {
+                cell.numFmt = '"RM" #,##0.00';
+            }
+        }
+    });
+    
+    currentRow += quarterData.length + 2; // 空两行
+
+    // 表格3: Active Call Incentive
+    sheet.mergeCells(currentRow, 1, currentRow, 2);
+    const title3Cell = sheet.getCell(currentRow, 1);
+    title3Cell.value = 'ACTIVE CALL INCENTIVE';
+    title3Cell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    title3Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    title3Cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    title3Cell.border = {
+        top: {style:'thin'}, bottom: {style:'thin'},
+        left: {style:'thin'}, right: {style:'thin'}
+    };
+    sheet.getRow(currentRow).height = 25;
+    currentRow++;
+
+    // 表头
+    sheet.getCell(currentRow, 1).value = 'Active Outlet';
+    sheet.getCell(currentRow, 2).value = 'Minimum RM100.00 Purchase';
+    sheet.getCell(currentRow, 1).font = { bold: true };
+    sheet.getCell(currentRow, 2).font = { bold: true };
+    sheet.getCell(currentRow, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    sheet.getCell(currentRow, 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    
+    for (let col = 1; col <= 2; col++) {
+        sheet.getCell(currentRow, col).border = {
+            top: {style:'thin'}, bottom: {style:'thin'},
+            left: {style:'thin'}, right: {style:'thin'}
+        };
+    }
+    currentRow++;
+
+    // 活跃电话奖励数据
+    const callData = [
+        ['65%', 'RM50.00'],
+        ['70%', 'RM200.00'],
+        ['80%', 'RM350.00']
+    ];
+
+    callData.forEach((row, idx) => {
+        sheet.getCell(currentRow + idx, 1).value = row[0];
+        sheet.getCell(currentRow + idx, 2).value = row[1];
+        
+        for (let col = 1; col <= 2; col++) {
+            const cell = sheet.getCell(currentRow + idx, col);
+            cell.border = {
+                top: {style:'thin'}, bottom: {style:'thin'},
+                left: {style:'thin'}, right: {style:'thin'}
+            };
+            if (col === 2) {
+                cell.numFmt = '"RM" #,##0.00';
+            }
+        }
+        
+        if (row[0] === '80%') {
+            sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF008000' }, bold: true };
+        }
+    });
+
+    // 添加备注
+   const noteRow = currentRow + callData.length;
+sheet.mergeCells(noteRow, 1, noteRow, 2);  // 改为合并到第2列
+sheet.getCell(noteRow, 1).value = 'Note: Minimum RM100.00 purchase required to qualify for incentives';
+sheet.getCell(noteRow, 1).font = { italic: true, size: 8, color: { argb: 'FF666666' } };
+sheet.getCell(noteRow, 1).border = {
+    top: {style:'thin'}, bottom: {style:'thin'},
+    left: {style:'thin'}, right: {style:'thin'}
+};
 }
