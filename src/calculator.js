@@ -3743,7 +3743,18 @@ function updateLivePayslip() {
     if(g('ps-ach-pct')){ g('ps-ach-pct').textContent = ach.toFixed(1)+'%'; g('ps-ach-pct').style.color = achColor; }
     if(g('ps-ach-bar')){ g('ps-ach-bar').style.width = Math.min(ach,120)+'%'; g('ps-ach-bar').style.background = achColor; }
     if(g('ps-personal')) g('ps-personal').textContent = formatCurrency(sales);
-    if(g('ps-team'))     g('ps-team').textContent     = formatCurrency(sales);
+    // Team sale = sum of all salespeople sales this month
+    var teamSales = 0;
+    var curMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var hist = window.appState.config.reportHistory || [];
+    var hEntry = hist.find(function(r){ return (r.month||'').toUpperCase() === curMonth; });
+    if (hEntry && hEntry.data) {
+        teamSales = hEntry.data.reduce(function(s,p){ return s + (parseFloat(p.sales)||0); }, 0);
+    } else {
+        // Fallback: sum from current appState
+        teamSales = (window.appState.salespeople||[]).reduce(function(s,p){ return s+(parseFloat(p.sales)||0); }, 0);
+    }
+    if(g('ps-team')) g('ps-team').textContent = formatCurrency(teamSales || sales);
     if(g('ps-grand'))    g('ps-grand').textContent    = formatCurrency(grand);
     function fp(v){ return totalInc>0 ? (v/totalInc*100).toFixed(2)+'%' : '0.00%'; }
     function fc(v){ return formatCurrency(v); }

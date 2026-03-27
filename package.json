@@ -8,15 +8,10 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": [
-    "sales",
-    "commission",
-    "calculator",
-    "excel",
-    "payroll"
-  ],
+  "keywords": ["sales", "commission", "calculator", "excel", "payroll"],
   "author": "CommissionPro",
   "license": "MIT",
   "devDependencies": {
@@ -24,12 +19,16 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "better-sqlite3": "^9.4.3"
   },
   "build": {
     "appId": "com.commissionpro.app",
     "productName": "CommissionPro",
-    "buildDependenciesFromSource": false,
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
     "directories": {
       "output": "dist"
     },
@@ -45,9 +44,7 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "icon": "assets/icon.ico"
@@ -63,15 +60,11 @@
       "shortcutName": "CommissionPro"
     },
     "mac": {
-      "target": [
-        "dmg"
-      ],
+      "target": ["dmg"],
       "icon": "assets/icon.icns"
     },
     "linux": {
-      "target": [
-        "AppImage"
-      ],
+      "target": ["AppImage"],
       "icon": "assets/icon.png"
     }
   }
