@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     readBackupFile: (filePath) => ipcRenderer.invoke('readBackupFile', filePath),
     
     // ========== SQLite DB ==========
+    openExcelPreview: (data) => ipcRenderer.invoke('open-excel-preview', data),
     dbSave:   (key, value) => ipcRenderer.invoke('db-save', key, value),
     dbLoad:   (key)        => ipcRenderer.invoke('db-load', key),
     dbDelete: (key)        => ipcRenderer.invoke('db-delete', key),

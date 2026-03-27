@@ -399,36 +399,37 @@ function showToast(icon, message, duration = 3000) {
 
 // View switching
 function switchView(view) {
-    console.log(`Switching to view: ${view}`);
-    
-    // Update tab buttons
-    document.querySelectorAll('.tab-button').forEach(btn => {
+    document.querySelectorAll('.tab-button').forEach(function(btn) {
         btn.classList.remove('active');
     });
-    document.getElementById(`tab-${view}`).classList.add('active');
-    
-    // Hide all views
-    document.querySelectorAll('.view-container').forEach(v => {
+    var tabBtn = document.getElementById('tab-' + view);
+    if (tabBtn) tabBtn.classList.add('active');
+    document.querySelectorAll('.view-container').forEach(function(v) {
+        v.style.display = 'none';
+        v.classList.remove('active');
         v.classList.add('hidden');
     });
-    
-    // Show selected view
-    const targetView = document.getElementById(`view-${view}`);
-    if (targetView) {
-        targetView.classList.remove('hidden');
+    var viewEl = document.getElementById('view-' + view);
+    if (viewEl) {
+        viewEl.style.display = 'block';
+        viewEl.classList.add('active');
+        viewEl.classList.remove('hidden');
     }
-    
     window.appState.currentView = view;
-    
-    // Initialize corresponding view
-    if (view === 'quick') {
-        initQuickCalculate();
-    } else if (view === 'salary') {
-        initSalaryView();
-    } else if (view === 'commission') {
-        initCommissionView();
+    if (view === 'people') {
+        if (typeof renderPeopleList === 'function') renderPeopleList();
+    } else if (view === 'quick') {
+        if (typeof initQuickCalculate === 'function') initQuickCalculate();
+        if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
     } else if (view === 'history') {
-        loadQuickCalculateHistory();
+        if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+    } else if (view === 'settings') {
+        var lt = document.getElementById('settings-license-type');
+        if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+    } else if (view === 'salary') {
+        if (typeof initSalaryView === 'function') initSalaryView();
+    } else if (view === 'commission') {
+        if (typeof initCommissionView === 'function') initCommissionView();
     }
 }
 
@@ -455,13 +456,44 @@ async function initQuickCalculate() {
                     console.log('📂 Refilling cards from imported Excel data for', newMonth);
                     fillCardsFromImportedData(newMonth);
                 } else {
-                    // No imported data — just recalculate locked fields (quarterly, collection)
-                    window.appState.salespeople.forEach((p, idx) => {
-                        if (p.name) {
-                            autoFillLockedFields(idx);
-                            updateSalespersonData(idx);
+                    // Try to load saved data for this month from reportHistory
+                    var history = window.appState.config.reportHistory || [];
+                    var histEntry = history.find(function(r){ return (r.month||'').toUpperCase() === newMonth; });
+                    if (histEntry && histEntry.data && histEntry.data.length > 0) {
+                        // Restore only the FIRST person's data into the single card (idx=0)
+                        // User can click sidebar to switch between people
+                        var firstPerson = histEntry.data[0];
+                        if (firstPerson && window.appState.salespeople.length > 0) {
+                            var set = function(id, v) {
+                                var el = document.getElementById(id + '-0');
+                                if (el) el.value = (v != null && v !== 0) ? v : '';
+                            };
+                            set('target',             firstPerson.target);
+                            set('sales',              firstPerson.sales);
+                            set('quarterly-target',   firstPerson.quarterlyTarget || '');
+                            set('quarterly-sales',    firstPerson.quarterlySales  || '');
+                            set('collection-target',  firstPerson.collectionTarget || '');
+                            set('collection-amount',  firstPerson.collectionAmount || '');
+                            set('call-target',        firstPerson.callTarget || '');
+                            set('call-actual',        firstPerson.callActual || '');
+                            updateSalespersonData(0);
                         }
-                    });
+                        // Store full history data so sidebar click can load per-person
+                        window._currentMonthHistory = histEntry.data;
+                        updateSummaryView();
+                        showToast('📅', newMonth + ' data restored');
+                    } else {
+                        // No saved data — clear the single card fields
+                        var clearFields = ['target','sales','quarterly-target','quarterly-sales',
+                            'collection-target','collection-amount','call-target','call-actual'];
+                        clearFields.forEach(function(id) {
+                            var el = document.getElementById(id + '-0');
+                            if (el) el.value = '';
+                        });
+                        window._currentMonthHistory = null;
+                        if (window.appState.salespeople.length > 0) updateSalespersonData(0);
+                        showToast('📅', newMonth + ' — no data yet');
+                    }
                 }
             });
             monthSelect._hasAutoFillListener = true;
@@ -946,49 +978,57 @@ function _doClearAllData() {
 
 // Delete salesperson configuration
 function deleteSalespersonConfig(personName) {
-    if (!personName) {
-        showToast('⚠️', 'Please provide the salesperson name to delete');
-        return;
-    }
-    
-    if (confirm(`Are you sure you want to delete all salary configuration for ${personName}? This action cannot be undone.`)) {
-        const nameUpper = personName.toUpperCase();
-        
-        console.log(`🗑️ Deleting salesperson configuration: ${personName}`);
-        
-        // Delete from all related configurations
-        if (window.appState.config.base_salaries && window.appState.config.base_salaries[nameUpper]) {
-            delete window.appState.config.base_salaries[nameUpper];
-        }
-        
-        if (window.appState.config.allowances && window.appState.config.allowances[nameUpper]) {
-            delete window.appState.config.allowances[nameUpper];
-        }
-        
-        if (window.appState.config.deductions && window.appState.config.deductions[nameUpper]) {
-            delete window.appState.config.deductions[nameUpper];
-        }
-        
-        if (window.appState.config.deductionRates && window.appState.config.deductionRates[nameUpper]) {
-            delete window.appState.config.deductionRates[nameUpper];
-        }
-        
-        if (window.appState.config.earnings && window.appState.config.earnings[nameUpper]) {
-            delete window.appState.config.earnings[nameUpper];
-        }
-        
-        if (window.appState.config.active_call_targets && window.appState.config.active_call_targets[nameUpper]) {
-            delete window.appState.config.active_call_targets[nameUpper];
-        }
-        
-        // Save configuration
+    if (!personName) return;
+
+    // Custom confirm dialog (avoid native confirm which breaks focus in Electron)
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;padding:28px 28px 20px;max-width:360px;width:90%;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:sans-serif;';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:16px;font-weight:700;color:#111;margin-bottom:8px;';
+    title.textContent = 'Delete ' + personName + '?';
+
+    var msg = document.createElement('div');
+    msg.style.cssText = 'font-size:13px;color:#666;margin-bottom:20px;line-height:1.5;';
+    msg.textContent = 'This will remove all salary, allowances and commission settings. Cannot be undone.';
+
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+
+    var btnNo = document.createElement('button');
+    btnNo.textContent = 'Cancel';
+    btnNo.style.cssText = 'padding:8px 18px;border:1.5px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;';
+
+    var btnYes = document.createElement('button');
+    btnYes.textContent = 'Delete';
+    btnYes.style.cssText = 'padding:8px 18px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-size:13px;font-weight:700;';
+
+    btns.appendChild(btnNo);
+    btns.appendChild(btnYes);
+    box.appendChild(title);
+    box.appendChild(msg);
+    box.appendChild(btns);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    btnNo.addEventListener('click', function() { overlay.remove(); });
+
+    btnYes.addEventListener('click', function() {
+        overlay.remove();
+        var nameUpper = personName.toUpperCase();
+        var cfg = window.appState.config;
+        ['base_salaries','allowances','deductions','deductionRates','earnings',
+         'active_call_targets','person_commission_rates','person_quarterly_incentive',
+         'person_collection_incentive','person_call_incentive'].forEach(function(k) {
+            if (cfg[k] && cfg[k][nameUpper]) delete cfg[k][nameUpper];
+        });
         saveConfig();
-        
-        // Re-render
-        renderSalaryConfigs();
-        
-        showToast('✅', `${personName}'s configuration deleted`);
-    }
+        renderPeopleList();
+        showToast('✅', personName + ' deleted');
+    });
 }
 
 // Re-render all cards
@@ -1345,17 +1385,36 @@ function updateSalespersonData(index) {
     
     // Update summary
     updateSummaryView();
+    if (typeof updateLivePayslip === 'function') updateLivePayslip();
 
     // Auto-save debounced 500ms
     if (window._autoSaveTimer) clearTimeout(window._autoSaveTimer);
     window._autoSaveTimer = setTimeout(function() {
+        var _month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
         var _snap = {
-            month: ((document.getElementById('report-month')||{}).value||'').toUpperCase(),
+            month: _month,
             salespeople: window.appState.salespeople.map(function(p){return Object.assign({},p);})
         };
         window.appState.config.quickCalculateData = _snap;
+
+        // Sync valid people into reportHistory
+        if (_month) {
+            if (!window.appState.config.reportHistory) window.appState.config.reportHistory = [];
+            var _valid = window.appState.salespeople.filter(function(p){ return p.name && (p.target>0||p.sales>0); });
+            if (_valid.length > 0) {
+                var _ei = window.appState.config.reportHistory.findIndex(function(r){ return (r.month||'').toUpperCase()===_month; });
+                var _hd = _valid.map(function(p){ return {name:(p.name||'').toUpperCase(),target:p.target||0,sales:p.sales||0,collectionTarget:p.collectionTarget||0,collectionAmount:p.collectionAmount||0,callTarget:p.callTarget||0,callActual:p.callActual||0}; });
+                if (_ei >= 0) {
+                    _hd.forEach(function(e){ var pi=window.appState.config.reportHistory[_ei].data.findIndex(function(d){return (d.name||'').toUpperCase()===e.name;}); if(pi>=0)window.appState.config.reportHistory[_ei].data[pi]=e; else window.appState.config.reportHistory[_ei].data.push(e); });
+                } else {
+                    window.appState.config.reportHistory.push({month:_month, data:_hd});
+                }
+            }
+        }
+
         saveConfig().catch(function(){});
         dbSave('quickCalculateData', _snap).catch(function(){});
+        dbSave('reportHistory', window.appState.config.reportHistory||[]).catch(function(){});
     }, 500);
 }
 
@@ -1402,104 +1461,199 @@ function formatCurrency(amount) {
 
 // Update summary view
 function updateSummaryView() {
-    const summaryContainer = document.getElementById('summary-view');
+    var summaryContainer = document.getElementById('summary-view');
     if (!summaryContainer) return;
 
-    const allPeople = window.appState.salespeople;
-    const validAll  = allPeople.filter(p => p.name && p.target > 0 && p.sales > 0);
+    var allPeople = window.appState.salespeople;
+    var validAll  = allPeople.filter(function(p){ return p.name && p.target > 0 && p.sales > 0; });
 
-    // Determine view mode — default 'current' if only 1 person, else show toggle
     if (!window._summaryMode) window._summaryMode = 'current';
-    const mode = window._summaryMode;
+    var mode = window._summaryMode;
 
-    // Current person = index 0 (only card)
-    const curPerson = allPeople[0] || null;
-    const curValid  = curPerson && curPerson.name && curPerson.target > 0 && curPerson.sales > 0;
+    var curPerson = allPeople[0] || null;
+    var curValid  = curPerson && curPerson.name && curPerson.target > 0 && curPerson.sales > 0;
 
-    // Compute totals for "all" mode from reportHistory for current month
-    const month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
-    const histEntry = (window.appState.config.reportHistory||[]).find(r=>(r.month||'').toUpperCase()===month);
-    const histPeople = histEntry ? histEntry.data || [] : [];
+    var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var histEntry = (window.appState.config.reportHistory||[]).find(function(r){return (r.month||'').toUpperCase()===month;});
+    var histPeople = histEntry ? histEntry.data||[] : [];
 
-    // Determine display values
-    let dispPeople, dispCommission, dispTarget, dispSales, dispLabel;
+    var dispPeople, dispCommission, dispTarget, dispSales;
 
     if (mode === 'all' && histPeople.length > 0) {
         dispPeople     = histPeople.length;
-        dispTarget     = histPeople.reduce((s,p)=>s+(parseFloat(p.target)||0),0);
-        dispSales      = histPeople.reduce((s,p)=>s+(parseFloat(p.sales)||0),0);
-        dispCommission = validAll.reduce((s,p)=>s+(p.totalCommission||0),0);
-        // For all mode, sum commissions from history using global config
-        if (histPeople.length > 0) {
-            dispCommission = histPeople.reduce((s,p) => {
-                const ach = p.target>0?(p.sales/p.target)*100:0;
-                const comm = calculateCommission(p.sales||0, p.target||0, p.name);
-                const collAch = p.collectionTarget>0?(p.collectionAmount/p.collectionTarget)*100:0;
-                const callAch = p.callTarget>0?(p.callActual||0)/p.callTarget*100:0;
-                const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
-                const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
-                return s + comm + coll + call;
-            }, 0);
-        }
-        dispLabel = month + ' — All (' + dispPeople + ' people)';
+        dispTarget     = histPeople.reduce(function(s,p){return s+(parseFloat(p.target)||0);},0);
+        dispSales      = histPeople.reduce(function(s,p){return s+(parseFloat(p.sales)||0);},0);
+        dispCommission = histPeople.reduce(function(s,p){return s+calculateCommission(p.sales||0,p.target||0,p.name);},0);
     } else {
-        // Current person
         dispPeople     = curPerson ? 1 : 0;
         dispTarget     = curPerson ? (curPerson.target||0) : 0;
-        dispSales      = curPerson ? (curPerson.sales||0) : 0;
+        dispSales      = curPerson ? (curPerson.sales||0)  : 0;
         dispCommission = curValid  ? (curPerson.totalCommission||0) : 0;
-        dispLabel      = curPerson && curPerson.name ? curPerson.name : 'No data';
     }
 
-    const achievement = dispTarget > 0 ? (dispSales / dispTarget * 100) : 0;
-    const hasHistory  = histPeople.length > 1 || (histPeople.length === 1 && (!curPerson || (histPeople[0].name||'') !== (curPerson.name||'').toUpperCase()));
+    var achievement = dispTarget > 0 ? (dispSales / dispTarget * 100) : 0;
 
-    // Update summary count and commission
-    const summaryCount = document.getElementById('summary-count');
-    const summaryComm  = document.getElementById('summary-commission');
-    if (summaryCount) summaryCount.textContent = dispPeople;
-    if (summaryComm)  summaryComm.textContent  = formatCurrency(dispCommission);
+    // Update main summary
+    var sc = document.getElementById('summary-commission');
+    if (sc) sc.textContent = formatCurrency(dispCommission);
+    var scount = document.getElementById('summary-count');
+    if (scount) scount.textContent = dispPeople;
 
-    // Remove old details + toggle
-    summaryContainer.querySelectorAll('.summary-details,.summary-toggle').forEach(el=>el.remove());
-
-    // Toggle button (only show if there's history data for other people)
-    if (hasHistory) {
-        const toggleDiv = document.createElement('div');
-        toggleDiv.className = 'summary-toggle flex gap-2 mt-3';
-        toggleDiv.innerHTML =
-            '<button onclick="setSummaryMode(\'current\')" style="flex:1;padding:6px 0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
-            + (mode==='current'?'background:#ffffff;color:#2563eb;border:2px solid #fff;':'background:rgba(255,255,255,0.2);color:#fff;border:2px solid rgba(255,255,255,0.4);')
-            + '">Current Person</button>'
-            + '<button onclick="setSummaryMode(\'all\')" style="flex:1;padding:6px 0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
-            + (mode==='all'?'background:#ffffff;color:#2563eb;border:2px solid #fff;':'background:rgba(255,255,255,0.2);color:#fff;border:2px solid rgba(255,255,255,0.4);')
-            + '">All People</button>';
-        summaryContainer.insertAdjacentElement('afterbegin', toggleDiv);
+    // Update stat boxes
+    var statsBox = document.getElementById('summary-stats');
+    if (statsBox) {
+        var hasStats = (mode === 'all' && histPeople.length > 1) || (mode === 'current' && curValid);
+        statsBox.style.display = hasStats ? 'grid' : 'none';
+        if (hasStats) {
+            var ts = document.getElementById('stat-total-sales');
+            var aa = document.getElementById('stat-avg-ach');
+            var ht = document.getElementById('stat-hit-target');
+            var tt = document.getElementById('stat-total-target');
+            var srcPeople = mode==='all' ? histPeople : (curPerson ? [curPerson] : []);
+            var tSales=0,tTarget=0,hits=0;
+            srcPeople.forEach(function(p){tSales+=parseFloat(p.sales)||0;tTarget+=parseFloat(p.target)||0;if(p.target>0&&p.sales/p.target>=1)hits++;});
+            if (ts) ts.textContent = formatCurrency(tSales);
+            if (aa) { var avg=tTarget>0?tSales/tTarget*100:0; aa.textContent=avg.toFixed(1)+'%'; aa.style.color=avg>=100?'var(--em)':avg>=90?'var(--am)':'var(--rose)'; }
+            if (ht) ht.textContent = hits+' / '+srcPeople.length;
+            if (tt) tt.textContent = formatCurrency(tTarget);
+        }
     }
 
-    // Details section
-    if (dispPeople > 0 && dispTarget > 0) {
-        const detailsHtml = `
-            <div class="summary-details mt-4 pt-4 border-t border-blue-400">
-                <div class="text-sm text-blue-100 mb-1">${dispLabel}</div>
-                <div class="text-sm">
-                    <div class="flex justify-between mb-1">
-                        <span class="text-blue-100">Target:</span>
-                        <span>${formatCurrency(dispTarget)}</span>
-                    </div>
-                    <div class="flex justify-between mb-1">
-                        <span class="text-blue-100">Sales:</span>
-                        <span>${formatCurrency(dispSales)}</span>
-                    </div>
-                    <div class="flex justify-between mb-1">
-                        <span class="text-blue-100">Achievement:</span>
-                        <span class="font-bold ${achievement>=100?'text-green-300':achievement>=90?'text-yellow-200':'text-red-300'}">${achievement.toFixed(1)}%</span>
-                    </div>
-                </div>
-            </div>`;
-        summaryContainer.insertAdjacentHTML('beforeend', detailsHtml);
+    // Update achievement hero
+    updateAchievementHero();
+
+    // Update person sidebar
+    renderPersonSidebar();
+
+    // Update toggle buttons
+    document.querySelectorAll('.sum-toggle-btn').forEach(function(btn,i){
+        btn.classList.toggle('active', (i===0&&mode==='current')||(i===1&&mode==='all'));
+    });
+
+    // Remove old details
+    summaryContainer.querySelectorAll('.summary-details,.summary-toggle').forEach(function(el){el.remove();});
+}
+
+function updateAchievementHero() {
+    var hero = document.getElementById('ach-hero-card');
+    if (!hero) return;
+    var person = window.appState.salespeople[0];
+    if (!person || !person.name || !person.target) { hero.style.display='none'; return; }
+    hero.style.display = 'block';
+    var ach = person.target > 0 ? (person.sales||0) / person.target * 100 : 0;
+    var fill = document.getElementById('ach-progress-fill');
+    var bigPct = document.getElementById('ach-big-pct');
+    var name   = document.getElementById('ach-person-name');
+    var sub    = document.getElementById('ach-sub-text');
+    var badge  = document.getElementById('ach-badge');
+    var color  = ach >= 100 ? 'var(--em)' : ach >= 90 ? 'var(--am)' : 'var(--rose)';
+    var fillColor = ach>=100?'linear-gradient(90deg,#10b981,#34d399)':ach>=90?'linear-gradient(90deg,#f59e0b,#fbbf24)':'linear-gradient(90deg,#f43f5e,#fb7185)';
+    if (fill)   { fill.style.width=Math.min(ach,100)+'%'; fill.style.background=fillColor; }
+    if (bigPct) { bigPct.textContent=ach.toFixed(1)+'%'; bigPct.style.color=color; }
+    if (name)   name.textContent = person.name;
+    if (sub)    sub.textContent  = 'Target: '+formatCurrency(person.target||0)+' · Sales: '+formatCurrency(person.sales||0);
+    if (badge) {
+        if (ach>=100){ badge.textContent='✅ Target Hit'; badge.style.background='var(--em-l)'; badge.style.color='var(--em)'; }
+        else if (ach>=90){ badge.textContent='⚡ Almost There'; badge.style.background='var(--am-l)'; badge.style.color='var(--am)'; }
+        else { badge.textContent='⚠️ Below Target'; badge.style.background='var(--ro-l)'; badge.style.color='var(--rose)'; }
     }
 }
+
+function renderPersonSidebar() {
+    var list = document.getElementById('person-sidebar-list');
+    var countEl = document.getElementById('sidebar-count');
+    if (!list) return;
+
+    // Always show ALL configured people, not just current card
+    var configPeople = Object.keys(window.appState.config.base_salaries || {});
+    if (configPeople.length === 0) {
+        // Fallback to salespeople array
+        configPeople = window.appState.salespeople.filter(function(p){return p.name;}).map(function(p){return p.name;});
+    }
+
+    if (countEl) countEl.textContent = 'Salesperson · ' + configPeople.length;
+    list.innerHTML = '';
+
+    var colors = ['#dbeafe:#1e40af','#fce7f3:#be185d','#dcfce7:#15803d','#fef9c3:#a16207','#ede9fe:#6d28d9','#fff1f2:#be123c'];
+
+    configPeople.forEach(function(personName, i) {
+        // Get achievement from current month history or current card
+        var currentMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+        var history = window.appState.config.reportHistory || [];
+        var histEntry = history.find(function(r){ return (r.month||'').toUpperCase() === currentMonth; });
+        var pData = histEntry && histEntry.data ? histEntry.data.find(function(p){ return (p.name||'').toUpperCase() === personName.toUpperCase(); }) : null;
+
+        // Also check current card if this is the active person
+        var curPerson = window.appState.salespeople[0];
+        if (!pData && curPerson && (curPerson.name||'').toUpperCase() === personName.toUpperCase()) {
+            pData = curPerson;
+        }
+
+        var ach = pData && pData.target > 0 ? (parseFloat(pData.sales)||0) / parseFloat(pData.target) * 100 : 0;
+        var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
+        var achBg    = ach>=100?'#d1fae5':ach>=90?'#fef3c7':'#ffe4e6';
+        var col = (colors[i % colors.length]||'#f1f5f9:#64748b').split(':');
+
+        var row = document.createElement('div');
+        row.className = 'person-row';
+        // Mark active if matches current card name
+        if (curPerson && (curPerson.name||'').toUpperCase() === personName.toUpperCase()) {
+            row.classList.add('active');
+        }
+        row.innerHTML =
+            '<div class="p-av" style="background:'+col[0]+';color:'+col[1]+';">'+personName[0]+'</div>'
+            + '<span class="p-name">'+personName+'</span>'
+            + (ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(0)+'%</span>' : '');
+
+        row.addEventListener('click', (function(name){ return function() {
+            // Mark active
+            document.querySelectorAll('.person-row').forEach(function(r){ r.classList.remove('active'); });
+            row.classList.add('active');
+
+            // Get this month's history for this person
+            var mon = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+            var hist = window.appState.config.reportHistory || [];
+            var hEntry = hist.find(function(r){ return (r.month||'').toUpperCase() === mon; });
+            var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){ return (p.name||'').toUpperCase() === name.toUpperCase(); }) : null;
+
+            // Update the single card
+            var nameEl = document.getElementById('name-0');
+            if (nameEl) nameEl.value = name;
+
+            function setField(id, v) {
+                var el = document.getElementById(id + '-0');
+                if (el) el.value = (v != null && v !== '' && v !== 0) ? v : '';
+            }
+
+            if (pd) {
+                setField('target',           pd.target);
+                setField('sales',            pd.sales);
+                setField('quarterly-target', pd.quarterlyTarget || '');
+                setField('quarterly-sales',  pd.quarterlySales  || '');
+                setField('collection-target',pd.collectionTarget|| '');
+                setField('collection-amount',pd.collectionAmount|| '');
+                setField('call-target',      pd.callTarget      || '');
+                setField('call-actual',      pd.callActual      || '');
+            } else {
+                // No history — clear fields for fresh input
+                ['target','sales','quarterly-target','quarterly-sales',
+                 'collection-target','collection-amount','call-target','call-actual'].forEach(function(id){
+                    setField(id, '');
+                });
+            }
+
+            // Update appState salespeople[0] name
+            if (window.appState.salespeople.length > 0) {
+                window.appState.salespeople[0].name = name;
+            }
+            updateSalespersonData(0);
+        }; })(personName));
+
+        list.appendChild(row);
+    });
+}
+
+
 
 function setSummaryMode(mode) {
     window._summaryMode = mode;
@@ -1531,11 +1685,11 @@ function renderCommissionConfigs(selectedName) {
     const sEnc = encodeURIComponent(selectedName||'__global__');
     const isP  = selectedName && selectedName !== '__global__';
     const hasOv= isP && ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].some(k=>window.appState.config[k]&&window.appState.config[k][selectedName.toUpperCase()]);
-    const ddOpts = ['<option value="__global__"'+(selectedName==='__global__'?' selected':'')+'>\u{1F310} Global (all)</option>'].concat(people.map(n=>'<option value="'+n+'"'+(n===selectedName?' selected':'')+'>'+n+'</option>')).join('');
+    const ddOpts = ['<option value="__global__"'+(selectedName==='__global__'?' selected':'')+'>🏢 Company Rate</option>'].concat(people.map(n=>'<option value="'+n+'"'+(n===selectedName?' selected':'')+'>'+n+'</option>')).join('');
     const ddHtml = '<div class="mb-6 flex flex-wrap items-center gap-4"><div><label class="block text-sm font-medium text-gray-700 mb-1">Configure for</label>'
         + '<select id="commission-person-select" onchange="renderCommissionConfigs(this.value)" class="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900" style="min-width:220px;">'
         + ddOpts + '</select></div>'
-        + (isP ? '<div class="mt-5">'+(hasOv?'<span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm">✏️ Personal config</span><button onclick="clearPersonCommissionConfig(\'' + sEnc + '\')" class="ml-2 px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">Reset to global</button>':'<span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">Same as global setting</span>')+'</div>':'')
+        + (isP ? '<div class="mt-5">'+(hasOv?'<span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm">✏️ Personal config</span><button onclick="clearPersonCommissionConfig(\'' + sEnc + '\')" class="ml-2 px-3 py-1 bg-red-100 text-red-600 rounded-full text-sm">Reset to Company</button>':'<span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">Using Company Rate</span>')+'</div>':'')
         + '</div>';
 
     // Temporarily set config to per-person values so existing render code works
@@ -1634,7 +1788,7 @@ function clearPersonCommissionConfig(pEnc) {
     ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].forEach(k => {
         if (window.appState.config[k] && window.appState.config[k][nu]) delete window.appState.config[k][nu];
     });
-    saveConfig(); renderCommissionConfigs(decodeURIComponent(pEnc)); showToast('\u2705','Reset to global config');
+    saveConfig(); renderCommissionConfigs(decodeURIComponent(pEnc)); showToast('\u2705','Reset to Company rate');
 }
 
 // Add commission Tier
@@ -1838,58 +1992,31 @@ function renderSalaryConfigs(selectedName) {
 }
 
 // Add new salesperson
-function addNewPerson() {
-    const nameInput = document.getElementById('new-person-name');
-    const salaryInput = document.getElementById('new-person-salary');
-    
-    let name = nameInput.value.trim();
-    const salary = parseFloat(salaryInput.value) || 1700;
-    
-    if (!name) {
-        showToast('⚠️', 'Please enter a name!');
-        return;
+function addNewPerson(nameOverride) {
+    var nameVal = nameOverride;
+    if (!nameVal) {
+        var ni = document.getElementById('new-person-name');
+        nameVal = ni ? (ni.value || '').trim().toUpperCase() : '';
     }
-    
-    const nameUpper = name.toUpperCase();
-    
+    if (!nameVal) { showToast('\u26a0\ufe0f', 'Please enter a name'); return; }
+    var nameUpper = nameVal.toUpperCase();
     if (window.appState.config.base_salaries && window.appState.config.base_salaries[nameUpper]) {
-        showToast('⚠️', 'This salesperson already exists.');
-        return;
+        showToast('\u26a0\ufe0f', nameUpper + ' already exists'); return;
     }
-    
     if (!window.appState.config.base_salaries) window.appState.config.base_salaries = {};
-    if (!window.appState.config.allowances) window.appState.config.allowances = {};
-    if (!window.appState.config.deductions) window.appState.config.deductions = {};
-    if (!window.appState.config.deductionRates) window.appState.config.deductionRates = {};
-    
-    window.appState.config.base_salaries[nameUpper] = salary;
-    window.appState.config.allowances[nameUpper] = {
-        HP: 0, CAR: 0, 'LOCAL FUEL': 0, 'OUTSTATION FUEL': 0,
-        HOUSING: 0, FOOD: 0, OTHERS: 0
-    };
-    
-    const totalIncome = salary;
-    const epfAmount = Math.round(totalIncome * 0.11 * 100) / 100;
-    const socsoAmount = Math.round(totalIncome * 0.005 * 100) / 100;
-    
-    window.appState.config.deductions[nameUpper] = {
-        EPF: epfAmount,
-        SOCSO: socsoAmount,
-        PCB: 0,
-        EIS: 0
-    };
-    
-    window.appState.config.deductionRates[nameUpper] = {
-        EPF_RATE: 11
-    };
-    
-    nameInput.value = '';
-    salaryInput.value = '1700';
-    
+    if (!window.appState.config.allowances)    window.appState.config.allowances    = {};
+    if (!window.appState.config.deductions)    window.appState.config.deductions    = {};
+    if (!window.appState.config.deductionRates)window.appState.config.deductionRates= {};
+    window.appState.config.base_salaries[nameUpper]  = 1700;
+    window.appState.config.allowances[nameUpper]      = { HP:0, CAR:0, 'LOCAL FUEL':0, 'OUTSTATION FUEL':0, HOUSING:0, FOOD:0, OTHERS:0 };
+    window.appState.config.deductions[nameUpper]      = { EPF:187, SOCSO:8.5, PCB:0, EIS:0 };
+    window.appState.config.deductionRates[nameUpper]  = { EPF_RATE:11 };
     saveConfig();
-    renderSalaryConfigs();
-    
-    showToast('✅', `${name} added successfully!`);
+    renderPeopleList();
+    // Clear search input so it's ready for next use
+    var si = document.getElementById('people-search');
+    if (si) { si.value = ''; }
+    showSalaryModal(nameUpper);
 }
 
 // ==================== Batch Export (Multi-Month) ====================
@@ -2836,66 +2963,11 @@ async function importConfigOnly() {
 }
 
 // Add backup UI to history page
-function addBackupUI() {
-    // Check if already added
-    if (document.getElementById('backup-section')) return;
-    
-    const historyContainer = document.getElementById('view-history');
-    if (!historyContainer) return;
-    
-    const backupSection = document.createElement('div');
-    backupSection.id = 'backup-section';
-    backupSection.className = 'mt-8 p-6 bg-yellow-50 rounded-lg border border-yellow-200';
-    backupSection.innerHTML = `
-        <h3 class="text-lg font-bold text-yellow-800 mb-4">🔒 Data Backup & Restore</h3>
-        <div class="space-y-3">
-            <button onclick="exportFullBackup()" 
-                    class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center">
-                <span class="mr-2">📥</span> Export Full Backup
-            </button>
-            <button onclick="importBackup()" 
-                    class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center justify-center">
-                <span class="mr-2">📤</span> Import Backup
-            </button>
-            <button onclick="showAutoBackups()" 
-                    class="w-full px-4 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 flex items-center justify-center">
-                <span class="mr-2">⏰</span> Restore Auto Backup
-            </button>
-            <button onclick="createManualBackup()" 
-                    class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center">
-                <span class="mr-2">💾</span> Create Manual Backup
-            </button>
-            <div class="border-t border-yellow-300 pt-3 mt-3">
-                <h4 class="font-semibold text-yellow-700 mb-2">Configuration Only</h4>
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="exportConfigOnly()" 
-                            class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm">
-                        Export Config
-                    </button>
-                    <button onclick="importConfigOnly()" 
-                            class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm">
-                        Import Config
-                    </button>
-                </div>
-            </div>
-            <div class="text-xs text-yellow-700 mt-2">
-                <p>• Auto backups are created daily</p>
-                <p>• Last 5 auto backups are kept</p>
-                <p>• Export backup for long-term storage</p>
-                <p>• Manual backups don't count toward the 5 backup limit</p>
-            </div>
-        </div>
-    `;
-    historyContainer.appendChild(backupSection);
-}
 
 // Initialize backup system
 function initBackupSystem() {
     // Check and create auto backup
     initBackupManagement();
-    
-    // Add backup UI to history page
-    setTimeout(addBackupUI, 500);
 }
 
 // Backup before clear all data
@@ -3414,9 +3486,92 @@ function renderSalespersonCards() {
 }
 
 function viewHistoryReport(index) {
-    // Implementation for viewing historical reports
-    console.log('Viewing history report at index:', index);
-    showToast('ℹ️', 'History report view feature not yet implemented');
+    var report = (window.appState.config.reportHistory || [])[index];
+    if (!report) { showToast('⚠️', 'Report not found'); return; }
+
+    var people = report.data || [];
+    var month  = (report.month || '').toUpperCase();
+    var cfg    = window.appState.config;
+    var qMonths = ['MAR','JUN','SEP','DEC'];
+    var isQtr   = qMonths.indexOf(month) !== -1;
+
+    var existing = document.getElementById('history-view-modal');
+    if (existing) existing.remove();
+
+    var cards = people.map(function(p) {
+        var nu       = (p.name || '').toUpperCase();
+        var salary   = (cfg.base_salaries && cfg.base_salaries[nu]) || 0;
+        var allow    = (cfg.allowances    && cfg.allowances[nu])    || {};
+        var epfRate  = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11;
+        var totalAllow = Object.values(allow).reduce(function(s,v){ return s+(parseFloat(v)||0); }, 0);
+
+        var target  = parseFloat(p.target)          || 0;
+        var sales   = parseFloat(p.sales)           || 0;
+        var collTgt = parseFloat(p.collectionTarget) || 0;
+        var collAmt = parseFloat(p.collectionAmount) || 0;
+        var callTgt = parseFloat(p.callTarget)       || 0;
+        var callAct = parseFloat(p.callActual)       || 0;
+
+        var ach     = target  > 0 ? (sales   / target  * 100) : 0;
+        var collPct = collTgt > 0 ? (collAmt / collTgt * 100) : 0;
+        var callPct = callTgt > 0 ? (callAct / callTgt * 100) : 0;
+
+        var comm    = calculateCommission(sales, target, p.name);
+        var collBon = calculateIncentive(collPct, cfg.collection_incentive);
+        var callBon = calculateIncentive(callPct, cfg.active_call_incentive);
+        var qtrBon  = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive) : 0;
+        var totalComm = comm + collBon + callBon + qtrBon;
+
+        var totalFixed  = salary + totalAllow;
+        var totalIncome = totalFixed + totalComm;
+        var epfAmt      = Math.round(totalIncome * (epfRate/100) * 100) / 100;
+        var grandTotal  = totalIncome - epfAmt;
+
+        var achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
+
+        return '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
+            + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
+            + '<span style="font-size:20px;">&#128100;</span>'
+            + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + '</h3></div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">'
+            + '<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">'       + formatCurrency(salary)    + '</div>'
+            + '<div style="color:#6b7280;">Monthly Target</div><div style="text-align:right;">'    + formatCurrency(target)    + '</div>'
+            + '<div style="color:#6b7280;">Monthly Sales</div><div style="text-align:right;">'     + formatCurrency(sales)     + '</div>'
+            + '<div style="color:#6b7280;">Achievement</div><div style="text-align:right;font-weight:600;color:' + achColor + ';">' + ach.toFixed(2) + '%</div>'
+            + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+            + '<div style="color:#6b7280;">Commission</div><div style="text-align:right;color:#2563eb;">'       + formatCurrency(comm)    + '</div>'
+            + '<div style="color:#6b7280;">Collection Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(collBon) + '</div>'
+            + '<div style="color:#6b7280;">Call Bonus</div><div style="text-align:right;color:#2563eb;">'       + formatCurrency(callBon) + '</div>'
+            + (isQtr ? '<div style="color:#6b7280;">Quarterly Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(qtrBon) + '</div>' : '')
+            + '<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>'
+            + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+            + '<div style="color:#6b7280;">EPF (' + epfRate + '%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(epfAmt) + '</div>'
+            + '<div style="font-weight:700;color:#111;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">' + formatCurrency(grandTotal) + '</div>'
+            + '</div></div>';
+    }).join('');
+
+    var modal = document.createElement('div');
+    modal.id = 'history-view-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;z-index:99999;padding:20px;box-sizing:border-box;overflow-y:auto;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#f9fafb;border-radius:16px;max-width:640px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,0.3);overflow:hidden;margin:auto;';
+
+    var closeBtn = '<button onclick="document.getElementById(\'history-view-modal\').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">&#10005; Close</button>';
+    var excelBtn = '<button onclick="exportHistoryToExcel(' + index + ')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">&#128202; Excel</button>';
+
+    box.innerHTML = '<div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:20px 24px;color:#fff;display:flex;justify-content:space-between;align-items:center;">'
+        + '<div><div style="font-size:20px;font-weight:700;">' + month + ' Report</div>'
+        + '<div style="font-size:13px;opacity:0.85;margin-top:4px;">' + people.length + ' salespeople</div></div>'
+        + '<div style="display:flex;gap:8px;">' + excelBtn + closeBtn + '</div></div>'
+        + '<div style="padding:20px;max-height:70vh;overflow-y:auto;">'
+        + (people.length > 0 ? cards : '<div style="text-align:center;padding:40px;color:#6b7280;">No data for this month</div>')
+        + '</div>';
+
+    box.addEventListener('click', function(e){ e.stopPropagation(); });
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(){ modal.remove(); });
 }
 
 function deleteHistoryReport(index) {
@@ -3441,76 +3596,340 @@ function hideLoading() {
 
 // Load history records
 function loadQuickCalculateHistory() {
-    const historyList = document.getElementById('history-list');
+    var historyList = document.getElementById('history-list');
     if (!historyList) return;
 
-    const history = window.appState.config.reportHistory || [];
+    var history = window.appState.config.reportHistory || [];
+    console.log('📜 reportHistory count:', history.length);
+
     if (history.length === 0) {
         historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
         return;
     }
 
-    // Sort months in calendar order, filter out future months
-    const monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const currentMonthIdx = new Date().getMonth(); // 0=JAN, 11=DEC
-    const sorted = [...history]
-        .filter(r => monthOrder.indexOf((r.month||'').toUpperCase()) <= currentMonthIdx)
-        .sort((a,b) => {
-            const ai = monthOrder.indexOf((a.month||'').toUpperCase());
-            const bi = monthOrder.indexOf((b.month||'').toUpperCase());
-            return bi - ai; // newest month first
+    var defaultRates = [
+        {min:0,   max:79.99,  rate:0,     label:'0%-79%'},
+        {min:80,  max:89.99,  rate:0.006, label:'80%-89%'},
+        {min:90,  max:99.99,  rate:0.007, label:'90%-99%'},
+        {min:100, max:105.99, rate:0.008, label:'100%-105%'},
+        {min:106, max:999,    rate:0.01,  label:'106%+'}
+    ];
+    var cfgRates = window.appState.config.monthly_commission_rates;
+    var rates = (cfgRates && cfgRates.length > 0) ? cfgRates : defaultRates;
+    console.log('📜 using rates:', rates.length, 'tiers, first:', JSON.stringify(rates[0]));
+
+    function calcComm(sales, target, name) {
+        if (!target || !sales || target <= 0 || sales <= 0) return 0;
+        var ach = (sales / target) * 100;
+        var r = rates;
+        var nu = name ? name.toUpperCase() : null;
+        if (nu && window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[nu])
+            r = window.appState.config.person_commission_rates[nu];
+        for (var i = 0; i < r.length; i++) {
+            if (ach >= r[i].min && ach <= r[i].max) {
+                var comm = sales * (r[i].rate || 0);
+                console.log('💰', name, '| sales:', sales, '| target:', target, '| ach:', ach.toFixed(1)+'%', '| tier:', r[i].label, '| rate:', r[i].rate, '| comm:', comm);
+                return comm;
+            }
+        }
+        console.warn('⚠️ No tier matched for', name, 'ach:', ach.toFixed(1)+'%');
+        return 0;
+    }
+
+    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var currentMonthIdx = new Date().getMonth();
+    var sorted = history.slice()
+        .filter(function(r){ return monthOrder.indexOf((r.month||'').toUpperCase()) <= currentMonthIdx; })
+        .sort(function(a,b){
+            return monthOrder.indexOf((b.month||'').toUpperCase()) - monthOrder.indexOf((a.month||'').toUpperCase());
         });
 
-    historyList.innerHTML = sorted.map((report, index) => {
-        const people = report.data || [];
-        const month  = (report.month || '').toUpperCase();
+    // Remove months where all people have 0 data
+    sorted = sorted.filter(function(r){
+        return (r.data||[]).some(function(p){ return (p.target||0)>0 || (p.sales||0)>0; });
+    });
 
-        // Calculate total commission for each person
-        let totalComm = 0;
-        people.forEach(p => {
-            const comm = calculateCommission(p.sales||0, p.target||0, p.name);
-            const collAch = p.collectionTarget>0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
-            const callAch = p.callTarget>0 ? (p.callActual||0)/p.callTarget*100 : 0;
-            const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
-            const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
-            totalComm += comm + coll + call;
+    if (sorted.length === 0) {
+        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
+        return;
+    }
+
+    historyList.innerHTML = sorted.map(function(report) {
+        var people = report.data || [];
+        var month  = (report.month||'').toUpperCase();
+        var realIndex = history.indexOf(report);
+
+        var totalComm = 0;
+        people.forEach(function(p) {
+            var comm    = calcComm(p.sales, p.target, p.name);
+            var collPct = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
+            var callPct = (p.callTarget||0) > 0 ? (p.callActual||0)/p.callTarget*100 : 0;
+            var coll    = calculateIncentive(collPct, window.appState.config.collection_incentive);
+            var callB   = calculateIncentive(callPct, window.appState.config.active_call_incentive);
+            totalComm  += comm + coll + callB;
         });
 
-        const realIndex = history.indexOf(report);
-
-        const peopleCards = people.map(p => {
-            const comm = calculateCommission(p.sales||0, p.target||0, p.name);
-            const ach  = p.target>0 ? (p.sales||0)/p.target*100 : 0;
-            return `<div class="bg-white rounded p-3 text-center border border-gray-100">
-                <div class="font-medium text-gray-800 text-sm">${p.name||'—'}</div>
-                <div class="text-xs text-gray-500 mt-1">Target: ${formatCurrency(p.target||0)}</div>
-                <div class="text-xs text-gray-500">Sales: ${formatCurrency(p.sales||0)}</div>
-                <div class="text-xs font-semibold mt-1 ${ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500'}">${ach.toFixed(1)}%</div>
-                <div class="text-xs text-indigo-600 font-medium">${formatCurrency(comm)}</div>
-            </div>`;
+        var peopleCards = people.map(function(p) {
+            var comm = calcComm(p.sales, p.target, p.name);
+            var ach  = (p.target||0) > 0 ? (p.sales||0)/p.target*100 : 0;
+            return '<div class="bg-white rounded p-3 text-center border border-gray-100">'
+                + '<div class="font-medium text-gray-800 text-sm">' + (p.name||'—') + '</div>'
+                + '<div class="text-xs text-gray-500 mt-1">Target: ' + formatCurrency(p.target||0) + '</div>'
+                + '<div class="text-xs text-gray-500">Sales: ' + formatCurrency(p.sales||0) + '</div>'
+                + '<div class="text-xs font-semibold mt-1 ' + (ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500') + '">' + ach.toFixed(1) + '%</div>'
+                + '<div class="text-xs text-indigo-600 font-medium">' + formatCurrency(comm) + '</div>'
+                + '</div>';
         }).join('');
 
-        return `
-        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-4">
-            <div class="flex justify-between items-start mb-3">
-                <div>
-                    <h4 class="text-lg font-bold text-gray-900">${month}</h4>
-                    <p class="text-sm text-gray-500">${people.length} people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">${formatCurrency(totalComm)}</span></p>
-                </div>
-                <div class="flex gap-2 flex-wrap justify-end">
-                    <button onclick="viewHistoryReport(${realIndex})" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>
-                    <button onclick="exportHistoryToExcel(${realIndex})" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>
-                    <button onclick="printHistoryReport(${realIndex})" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>
-                    <button onclick="deleteHistoryReport(${realIndex})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>
-                </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                ${peopleCards}
-            </div>
-        </div>`;
+        return '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-4">'
+            + '<div class="flex justify-between items-start mb-3">'
+            + '<div><h4 class="text-lg font-bold text-gray-900">' + month + '</h4>'
+            + '<p class="text-sm text-gray-500">' + people.length + ' people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">' + formatCurrency(totalComm) + '</span></p></div>'
+            + '<div class="flex gap-2 flex-wrap justify-end">'
+            + '<button onclick="viewHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
+            + '<button onclick="exportHistoryToExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
+            + '<button onclick="printHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>'
+            + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>'
+            + '</div></div>'
+            + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">' + peopleCards + '</div>'
+            + '</div>';
     }).join('');
 }
 
+
+
+
+
+
+// ==================== Live Payslip Preview ====================
+function updateLivePayslip() {
+    var ps = document.getElementById('live-payslip');
+    if (!ps) return;
+    ps.style.display = 'block';
+    var person = window.appState.salespeople[0];
+    if (!person || !person.name) { 
+        // Show empty state
+        var titleEl = document.getElementById('ps-title');
+        if (titleEl) titleEl.textContent = '— SALARY REPORT';
+        var body = document.getElementById('ps-body');
+        if (body) body.innerHTML = '';
+        var grand = document.getElementById('ps-grand');
+        if (grand) grand.textContent = 'RM 0.00';
+        return; 
+    }
+    var cfg = window.appState.config;
+    var nu  = (person.name || '').toUpperCase();
+    var salary  = (cfg.base_salaries  && cfg.base_salaries[nu])  || 0;
+    var allow   = (cfg.allowances     && cfg.allowances[nu])     || {};
+    var epfRate = (cfg.deductionRates && cfg.deductionRates[nu]  && cfg.deductionRates[nu].EPF_RATE) || 11;
+    var hp=allow.HP||0, car=allow.CAR||0, lf=allow['LOCAL FUEL']||0;
+    var of2=allow['OUTSTATION FUEL']||0, hs=allow.HOUSING||0, food=allow.FOOD||0, oth=allow.OTHERS||0;
+    var sales   = parseFloat(person.sales)  || 0;
+    var target  = parseFloat(person.target) || 0;
+    var collBon = parseFloat(person.collectionIncentive) || 0;
+    var callBon = parseFloat(person.activeCallIncentive) || 0;
+    var qtrBon  = parseFloat(person.quarterlyBonus)      || 0;
+    var comm    = parseFloat(person.commission) || calculateCommission(sales, target, person.name);
+    var ach = target > 0 ? (sales / target * 100) : 0;
+    var totalAllow = hp+car+lf+of2+hs+food+oth;
+    var totalFixed = salary + totalAllow;
+    var totalInc   = totalFixed + comm + collBon + callBon + qtrBon;
+    var epfAmt     = totalInc * (epfRate / 100);
+    var grand      = totalInc - epfAmt;
+    var achColor   = ach>=100 ? '#1D9E75' : ach>=90 ? '#BA7517' : '#E24B4A';
+    var g = function(id){ return document.getElementById(id); };
+    if(g('ps-title'))   g('ps-title').textContent   = person.name + ' — SALARY REPORT';
+    if(g('ps-ach-lbl')) g('ps-ach-lbl').textContent = 'Achievement: ' + ach.toFixed(1) + '%';
+    if(g('ps-ach-pct')){ g('ps-ach-pct').textContent = ach.toFixed(1)+'%'; g('ps-ach-pct').style.color = achColor; }
+    if(g('ps-ach-bar')){ g('ps-ach-bar').style.width = Math.min(ach,120)+'%'; g('ps-ach-bar').style.background = achColor; }
+    if(g('ps-personal')) g('ps-personal').textContent = formatCurrency(sales);
+    if(g('ps-team'))     g('ps-team').textContent     = formatCurrency(sales);
+    if(g('ps-grand'))    g('ps-grand').textContent    = formatCurrency(grand);
+    function fp(v){ return totalInc>0 ? (v/totalInc*100).toFixed(2)+'%' : '0.00%'; }
+    function fc(v){ return formatCurrency(v); }
+    function sec(l){ return '<tr style="background:#E6F1FB;"><td colspan="4" style="padding:4px 10px;font-weight:600;color:#0C447C;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'+l+'</td></tr>'; }
+    function row(l,v,blue,bold){
+        var fw=bold?'font-weight:600;':'', bg=bold?'background:#B5D4F4;':'';
+        var tc=blue?'color:#185FA5;':bold?'color:#0C447C;':'';
+        var lc=bold?'color:#0C447C;':'color:var(--ink3);';
+        return '<tr style="'+bg+'border-top:0.5px solid var(--line);">'
+            +'<td style="padding:4px 10px;'+fw+lc+'">'+l+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;'+fw+tc+'">'+fc(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td></tr>';
+    }
+    function erow(v){
+        return '<tr style="border-top:0.5px solid var(--line);">'
+            +'<td style="padding:4px 10px;color:var(--ink3);">EPF '+epfRate+'%</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td></tr>';
+    }
+    var html = sec('INCOME') + row('SALARY',salary,true,false) + sec('ALLOWANCES');
+    if(hp)   html += row('HP',              hp,   true, false);
+    if(car)  html += row('CAR',             car,  true, false);
+    if(lf)   html += row('LOCAL FUEL',      lf,   true, false);
+    if(of2)  html += row('OUTSTATION FUEL', of2,  true, false);
+    if(hs)   html += row('HOUSING',         hs,   true, false);
+    if(food) html += row('FOOD',            food, true, false);
+    if(oth)  html += row('OTHERS',          oth,  true, false);
+    html += row('TOTAL FIXED INCOME', totalFixed, false, true)
+          + sec('COMMISSION')    + row('COMMISSION AMOUNT', comm,    true, false)
+          + sec('INCENTIVE')     + row('COLLECTION',        collBon, true, false)
+          + row('ACTIVE CALL',   callBon, true, false)
+          + row('QUARTERLY',     qtrBon,  true, false)
+          + row('TOTAL',         totalInc, false, true)
+          + erow(epfAmt);
+    if(g('ps-body')) g('ps-body').innerHTML = html;
+}
+window.updateLivePayslip = updateLivePayslip;
+
+
+function promptAddPerson() {
+    var existing = document.getElementById('add-person-modal');
+    if (existing) existing.remove();
+
+    // Build overlay - clicking overlay closes modal
+    var overlay = document.createElement('div');
+    overlay.id = 'add-person-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;';
+
+    // Build card - stops propagation so clicks inside don't close modal
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:16px;width:380px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;font-family:sans-serif;';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:#1e3a8a;padding:20px 24px;color:#fff;';
+    hdr.innerHTML = '<div style="font-size:16px;font-weight:700;">Add New Person</div><div style="font-size:12px;opacity:.7;margin-top:2px;">Enter name to get started</div>';
+    card.appendChild(hdr);
+
+    // Body
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:20px 24px;';
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:block;font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;';
+    lbl.textContent = 'Full Name';
+    body.appendChild(lbl);
+
+    // Input - created directly, no innerHTML
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'e.g. JOHN TAN';
+    inp.style.cssText = 'display:block;width:100%;padding:10px 14px;border:2px solid #d1d5db;border-radius:8px;font-size:15px;outline:none;box-sizing:border-box;color:#111;background:#fff;';
+    inp.addEventListener('focus', function() { this.style.borderColor = '#3b82f6'; });
+    inp.addEventListener('blur',  function() { this.style.borderColor = '#d1d5db'; });
+    inp.addEventListener('input', function() { 
+        this.value = this.value.toUpperCase();
+        errEl.style.display = 'none';
+    });
+    body.appendChild(inp);
+
+    var errEl = document.createElement('div');
+    errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:6px;display:none;';
+    errEl.textContent = 'Name already exists';
+    body.appendChild(errEl);
+    card.appendChild(body);
+
+    // Footer
+    var foot = document.createElement('div');
+    foot.style.cssText = 'padding:12px 24px 20px;display:flex;gap:10px;justify-content:flex-end;';
+    var btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:9px 20px;border:1.5px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;';
+    var btnOk = document.createElement('button');
+    btnOk.textContent = 'Next →';
+    btnOk.style.cssText = 'padding:9px 24px;border:none;border-radius:8px;background:#1e3a8a;color:#fff;cursor:pointer;font-size:13px;font-weight:700;';
+    foot.appendChild(btnCancel);
+    foot.appendChild(btnOk);
+    card.appendChild(foot);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    // Focus input
+    setTimeout(function(){ inp.focus(); }, 50);
+
+    function doAdd() {
+        var name = inp.value.trim().toUpperCase();
+        if (!name) { inp.focus(); return; }
+        if (window.appState.config.base_salaries && window.appState.config.base_salaries[name]) {
+            errEl.style.display = 'block';
+            inp.focus();
+            return;
+        }
+        overlay.remove();
+        addNewPerson(name);
+    }
+
+    function close() { overlay.remove(); }
+
+    // Only close when clicking the overlay background (not the card)
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) close();
+    });
+
+    inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') doAdd();
+        if (e.key === 'Escape') close();
+    });
+    btnOk.addEventListener('click', doAdd);
+    btnCancel.addEventListener('click', close);
+}
+
+function filterPeopleList(query) {
+    var items = document.querySelectorAll('#people-list-container > div');
+    var q = (query||'').toUpperCase().trim();
+    items.forEach(function(item) {
+        var text = item.textContent.toUpperCase();
+        item.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+
+function openHistoryExcel(index) {
+    // Same commission calculation as reExportHistory, but opens directly instead of saving
+    var report = (window.appState.config.reportHistory||[])[index];
+    if (!report) return;
+    showToast('⏳', 'Opening Excel...');
+    try {
+        var cfg = window.appState.config;
+        var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
+        var rates = (cfg.monthly_commission_rates&&cfg.monthly_commission_rates.length>0)?cfg.monthly_commission_rates:defRates;
+        var isQtr = ['MAR','JUN','SEP','DEC'].indexOf((report.month||'').toUpperCase()) !== -1;
+        function calcInc(pct,tiers){if(!tiers||!tiers.length)return 0;var s=tiers.slice().sort(function(a,b){return b.min-a.min;});for(var i=0;i<s.length;i++)if(pct>=s[i].min)return s[i].incentive||0;return 0;}
+        // Filter out people who have been deleted from config
+        var activePeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
+        var reportData = (report.data||[]).filter(function(p){
+            return activePeople.indexOf((p.name||'').toUpperCase()) !== -1;
+        });
+        var salesData=reportData.map(function(p){
+            var nu=(p.name||'').toUpperCase();
+            var salary=(cfg.base_salaries&&cfg.base_salaries[nu])||1700;
+            var allowances=(cfg.allowances&&cfg.allowances[nu])||{};
+            var epfRate=(cfg.deductionRates&&cfg.deductionRates[nu]&&cfg.deductionRates[nu].EPF_RATE)||11;
+            var target=parseFloat(p.target)||0,sales=parseFloat(p.sales)||0;
+            var collTgt=parseFloat(p.collectionTarget)||0,collAmt=parseFloat(p.collectionAmount)||0;
+            var callTgt=parseFloat(p.callTarget)||0,callAct=parseFloat(p.callActual)||0;
+            var ach=target>0?(sales/target*100):0;
+            var pRates=(cfg.person_commission_rates&&cfg.person_commission_rates[nu])||rates;
+            var commission=0;
+            if(target>0&&sales>0)for(var i=0;i<pRates.length;i++)if(ach>=pRates[i].min&&ach<=pRates[i].max){commission=sales*(pRates[i].rate||0);break;}
+            var collI=calcInc(collTgt>0?collAmt/collTgt*100:0,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
+            var callI=calcInc(callTgt>0?callAct/callTgt*100:0,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
+            var qtrI=isQtr?calcInc(ach,(cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[nu])||cfg.quarterly_incentive||[]):0;
+            return {name:p.name,salary:salary,allowances:allowances,epfRate:epfRate,sales:sales,target:target,achievement:ach,
+                commission:commission,collectionIncentive:collI,activeCallIncentive:callI,quarterlyBonus:qtrI,
+                totalCommission:commission+collI+callI+qtrI,collectionTarget:collTgt,collectionAmount:collAmt,
+                callTarget:callTgt,callActual:callAct,quarterlySales:0,quarterlyTarget:0};
+        });
+        window.electronAPI.openExcelPreview({salespeople:salesData, config:cfg, month:report.month})
+            .then(function(result){
+                if(result.success) showToast('✅', 'Excel opened!');
+                else showToast('❌', 'Failed: '+(result.error||''));
+            });
+    } catch(e){ showToast('❌', e.message); }
+}
+window.openHistoryExcel = openHistoryExcel;
 
 // ==================== Global Function Export ====================
 
@@ -3703,23 +4122,372 @@ window.printHistoryReport   = printHistoryReport;
 
 function manualSave() {
     var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    if (!month) { showToast('⚠️', 'Please select a month first'); return; }
+
+    // Update all card data from DOM inputs
     window.appState.salespeople.forEach(function(p, idx) { updateSalespersonData(idx); });
+
     var snapshot = {
         month: month,
         salespeople: window.appState.salespeople.map(function(p){ return Object.assign({},p); })
     };
     window.appState.config.quickCalculateData = snapshot;
-    // saveConfig is in app.js and may not return a promise - call electronAPI directly
+
+    // Sync current salespeople into reportHistory for this month
+    if (!window.appState.config.reportHistory) window.appState.config.reportHistory = [];
+    var validPeople = window.appState.salespeople.filter(function(p){ return p.name && (p.target > 0 || p.sales > 0); });
+    if (validPeople.length > 0) {
+        var existIdx = window.appState.config.reportHistory.findIndex(function(r){ return (r.month||'').toUpperCase() === month; });
+        var histData = validPeople.map(function(p) {
+            return {
+                name:             (p.name||'').toUpperCase(),
+                target:           p.target           || 0,
+                sales:            p.sales            || 0,
+                collectionTarget: p.collectionTarget  || 0,
+                collectionAmount: p.collectionAmount  || 0,
+                callTarget:       p.callTarget        || 0,
+                callActual:       p.callActual        || 0
+            };
+        });
+        if (existIdx >= 0) {
+            // Merge: update existing entries, add new ones
+            histData.forEach(function(entry) {
+                var pi = window.appState.config.reportHistory[existIdx].data.findIndex(function(d){ return (d.name||'').toUpperCase() === entry.name; });
+                if (pi >= 0) window.appState.config.reportHistory[existIdx].data[pi] = entry;
+                else window.appState.config.reportHistory[existIdx].data.push(entry);
+            });
+        } else {
+            window.appState.config.reportHistory.push({ month: month, data: histData });
+        }
+    }
+
+    // Save to JSON config
     window.electronAPI.saveConfig(window.appState.config).then(function(r){
         if(r && r.success) showToast('✅', 'Saved!');
         else showToast('❌', 'Save failed: ' + (r && r.error || 'unknown'));
     }).catch(function(e){ showToast('❌', e.message); });
-    // Also save to DB
+
+    // Save to SQLite DB
     dbSave('quickCalculateData', snapshot);
-    dbSave('reportHistory', window.appState.config.reportHistory || []);
+    dbSave('reportHistory', window.appState.config.reportHistory);
+
+    // Refresh history if visible
+    if (document.getElementById('history-list')) loadQuickCalculateHistory();
 }
 window.manualSave = manualSave;
 
+
+// ==================== People Tab ====================
+function renderPeopleList() {
+    var container = document.getElementById('people-list-container');
+    if (!container) return;
+    var people = Object.keys(window.appState.config.base_salaries || {});
+    if (people.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--ink4);">'
+            + '<div style="font-size:40px;margin-bottom:12px;">👥</div>'
+            + '<div style="font-size:14px;font-weight:600;">No salespeople yet</div>'
+            + '<div style="font-size:12px;margin-top:6px;">Add a person above to get started</div></div>';
+        return;
+    }
+    container.innerHTML = '';
+    var colors = ['#dbeafe:#1e40af','#fce7f3:#be185d','#dcfce7:#15803d','#fef9c3:#a16207','#ede9fe:#6d28d9','#fff1f2:#be123c'];
+    people.forEach(function(name, i) {
+        var salary = window.appState.config.base_salaries[name] || 0;
+        var allow  = window.appState.config.allowances[name] || {};
+        var totalAllow = Object.values(allow).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
+        var hasPersonal = window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[name];
+        var col = (colors[i%colors.length]||'#f1f5f9:#64748b').split(':');
+        var item = document.createElement('div');
+        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s;margin-bottom:8px;';
+        item.innerHTML =
+            '<div style="width:38px;height:38px;border-radius:50%;background:'+col[0]+';color:'+col[1]+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
+            + '<div style="flex:1;">'
+            + '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:3px;">'+name+'</div>'
+            + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+            + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()+' &nbsp;·&nbsp; '
+            + (hasPersonal
+                ? '<span style="background:var(--vi-l);color:var(--vi);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;">✦ Personal</span>'
+                : '<span style="background:var(--sheet);color:var(--ink4);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--line);">Company Rate</span>')
+            + '</div></div>'
+            + '<div style="display:flex;gap:6px;" id="pi-btns-'+i+'"></div>';
+        container.appendChild(item);
+        var btns = item.querySelector('#pi-btns-'+i);
+        var bS = document.createElement('button');
+        bS.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bae6fd;background:#e0f2fe;color:#0284c7;';
+        bS.textContent = '💵 Salary';
+        bS.addEventListener('click',(function(n){return function(){showSalaryModal(n);};})(name));
+        var bC = document.createElement('button');
+        bC.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:var(--vi-l);color:var(--vi);';
+        bC.textContent = '💰 Commission';
+        bC.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
+        var bD = document.createElement('button');
+        bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
+        bD.textContent = '🗑️';
+        bD.addEventListener('click',(function(n){return function(){deleteSalespersonConfig(n);};})(name));
+        btns.appendChild(bS); btns.appendChild(bC); btns.appendChild(bD);
+    });
+}
+
+function showSalaryModal(personName) {
+    var ex=document.getElementById('salary-setup-modal'); if(ex)ex.remove();
+    var cfg=window.appState.config;
+    var allow=(cfg.allowances&&cfg.allowances[personName])||{};
+    var epfRate=(cfg.deductionRates&&cfg.deductionRates[personName]&&cfg.deductionRates[personName].EPF_RATE)||11;
+    var salary=(cfg.base_salaries&&cfg.base_salaries[personName])||1700;
+    var IS='width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;';
+    function makeRow(lbl,id,val,half){
+        return '<div style="'+(half?'':'')+'margin-bottom:10px;">'
+            +'<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">'+lbl+'</label>'
+            +'<input id="sm-'+id+'" type="number" value="'+val+'" style="'+IS+'"></div>';
+    }
+    var modal=document.createElement('div');
+    modal.id='salary-setup-modal';
+    modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+    var card=document.createElement('div');
+    card.style.cssText='background:var(--paper);border-radius:16px;max-width:520px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.addEventListener('click',function(e){e.stopPropagation();});
+    card.innerHTML=
+        '<div style="background:linear-gradient(135deg,#0f172a,#1e40af);padding:20px 24px;color:#fff;flex-shrink:0;">'
+        +'<div style="font-size:17px;font-weight:800;letter-spacing:-.3px;">💵 Salary Setup</div>'
+        +'<div style="font-size:12px;opacity:.6;margin-top:3px;">'+personName+'</div></div>'
+        +'<div style="padding:20px 24px;overflow-y:auto;flex:1;">'
+        +'<div style="background:var(--em-l);border:1px solid #a7f3d0;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#065f46;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Base Salary</div>'
+        +makeRow('Base Salary (RM)','base',salary)+'</div>'
+        +'<div style="background:var(--blue-l);border:1px solid #bae6fd;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#075985;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Allowances (RM)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        +makeRow('HP','HP',allow.HP||0,true)+makeRow('Car','CAR',allow.CAR||0,true)
+        +makeRow('Local Fuel','LOCALFUEL',allow['LOCAL FUEL']||0,true)+makeRow('Outstation Fuel','OUTFUEL',allow['OUTSTATION FUEL']||0,true)
+        +makeRow('Housing','HOUSING',allow.HOUSING||0,true)+makeRow('Food','FOOD',allow.FOOD||0,true)
+        +'</div>'+makeRow('Others','OTHERS',allow.OTHERS||0)+'</div>'
+        +'<div style="background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px;">'
+        +'<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Deduction</div>'
+        +makeRow('EPF Rate (%)','epf',epfRate)+'</div>'
+        +'</div>'
+        +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--paper);flex-shrink:0;">'
+        +'<button id="sm-cancel" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
+        +'<button id="sm-save" style="padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save & Next →</button>'
+        +'</div>';
+    modal.appendChild(card);
+    document.body.appendChild(modal);
+    modal.addEventListener('click',function(){modal.remove();});
+    document.getElementById('sm-cancel').addEventListener('click',function(){modal.remove();});
+    document.getElementById('sm-save').addEventListener('click',function(){saveSalaryModal(personName);});
+}
+
+function saveSalaryModal(personName) {
+    var cfg=window.appState.config;
+    var base=parseFloat(document.getElementById('sm-base').value)||1700;
+    var hp=parseFloat(document.getElementById('sm-HP').value)||0;
+    var car=parseFloat(document.getElementById('sm-CAR').value)||0;
+    var lf=parseFloat(document.getElementById('sm-LOCALFUEL').value)||0;
+    var of2=parseFloat(document.getElementById('sm-OUTFUEL').value)||0;
+    var hs=parseFloat(document.getElementById('sm-HOUSING').value)||0;
+    var food=parseFloat(document.getElementById('sm-FOOD').value)||0;
+    var oth=parseFloat(document.getElementById('sm-OTHERS').value)||0;
+    var epfR=parseFloat(document.getElementById('sm-epf').value)||11;
+    if(!cfg.base_salaries)cfg.base_salaries={};
+    if(!cfg.allowances)cfg.allowances={};
+    if(!cfg.deductions)cfg.deductions={};
+    if(!cfg.deductionRates)cfg.deductionRates={};
+    cfg.base_salaries[personName]=base;
+    cfg.allowances[personName]={HP:hp,CAR:car,'LOCAL FUEL':lf,'OUTSTATION FUEL':of2,HOUSING:hs,FOOD:food,OTHERS:oth};
+    var ti=base+hp+car+lf+of2+hs+food+oth;
+    cfg.deductions[personName]={EPF:Math.round(ti*(epfR/100)*100)/100,SOCSO:Math.round(ti*0.005*100)/100,PCB:0,EIS:0};
+    cfg.deductionRates[personName]={EPF_RATE:epfR};
+    saveConfig();
+    var m=document.getElementById('salary-setup-modal');if(m)m.remove();
+    renderPeopleList();
+    showToast('✅',personName+' salary saved!');
+    setTimeout(function(){showCommissionModal(personName);},300);
+}
+
+function showCommissionModal(personName) {
+    var ex=document.getElementById('commission-setup-modal');if(ex)ex.remove();
+    var cfg=window.appState.config;
+    function getPCfg(gk,pk){
+        if(cfg[pk]&&cfg[pk][personName])return JSON.parse(JSON.stringify(cfg[pk][personName]));
+        return JSON.parse(JSON.stringify(cfg[gk]||[]));
+    }
+    window._tempRates=getPCfg('monthly_commission_rates','person_commission_rates');
+    window._tempQtr  =getPCfg('quarterly_incentive','person_quarterly_incentive');
+    window._tempColl =getPCfg('collection_incentive','person_collection_incentive');
+    window._tempCall =getPCfg('active_call_incentive','person_call_incentive');
+    var hasP=(cfg.person_commission_rates&&cfg.person_commission_rates[personName])||(cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[personName]);
+    var badge=hasP?'<span style="background:var(--vi-l);color:var(--vi);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;margin-left:8px;">Personal</span>':'<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.6);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;margin-left:8px;">Company Rate</span>';
+    var modal=document.createElement('div');
+    modal.id='commission-setup-modal';
+    modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+    var card=document.createElement('div');
+    card.style.cssText='background:#f8fafc;border-radius:16px;max-width:660px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.addEventListener('click',function(e){e.stopPropagation();});
+    var colHdr=function(cols){return '<div style="display:grid;grid-template-columns:'+cols+';gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;letter-spacing:.5px;text-transform:uppercase;"></div>';};
+    card.innerHTML=
+        '<div style="background:linear-gradient(135deg,#0f172a,#4f46e5);padding:20px 24px;color:#fff;flex-shrink:0;">'
+        +'<div style="font-size:17px;font-weight:800;letter-spacing:-.3px;">💰 Commission & Incentive'+badge+'</div>'
+        +'<div style="font-size:12px;opacity:.6;margin-top:3px;">'+personName+' — Edit to create personal override</div></div>'
+        +'<div style="padding:16px 24px;overflow-y:auto;flex:1;">'
+        // Monthly Commission
+        +'<div style="background:var(--blue-l);border:1px solid #bae6fd;border-radius:var(--r);padding:14px;margin-bottom:12px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        +'<span style="font-size:12px;font-weight:700;color:#075985;">💰 Monthly Commission Rates</span>'
+        +'<button id="cm-add-rate" style="padding:4px 12px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;">➕ Add</button></div>'
+        +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;text-transform:uppercase;letter-spacing:.5px;"><span>Label</span><span>Min%</span><span>Max%</span><span>Rate%</span><span></span></div>'
+        +'<div id="cm-tiers"></div></div>'
+        // Quarterly
+        +'<div style="background:var(--em-l);border:1px solid #a7f3d0;border-radius:var(--r);padding:14px;margin-bottom:12px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        +'<span style="font-size:12px;font-weight:700;color:#065f46;">🏆 Quarterly Incentive</span>'
+        +'<button id="cm-add-qtr" style="padding:4px 12px;background:var(--em);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;">➕ Add</button></div>'
+        +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;text-transform:uppercase;letter-spacing:.5px;"><span>Label</span><span>Min%</span><span>RM</span><span></span></div>'
+        +'<div id="cm-qtr"></div></div>'
+        // Collection
+        +'<div style="background:var(--am-l);border:1px solid #fde68a;border-radius:var(--r);padding:14px;margin-bottom:12px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        +'<span style="font-size:12px;font-weight:700;color:#92400e;">💵 Collection Incentive</span>'
+        +'<button id="cm-add-coll" style="padding:4px 12px;background:var(--am);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;">➕ Add</button></div>'
+        +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;text-transform:uppercase;letter-spacing:.5px;"><span>Label</span><span>Min%</span><span>RM</span><span></span></div>'
+        +'<div id="cm-coll"></div></div>'
+        // Call
+        +'<div style="background:var(--vi-l);border:1px solid #ddd6fe;border-radius:var(--r);padding:14px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        +'<span style="font-size:12px;font-weight:700;color:#5b21b6;">📞 Active Call Incentive</span>'
+        +'<button id="cm-add-call" style="padding:4px 12px;background:var(--vi);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;">➕ Add</button></div>'
+        +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;text-transform:uppercase;letter-spacing:.5px;"><span>Label</span><span>Min%</span><span>RM</span><span></span></div>'
+        +'<div id="cm-call"></div></div>'
+        +'</div>'
+        +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:space-between;background:var(--paper);flex-shrink:0;">'
+        +'<button id="cm-global-btn" style="padding:9px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:12px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink3);">↩ Use Company Rate</button>'
+        +'<div style="display:flex;gap:8px;">'
+        +'<button id="cm-cancel-btn" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
+        +'<button id="cm-save-btn" style="padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#4f46e5);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save</button>'
+        +'</div></div>';
+    modal.appendChild(card);
+    document.body.appendChild(modal);
+    modal.addEventListener('click',function(){modal.remove();});
+    renderTempRates();
+    renderTempIncentive('qtr',window._tempQtr);
+    renderTempIncentive('coll',window._tempColl);
+    renderTempIncentive('call',window._tempCall);
+    document.getElementById('cm-add-rate').addEventListener('click',addTempRate);
+    document.getElementById('cm-add-qtr').addEventListener('click',function(){addTempIncentive('qtr');});
+    document.getElementById('cm-add-coll').addEventListener('click',function(){addTempIncentive('coll');});
+    document.getElementById('cm-add-call').addEventListener('click',function(){addTempIncentive('call');});
+    document.getElementById('cm-save-btn').addEventListener('click',function(){saveCommissionModal(personName);});
+    document.getElementById('cm-cancel-btn').addEventListener('click',function(){modal.remove();});
+    document.getElementById('cm-global-btn').addEventListener('click',function(){resetToGlobalComm(personName);});
+}
+
+function renderTempRates() {
+    var wrap=document.getElementById('cm-tiers');if(!wrap)return;
+    wrap.innerHTML='';
+    (window._tempRates||[]).forEach(function(t,i){
+        var row=document.createElement('div');
+        row.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:8px;margin-bottom:5px;';
+        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:IBM Plex Mono,monospace;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
+        row.innerHTML='<input type="text" value="'+(t.label||'')+'" placeholder="Label" style="'+IS+';font-family:Sora,sans-serif;">'
+            +'<input type="number" value="'+t.min+'" step="0.01" style="'+IS+'">'
+            +'<input type="number" value="'+t.max+'" step="0.01" style="'+IS+'">'
+            +'<input type="number" value="'+(t.rate*100).toFixed(2)+'" step="0.01" style="'+IS+'">';
+        var del=document.createElement('button');
+        del.textContent='✕';del.style.cssText='padding:5px 9px;background:var(--ro-l);color:var(--rose);border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;';
+        del.addEventListener('click',(function(idx){return function(){window._tempRates.splice(idx,1);renderTempRates();};})(i));
+        row.appendChild(del);
+        var inp=row.querySelectorAll('input');
+        inp[0].addEventListener('input',(function(idx){return function(e){window._tempRates[idx].label=e.target.value;};})(i));
+        inp[1].addEventListener('input',(function(idx){return function(e){window._tempRates[idx].min=parseFloat(e.target.value)||0;};})(i));
+        inp[2].addEventListener('input',(function(idx){return function(e){window._tempRates[idx].max=parseFloat(e.target.value)||0;};})(i));
+        inp[3].addEventListener('input',(function(idx){return function(e){window._tempRates[idx].rate=(parseFloat(e.target.value)||0)/100;};})(i));
+        wrap.appendChild(row);
+    });
+}
+
+function renderTempIncentive(type,tiers) {
+    var wrap=document.getElementById('cm-'+type);if(!wrap)return;
+    wrap.innerHTML='';
+    (tiers||[]).forEach(function(t,i){
+        var arr=type==='qtr'?window._tempQtr:type==='coll'?window._tempColl:window._tempCall;
+        var row=document.createElement('div');
+        row.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;align-items:center;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:8px;margin-bottom:5px;';
+        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:IBM Plex Mono,monospace;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
+        row.innerHTML='<input type="text" value="'+(t.label||'')+'" placeholder="Label" style="'+IS+';font-family:Sora,sans-serif;">'
+            +'<input type="number" value="'+(t.min||0)+'" step="1" style="'+IS+'">'
+            +'<input type="number" value="'+(t.incentive||0)+'" step="50" style="'+IS+'">';
+        var del=document.createElement('button');
+        del.textContent='✕';del.style.cssText='padding:5px 9px;background:var(--ro-l);color:var(--rose);border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;';
+        del.addEventListener('click',(function(idx,a,tp){return function(){a.splice(idx,1);renderTempIncentive(tp,a);};})(i,arr,type));
+        row.appendChild(del);
+        var inp=row.querySelectorAll('input');
+        inp[0].addEventListener('input',(function(idx,a){return function(e){a[idx].label=e.target.value;};})(i,arr));
+        inp[1].addEventListener('input',(function(idx,a){return function(e){a[idx].min=parseFloat(e.target.value)||0;};})(i,arr));
+        inp[2].addEventListener('input',(function(idx,a){return function(e){a[idx].incentive=parseFloat(e.target.value)||0;};})(i,arr));
+        wrap.appendChild(row);
+    });
+}
+
+function addTempRate(){
+    if(!window._tempRates)window._tempRates=[];
+    var last=window._tempRates.length>0?window._tempRates[window._tempRates.length-1]:{max:0};
+    var nm=(last.max||0)+0.01;
+    window._tempRates.push({min:nm,max:nm+9.99,rate:0,label:nm.toFixed(0)+'%+'});
+    renderTempRates();
+}
+
+function addTempIncentive(type){
+    var arr=type==='qtr'?window._tempQtr:type==='coll'?window._tempColl:window._tempCall;
+    if(!arr){arr=[];if(type==='qtr')window._tempQtr=arr;else if(type==='coll')window._tempColl=arr;else window._tempCall=arr;}
+    var last=arr.length>0?arr[0]:{min:100};
+    arr.unshift({min:Math.max(0,(last.min||0)-10),incentive:0,label:'New Tier'});
+    renderTempIncentive(type,arr);
+}
+
+function saveCommissionModal(personName){
+    if(!window._tempRates)return;
+    var cfg=window.appState.config;
+    if(!cfg.person_commission_rates)cfg.person_commission_rates={};
+    if(!cfg.person_quarterly_incentive)cfg.person_quarterly_incentive={};
+    if(!cfg.person_collection_incentive)cfg.person_collection_incentive={};
+    if(!cfg.person_call_incentive)cfg.person_call_incentive={};
+    cfg.person_commission_rates[personName]=JSON.parse(JSON.stringify(window._tempRates));
+    cfg.person_quarterly_incentive[personName]=JSON.parse(JSON.stringify(window._tempQtr||[]));
+    cfg.person_collection_incentive[personName]=JSON.parse(JSON.stringify(window._tempColl||[]));
+    cfg.person_call_incentive[personName]=JSON.parse(JSON.stringify(window._tempCall||[]));
+    saveConfig();
+    var m=document.getElementById('commission-setup-modal');if(m)m.remove();
+    renderPeopleList();
+    showToast('✅',personName+' commission saved!');
+}
+
+function resetToGlobalComm(personName){
+    var cfg=window.appState.config;
+    ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].forEach(function(k){
+        if(cfg[k]&&cfg[k][personName])delete cfg[k][personName];
+    });
+    saveConfig();
+    var m=document.getElementById('commission-setup-modal');if(m)m.remove();
+    renderPeopleList();
+    showToast('✅','Reset to Company rate');
+}
+
+window.renderPeopleList=renderPeopleList;
+window.showSalaryModal=showSalaryModal;
+window.saveSalaryModal=saveSalaryModal;
+window.showCommissionModal=showCommissionModal;
+window.saveCommissionModal=saveCommissionModal;
+window.resetToGlobalComm=resetToGlobalComm;
+window.addTempRate=addTempRate;
+window.addTempIncentive=addTempIncentive;
+window.renderPersonSidebar=renderPersonSidebar;
+window.updateAchievementHero=updateAchievementHero;
+
+window.promptAddPerson = promptAddPerson;
+window.filterPeopleList = filterPeopleList;
+window.renderPeopleList = renderPeopleList;
+window.showSalaryModal = showSalaryModal;
+window.showCommissionModal = showCommissionModal;
+window.renderPersonSidebar = renderPersonSidebar;
+window.updateAchievementHero = updateAchievementHero;
 window.addSalespersonCard = addSalespersonCard;
 window.deleteSalespersonCard = deleteSalespersonCard;
 window.clearAllQuickCalculateData = clearAllQuickCalculateData;

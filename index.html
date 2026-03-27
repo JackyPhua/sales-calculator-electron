@@ -3,307 +3,400 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Commission Calculator</title>
-    
-    <!-- Tailwind CSS -->
+    <title>CommissionPro</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* 自定义动画 */
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        *,*::before,*::after{box-sizing:border-box;}
+        :root{
+            --ink:#080f1a;--ink2:#1e293b;--ink3:#475569;--ink4:#94a3b8;
+            --paper:#fff;--sheet:#f8fafc;--line:#e8edf3;
+            --blue:#0ea5e9;--blue-d:#0284c7;--blue-l:#e0f2fe;
+            --em:#10b981;--em-l:#d1fae5;
+            --am:#f59e0b;--am-l:#fef3c7;
+            --rose:#f43f5e;--ro-l:#ffe4e6;
+            --vi:#8b5cf6;--vi-l:#ede9fe;
+            --r:10px;
+            --sh:0 1px 2px rgba(8,15,26,.04),0 4px 12px rgba(8,15,26,.06);
+            --sh-md:0 4px 16px rgba(8,15,26,.08),0 1px 3px rgba(8,15,26,.04);
+            --sh-lg:0 12px 40px rgba(8,15,26,.12),0 2px 6px rgba(8,15,26,.06);
         }
-        
-        @keyframes slideIn {
-            from { 
-                transform: translateY(-20px); 
-                opacity: 0; 
-            }
-            to { 
-                transform: translateY(0); 
-                opacity: 1; 
-            }
+        body{font-family:'Sora',sans-serif;background:#eef2f7;color:var(--ink);min-height:100vh;}
+        /* ── NAV ── */
+        #app-nav{background:var(--ink);height:52px;display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:100;}
+        .nav-logo{display:flex;align-items:center;gap:9px;color:#fff;font-weight:700;font-size:14px;letter-spacing:-.3px;}
+        .nav-logo-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue),#38bdf8);display:flex;align-items:center;justify-content:center;font-size:14px;}
+        .nav-spacer{flex:1;}
+        #license-badge{display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;color:rgba(255,255,255,.8);font-size:11px;font-weight:600;cursor:pointer;}
+        .nav-dot{width:6px;height:6px;border-radius:50%;background:var(--em);}
+        /* ── TABS ── */
+        #app-tabbar{display:flex;border-bottom:1px solid var(--line);background:var(--sheet);padding:0 20px;gap:2px;position:sticky;top:52px;z-index:99;}
+        .tab-button{padding:13px 16px;font-size:12px;font-weight:600;color:var(--ink3);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:color .15s;letter-spacing:.1px;border:none;background:transparent;font-family:'Sora',sans-serif;}
+        .tab-button.active{color:var(--blue-d);border-bottom-color:var(--blue);}
+        .tab-button:hover:not(.active){color:var(--ink2);}
+        /* ── LAYOUT ── */
+        #app-body{max-width:1200px;margin:0 auto;padding:20px;}
+        .view-container{display:none;}
+        .view-container.active{display:block;}
+        /* ── TOOLBAR ── */
+        .toolbar{display:flex;align-items:center;gap:8px;padding:12px 0;margin-bottom:16px;flex-wrap:wrap;}
+        .tool-sep{width:1px;height:22px;background:var(--line);margin:0 2px;}
+        .tbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;border:1.5px solid var(--line);background:var(--paper);color:var(--ink2);transition:all .15s;letter-spacing:.2px;}
+        .tbtn:hover{background:var(--sheet);}
+        .tbtn.blue{background:var(--blue);border-color:var(--blue);color:#fff;}
+        .tbtn.blue:hover{background:var(--blue-d);}
+        .tbtn.dark{background:var(--ink);border-color:var(--ink);color:#fff;}
+        .tbtn.red{color:var(--rose);border-color:#ffe4e6;background:#fff5f7;}
+        .tbtn.green{background:var(--em);border-color:var(--em);color:#fff;}
+        /* ── MONTH SELECT ── */
+        .month-select-wrap{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r);font-size:12px;font-weight:700;color:var(--ink);}
+        .month-select-wrap select{border:none;outline:none;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;}
+        /* ── CALCULATE LAYOUT ── */
+        .calc-grid{display:grid;grid-template-columns:200px 1fr 260px;gap:14px;align-items:start;}
+        /* sidebar */
+        .person-sidebar{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}
+        .sidebar-hd{padding:10px 14px;font-size:10px;font-weight:700;color:var(--ink4);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--line);background:var(--paper);}
+        .person-row{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--line);transition:background .1s;position:relative;}
+        .person-row:last-child{border-bottom:none;}
+        .person-row.active{background:var(--blue-l);}
+        .person-row.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+        .person-row .p-av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+        .person-row .p-name{font-size:12px;font-weight:600;color:var(--ink2);flex:1;}
+        .person-row.active .p-name{color:var(--blue-d);}
+        .person-row .p-ach{font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;font-family:'IBM Plex Mono',monospace;}
+        /* center panel */
+        .calc-center{display:flex;flex-direction:column;gap:12px;}
+        /* achievement hero */
+        .ach-hero{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}
+        .ach-progress-bar{height:5px;background:var(--line);}
+        .ach-progress-fill{height:100%;transition:width .5s ease;}
+        .ach-hero-body{padding:16px 18px;display:flex;align-items:center;gap:16px;}
+        .ach-big{font-size:40px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-2px;line-height:1;}
+        .ach-info{flex:1;}
+        .ach-person-name{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:3px;}
+        .ach-sub{font-size:11px;color:var(--ink3);}
+        .ach-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;}
+        /* field grid */
+        .field-grid{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}
+        .field-grid-inner{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);}
+        .field-cell{background:var(--paper);padding:13px 16px;}
+        .field-cell.locked{background:var(--sheet);}
+        .field-lbl{font-size:10px;font-weight:600;color:var(--ink4);letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px;}
+        .field-val{font-size:16px;font-weight:700;color:var(--ink);font-family:'IBM Plex Mono',monospace;letter-spacing:-.5px;}
+        .field-val.blue{color:var(--blue-d);}
+        .field-val input{border:none;outline:none;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:var(--ink);width:100%;letter-spacing:-.5px;}
+        .field-val input:focus{color:var(--blue-d);}
+        .field-total{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-top:1px solid #bae6fd;}
+        .field-total-lbl{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;}
+        .field-total-val{font-size:22px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;letter-spacing:-1px;}
+        /* right summary */
+        .calc-right{display:flex;flex-direction:column;gap:12px;}
+        #summary-view{border-radius:var(--r);padding:18px;background:var(--ink);color:#fff;box-shadow:var(--sh-md);}
+        .sum-title{font-size:10px;font-weight:600;opacity:.5;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px;}
+        #summary-commission{font-size:28px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-1px;}
+        .sum-sub{font-size:11px;opacity:.4;margin-top:4px;}
+        .sum-toggle{display:flex;background:rgba(255,255,255,.1);border-radius:7px;padding:3px;gap:2px;margin-top:12px;}
+        .sum-toggle-btn{flex:1;padding:6px;border-radius:5px;border:none;cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.3px;background:transparent;color:rgba(255,255,255,.4);font-family:'Sora',sans-serif;text-transform:uppercase;transition:all .15s;}
+        .sum-toggle-btn.active{background:rgba(255,255,255,.15);color:#fff;}
+        .stat-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+        .stat-box2{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh);}
+        .stat-lbl2{font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+        .stat-val2{font-size:14px;font-weight:700;color:var(--ink);font-family:'IBM Plex Mono',monospace;}
+        .action-btns{display:flex;flex-direction:column;gap:7px;}
+        /* ── HISTORY ── */
+        .history-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+        .h-card{border:1px solid var(--line);border-radius:var(--r);background:var(--paper);overflow:hidden;box-shadow:var(--sh);transition:box-shadow .2s,transform .2s;cursor:pointer;}
+        .h-card:hover{box-shadow:var(--sh-lg);transform:translateY(-2px);}
+        .h-card-top{padding:14px 16px;background:linear-gradient(135deg,var(--ink),var(--ink2));color:#fff;display:flex;align-items:flex-start;justify-content:space-between;}
+        .h-month{font-size:22px;font-weight:800;letter-spacing:-1px;font-family:'IBM Plex Mono',monospace;}
+        .h-year{font-size:11px;opacity:.4;margin-top:1px;}
+        .h-comm-lbl{font-size:9px;opacity:.5;text-align:right;letter-spacing:.8px;text-transform:uppercase;}
+        .h-comm-val{font-size:15px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:#34d399;text-align:right;letter-spacing:-.5px;}
+        .h-people{display:grid;grid-template-columns:repeat(4,1fr);background:var(--line);border-top:1px solid var(--line);}
+        .h-person{background:var(--paper);padding:10px 8px;text-align:center;border-right:1px solid var(--line);}
+        .h-person:last-child{border-right:none;}
+        .h-pname{font-size:9px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+        .h-pach{font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+        .h-pcomm{font-size:10px;color:var(--blue-d);font-weight:600;margin-top:2px;font-family:'IBM Plex Mono',monospace;}
+        .h-foot{padding:9px 12px;border-top:1px solid var(--line);display:flex;gap:6px;justify-content:flex-end;background:var(--sheet);}
+        .hbtn{padding:5px 11px;border:none;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;letter-spacing:.2px;}
+        /* ── PEOPLE ── */
+        .people-add-bar{display:flex;gap:10px;align-items:flex-end;padding:16px 18px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px;box-shadow:var(--sh);}
+        .ig{flex:1;}
+        .il{font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px;}
+        .if{width:100%;padding:9px 13px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:500;outline:none;color:var(--ink);background:var(--paper);transition:border-color .15s;}
+        .if:focus{border-color:var(--blue);}
+        #people-list-container{display:flex;flex-direction:column;gap:8px;}
+        /* ── SETTINGS ── */
+        .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+        .set-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:20px;box-shadow:var(--sh);}
+        .set-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+        .set-btn{width:100%;padding:10px 16px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;background:var(--sheet);color:var(--ink2);display:flex;align-items:center;gap:8px;transition:all .15s;margin-bottom:8px;}
+        .set-btn:hover{background:var(--line);}
+        .set-btn.sb-blue{background:var(--blue);border-color:var(--blue);color:#fff;}
+        .set-btn.sb-green{background:var(--em);border-color:var(--em);color:#fff;}
+        .lic-box{padding:16px;background:linear-gradient(135deg,var(--ink),var(--ink2));border-radius:var(--r);color:#fff;text-align:center;cursor:pointer;}
+        .lic-status-lbl{font-size:10px;opacity:.5;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+        .lic-type{font-size:20px;font-weight:800;letter-spacing:-.5px;}
+        /* ── TOAST ── */
+        #toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+        .toast{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:var(--sh-lg);animation:slideIn .25s ease;font-family:'Sora',sans-serif;font-size:13px;font-weight:500;color:var(--ink2);}
+        @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+        /* ── RESPONSIVE ── */
+        @media(max-width:900px){
+            .calc-grid{grid-template-columns:1fr;}
+            .person-sidebar{display:none;}
+            .history-grid{grid-template-columns:1fr 1fr;}
+            .settings-grid{grid-template-columns:1fr;}
         }
-        
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+        @media(max-width:600px){
+            .history-grid{grid-template-columns:1fr;}
+            .calc-grid{grid-template-columns:1fr;}
         }
-        
-        .animate-fadeIn { 
-            animation: fadeIn 0.2s ease-out; 
-        }
-        
-        .animate-slideIn { 
-            animation: slideIn 0.3s ease-out; 
-        }
-        
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-        
-        /* 自定义样式 */
-        .card {
-            transition: all 0.3s ease;
-        }
-        
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-        
-        .input-field:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        
-        .tab-button {
-            transition: all 0.2s ease;
-        }
-        
-        .tab-button.active {
-            background-color: #3b82f6;
-            color: white;
-        }
-        
-        .tab-button:not(.active):hover {
-            background-color: #e5e7eb;
-        }
-        
-        /* Toast 样式 */
-        .toast {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 200px;
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        /* 隐藏滚动条但保持功能 */
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-        .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-    </style>
+        /* Keep existing card styles for salespeople cards */
+        .card{transition:all .3s ease;}
+        .animate-fadeIn{animation:fadeIn .2s ease-out;}
+        .animate-slideIn{animation:slideIn2 .3s ease-out;}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        @keyframes slideIn2{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
+        /* Loading overlay */
+        #loading-overlay{position:fixed;inset:0;background:rgba(8,15,26,.5);backdrop-filter:blur(4px);z-index:9998;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:16px;font-family:'Sora',sans-serif;}
+        #loading-overlay.active{display:flex;}
+        .loading-spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;}
+        @keyframes spin{to{transform:rotate(360deg)}}
+            .view-container { display: none !important; }
+        .view-container.active { display: block !important; }
+</style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <!-- 顶部导航栏 -->
-    <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center space-x-3">
-                    <div class="text-2xl">💰</div>
-                    <div>
-                        <h1 class="text-xl font-bold text-gray-900">Sales Commission Calculator</h1>
-                        <p class="text-xs text-gray-500">Professional Edition v2.0</p>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div id="loading-text" style="font-size:14px;font-weight:600;opacity:.8;">Loading...</div>
+</div>
+
+<!-- NAV -->
+<nav id="app-nav">
+    <div class="nav-logo">
+        <div class="nav-logo-icon">💰</div>
+        CommissionPro
+    </div>
+    <div class="nav-spacer"></div>
+    <div id="license-badge" onclick="showLicenseModal()">
+        <div class="nav-dot"></div>
+        <span id="license-badge-text">Loading...</span>
+    </div>
+</nav>
+
+<!-- TABS -->
+<div id="app-tabbar">
+    <button onclick="switchView('people')"  id="tab-people"   class="tab-button">👤 Salesperson</button>
+    <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculate</button>
+    <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 History</button>
+    <button onclick="switchView('settings')"id="tab-settings" class="tab-button">⚙️ Settings</button>
+</div>
+
+<!-- MAIN -->
+<div id="app-body">
+
+<!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
+<div id="view-quick" class="view-container active" style="display:block" style="display:block">
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <div class="month-select-wrap">
+            📅&nbsp;
+            <select id="report-month">
+                <option value="JAN">JAN</option><option value="FEB">FEB</option>
+                <option value="MAR">MAR</option><option value="APR">APR</option>
+                <option value="MAY">MAY</option><option value="JUN">JUN</option>
+                <option value="JUL">JUL</option><option value="AUG">AUG</option>
+                <option value="SEP">SEP</option><option value="OCT">OCT</option>
+                <option value="NOV">NOV</option><option value="DEC">DEC</option>
+            </select>
+        </div>
+        <div class="tool-sep"></div>
+        <button onclick="importFromExcel()" class="tbtn blue">📂 Import Excel</button>
+        <button onclick="manualSave()" class="tbtn dark">💾 Save</button>
+        <div class="tool-sep"></div>
+        <button onclick="clearAllQuickCalculateData()" class="tbtn red">🗑️ Clear</button>
+        <div style="flex:1"></div>
+        <button onclick="showBatchExportModal()" class="tbtn">📦 Batch Export</button>
+    </div>
+
+    <div class="calc-grid">
+        <!-- Person Sidebar -->
+        <div class="person-sidebar">
+            <div class="sidebar-hd" id="sidebar-count">Salesperson</div>
+            <div id="person-sidebar-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Center: Cards + Fields -->
+        <div class="calc-center">
+            <!-- Achievement Hero (hidden until person selected) -->
+            <div class="ach-hero" id="ach-hero-card" style="display:none;">
+                <div class="ach-progress-bar">
+                    <div class="ach-progress-fill" id="ach-progress-fill" style="width:0%;background:linear-gradient(90deg,#10b981,#34d399);"></div>
+                </div>
+                <div class="ach-hero-body">
+                    <div class="ach-big" id="ach-big-pct" style="color:var(--em);">0%</div>
+                    <div class="ach-info">
+                        <div class="ach-person-name" id="ach-person-name">—</div>
+                        <div class="ach-sub" id="ach-sub-text">—</div>
                     </div>
+                    <div class="ach-badge" id="ach-badge" style="background:var(--em-l);color:var(--em);">—</div>
                 </div>
-                
-                <!-- License Badge -->
-                <div id="license-badge" 
-                     style="padding:6px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;cursor:pointer;"
-                     onclick="showLicenseModal()">
-                    🔑 Loading...
-                </div>
-
             </div>
-        </div>
-    </nav>
 
-    <!-- 主要内容区 -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        
-        <!-- 标签页导航 -->
-        <div class="bg-white rounded-xl shadow-sm p-2 mb-6">
-            <div class="flex space-x-2">
-                <button onclick="switchView('quick')" 
-                        id="tab-quick" 
-                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors active">
-                    📊 Quick Calculate
-                </button>
-                <button onclick="switchView('salary')" 
-                        id="tab-salary" 
-                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">
-                    💵 Salary & Allowances
-                </button>
-                <button onclick="switchView('commission')" 
-                        id="tab-commission" 
-                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">
-                    💰 Commission & Incentive
-                </button>
-                
-                <button onclick="switchView('history')" 
-                        id="tab-history" 
-                        class="tab-button flex-1 px-4 py-3 rounded-lg font-medium transition-colors">
-                    📜 History
-                </button>
-            </div>
+            <!-- Salesperson Cards Container -->
+            <div id="salespeople-container" class="space-y-4"></div>
         </div>
 
-        <!-- Quick Calculate 视图 -->
-        <div id="view-quick" class="view-container">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- 左侧：输入区 -->
-                <div class="lg:col-span-2 space-y-4">
-                    <!-- 月份选择和操作按钮 -->
-                    <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-                        <div class="flex flex-wrap items-center gap-4">
-                            <div class="flex-1 min-w-[200px]">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Report Month</label>
-                                <select id="report-month" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500">
-                                    <option value="JAN">JAN</option>
-                                    <option value="FEB">FEB</option>
-                                    <option value="MAR">MAR</option>
-                                    <option value="APR">APR</option>
-                                    <option value="MAY">MAY</option>
-                                    <option value="JUN">JUN</option>
-                                    <option value="JUL">JUL</option>
-                                    <option value="AUG">AUG</option>
-                                    <option value="SEP">SEP</option>
-                                    <option value="OCT">OCT</option>
-                                    <option value="NOV">NOV</option>
-                                    <option value="DEC">DEC</option>
-                                </select>
-                            </div>
-                            
-                            <div class="flex items-end gap-2">
-                                <button onclick="importFromExcel()" 
-                                        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center space-x-2">
-                                    <span>📂</span>
-                                    <span>Import Excel</span>
-                                </button>
-                                
-                                <button onclick="clearAllQuickCalculateData()" 
-                                        class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center space-x-2"
-                                        title="Clear all data">
-                                    <span>🗑️</span>
-                                    <span class="hidden sm:inline">Clear</span>
-                                </button>
+        <!-- Right: Summary -->
+        <div class="calc-right">
+            <div id="summary-view">
+                <div class="sum-title">TOTAL COMMISSION</div>
+                <div id="summary-commission" style="font-size:28px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-1px;">RM 0.00</div>
+                <div class="sum-sub"><span id="summary-count">0</span> people</div>
+                <div class="sum-toggle">
+                    <button class="sum-toggle-btn active" onclick="setSummaryMode('current')">Current</button>
+                    <button class="sum-toggle-btn" onclick="setSummaryMode('all')">All People</button>
+                </div>
+            </div>
 
-                            </div>
+            <div class="stat-grid2" id="summary-stats" style="display:none;">
+                <div class="stat-box2"><div class="stat-lbl2">Total Sales</div><div class="stat-val2" id="stat-total-sales">—</div></div>
+                <div class="stat-box2"><div class="stat-lbl2">Avg Ach</div><div class="stat-val2" id="stat-avg-ach" style="color:var(--em);">—</div></div>
+                <div class="stat-box2"><div class="stat-lbl2">Hit Target</div><div class="stat-val2" id="stat-hit-target">—</div></div>
+                <div class="stat-box2"><div class="stat-lbl2">Total Target</div><div class="stat-val2" id="stat-total-target">—</div></div>
+            </div>
+
+            <div class="action-btns">
+                <button onclick="exportTemplate()" class="tbtn green" style="width:100%;justify-content:center;padding:11px;">📊 Export Excel</button>
+                <button onclick="exportAndPrint()" class="tbtn" style="width:100%;justify-content:center;padding:11px;">🖨️ Export &amp; Print</button>
+            </div>
+            <!-- Live Payslip Preview -->
+            <div id="live-payslip" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:block;margin-top:4px;">
+                <div style="background:#185FA5;padding:10px 14px;text-align:center;">
+                    <div id="ps-title" style="font-size:12px;font-weight:700;color:#fff;letter-spacing:.5px;">— SALARY REPORT</div>
+                    <div id="ps-ach-lbl" style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">Achievement: 0%</div>
+                </div>
+                <table style="width:100%;font-size:11px;border-collapse:collapse;table-layout:fixed;">
+                    <colgroup><col style="width:38%"><col style="width:21%"><col style="width:20%"><col style="width:21%"></colgroup>
+                    <thead>
+                        <tr style="background:#B5D4F4;">
+                            <td style="padding:5px 10px;font-weight:600;color:#0C447C;">BASIC</td>
+                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">PAY</td>
+                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">INDV%</td>
+                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">TEAM%</td>
+                        </tr>
+                    </thead>
+                    <tbody id="ps-body"></tbody>
+                </table>
+                <div style="background:#185FA5;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:11px;color:rgba(255,255,255,.8);font-weight:600;">Grand Total Payable</span>
+                    <span id="ps-grand" style="font-size:16px;font-weight:800;color:#fff;font-family:'IBM Plex Mono',monospace;">RM 0.00</span>
+                </div>
+                <div style="padding:10px 14px;background:var(--sheet);">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                        <span style="font-size:10px;color:var(--ink3);">Achievement</span>
+                        <span id="ps-ach-pct" style="font-size:10px;font-weight:700;color:#185FA5;">0%</span>
+                    </div>
+                    <div style="height:5px;background:var(--line);border-radius:3px;overflow:hidden;">
+                        <div id="ps-ach-bar" style="height:100%;width:0%;background:#185FA5;border-radius:3px;transition:width .3s;"></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;">
+                        <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:6px 10px;">
+                            <div style="font-size:10px;color:var(--ink4);margin-bottom:2px;">Personal Sale</div>
+                            <div id="ps-personal" style="font-size:12px;font-weight:600;font-family:'IBM Plex Mono',monospace;">RM 0</div>
+                        </div>
+                        <div style="background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:6px 10px;">
+                            <div style="font-size:10px;color:var(--ink4);margin-bottom:2px;">Team Sale</div>
+                            <div id="ps-team" style="font-size:12px;font-weight:600;font-family:'IBM Plex Mono',monospace;">RM 0</div>
                         </div>
                     </div>
-                    
-                    <!-- 销售员卡片容器 -->
-                    <div id="salespeople-container" class="space-y-4">
-                        <!-- 动态生成的卡片将插入这里 -->
-                    </div>
-                </div>
-                
-                <!-- 右侧：汇总和导出 -->
-                <div class="space-y-4">
-                    <!-- 汇总信息卡片 -->
-                    <div id="summary-view" class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                        <h3 class="text-lg font-semibold mb-4">📊 Summary</h3>
-                        <div class="space-y-3">
-                            <div class="flex justify-between items-center">
-                                <span class="text-blue-100">Total People:</span>
-                                <span id="summary-count" class="text-2xl font-bold">0</span>
-                            </div>
-                            <div class="border-t border-blue-400 pt-3">
-                                <div class="text-blue-100 text-sm mb-1">Total Commission</div>
-                                <div id="summary-commission" class="text-3xl font-bold">RM 0.00</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 导出按钮 -->
-                    <div class="flex gap-3">
-                        <button onclick="exportTemplate()" 
-                                class="flex-1 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 shadow-lg font-semibold flex items-center justify-center space-x-2">
-                            <span>📥</span>
-                            <span>Export Excel</span>
-                        </button>
-                        <button onclick="exportAndPrint()" 
-                                class="flex-1 px-4 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl hover:from-purple-600 hover:to-purple-700 shadow-lg font-semibold flex items-center justify-center space-x-2">
-                            <span>🖨️</span>
-                            <span>Export & Print</span>
-                        </button>
-                    </div>
-
-                    <!-- Batch Export 按钮 -->
-                    <div class="mt-3">
-                        <button onclick="showBatchExportModal()" 
-                                class="w-full px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 shadow-lg font-semibold flex items-center justify-center space-x-2">
-                            <span>📦</span>
-                            <span>Batch Export (Multi-Month)</span>
-                        </button>
-                    </div>
-                    
-
-                </div>
-            </div>
-        </div>
-
-        <!-- Salary & Allowances 视图 -->
-        <div id="view-salary" class="view-container hidden">
-            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-900 mb-6">💵 Salary & Allowances Configuration</h2>
-                
-                <!-- 添加新销售员 -->
-                <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h3 class="font-semibold text-blue-900 mb-3">Add New Salesperson</h3>
-                    <div class="flex gap-3">
-                        <input type="text" 
-                               id="new-person-name" 
-                               placeholder="Enter name..." 
-                               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500">
-                        <input type="number" 
-                               id="new-person-salary" 
-                               placeholder="Base salary..." 
-                               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500">
-                        <button onclick="addNewPerson()" 
-                                class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                            ➕ Add
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- 销售员配置列表 -->
-                <div id="salary-config-container" class="space-y-4">
-                    <!-- 动态生成的配置卡片 -->
-                </div>
-            </div>
-        </div>
-
-        <!-- History 视图 -->
-        <!-- Commission & Incentive View -->
-        <div id="view-commission" class="view-container hidden">
-            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                <h2 class="text-2xl font-bold mb-6">💰 Commission & Incentive Configuration</h2>
-                <div id="commission-config-container"></div>
-            </div>
-        </div>
-
-        <div id="view-history" class="view-container hidden">
-            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-900">📜 Report History</h2>
-                    <button onclick="loadQuickCalculateHistory()" 
-                            class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center space-x-2">
-                        <span>🔄</span>
-                        <span>Refresh</span>
-                    </button>
-                </div>
-                
-                <div id="history-list" class="space-y-4">
-                    <!-- 动态生成的历史记录 -->
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Toast 容器 -->
-    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+<!-- ══════════════════ PEOPLE VIEW ══════════════════ -->
+<div id="view-people" class="view-container">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <input id="people-search" class="if" placeholder="🔍 Search by name..."
+            style="flex:1;min-width:200px;"
+            oninput="filterPeopleList(this.value)">
+        <button onclick="promptAddPerson()" class="tbtn dark" style="padding:10px 22px;white-space:nowrap;font-size:13px;">➕ Add Person</button>
+    </div>
+    <div id="people-list-container"></div>
+</div>
 
-    <!-- 脚本 -->
-    <script>
+<!-- ══════════════════ HISTORY VIEW ══════════════════ -->
+<div id="view-history" class="view-container">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;">
+        <div>
+            <div style="font-size:18px;font-weight:800;letter-spacing:-.5px;">Report History</div>
+            <div id="history-sub" style="font-size:12px;color:var(--ink4);margin-top:2px;">Loading...</div>
+        </div>
+        <button onclick="loadQuickCalculateHistory()" class="tbtn">🔄 Refresh</button>
+    </div>
+    <div id="history-list"></div>
+</div>
+
+<!-- ══════════════════ SETTINGS VIEW ══════════════════ -->
+<div id="view-settings" class="view-container">
+    <div class="settings-grid">
+        <div class="set-card">
+            <div class="set-title">🔒 Backup &amp; Restore</div>
+            <button onclick="exportFullBackup()" class="set-btn sb-blue">🔄 Export Full Backup</button>
+            <button onclick="importBackup()" class="set-btn sb-green">📂 Import Backup</button>
+            <button onclick="restoreAutoBackup()" class="set-btn">⏰ Restore Auto Backup</button>
+            <button onclick="createManualBackup()" class="set-btn">💾 Create Manual Backup</button>
+            <div style="margin-top:6px;padding-top:14px;border-top:1px solid var(--line);">
+                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Config Only</div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="exportConfig()" class="set-btn" style="flex:1;justify-content:center;margin-bottom:0;">Export Config</button>
+                    <button onclick="importConfig()" class="set-btn" style="flex:1;justify-content:center;margin-bottom:0;">Import Config</button>
+                </div>
+            </div>
+        </div>
+        <div class="set-card">
+            <div class="set-title">🔑 License</div>
+            <div class="lic-box" onclick="showLicenseModal()">
+                <div class="lic-status-lbl">Current Plan</div>
+                <div class="lic-type" id="settings-license-type">Loading...</div>
+                <div style="font-size:11px;opacity:.4;margin-top:6px;">Click to manage</div>
+            </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">App Info</div>
+                <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Version</span>
+                        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v2.0.0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Database</span>
+                        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--em);">SQLite ✓</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden legacy views for backward compat -->
+<div id="view-salary" style="display:none;"><div id="salary-config-container"></div></div>
+<div id="view-commission" style="display:none;"><div id="commission-config-container"></div></div>
+
+</div><!-- end app-body -->
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
         // 全局状态
         const appState = {
             salespeople: [],
@@ -342,6 +435,100 @@
 
         // 视图切换
         function switchView(view) {
+            document.querySelectorAll('.tab-button').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            var tabEl = document.getElementById('tab-' + view);
+            if (tabEl) tabEl.classList.add('active');
+            document.querySelectorAll('.view-container').forEach(function(v) {
+                v.style.display = 'none';
+                v.classList.remove('active');
+                v.classList.add('hidden');
+            });
+            var viewEl = document.getElementById('view-' + view);
+            if (viewEl) {
+                viewEl.style.display = 'block';
+                viewEl.classList.add('active');
+                viewEl.classList.remove('hidden');
+            }
+            appState.currentView = view;
+            if (view === 'people') {
+                if (typeof renderPeopleList === 'function') renderPeopleList();
+            } else if (view === 'quick') {
+                if (typeof initQuickCalculate === 'function') initQuickCalculate();
+                if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+            } else if (view === 'history') {
+                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+            } else if (view === 'settings') {
+                var lt = document.getElementById('settings-license-type');
+                if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+            } else if (view === 'salary') {
+                if (typeof initSalaryView === 'function') initSalaryView();
+            } else if (view === 'commission') {
+                if (typeof initCommissionView === 'function') initCommissionView();
+            }
+        }nction switchView(view) {
+            document.querySelectorAll('.tab-button').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            var tabEl = document.getElementById('tab-' + view);
+            if (tabEl) tabEl.classList.add('active');
+            document.querySelectorAll('.view-container').forEach(function(v) {
+                v.style.display = 'none';
+                v.classList.remove('active');
+                v.classList.add('hidden');
+            });
+            var viewEl = document.getElementById('view-' + view);
+            if (viewEl) {
+                viewEl.style.display = 'block';
+                viewEl.classList.add('active');
+                viewEl.classList.remove('hidden');
+            }
+            appState.currentView = view;
+            if (view === 'people') {
+                if (typeof renderPeopleList === 'function') renderPeopleList();
+            } else if (view === 'quick') {
+                if (typeof initQuickCalculate === 'function') initQuickCalculate();
+                if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+            } else if (view === 'history') {
+                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+            } else if (view === 'settings') {
+                var lt = document.getElementById('settings-license-type');
+                if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+            } else if (view === 'salary') {
+                if (typeof initSalaryView === 'function') initSalaryView();
+            } else if (view === 'commission') {
+                if (typeof initCommissionView === 'function') initCommissionView();
+            }
+        }nction switchView(view) {
+            document.querySelectorAll('.tab-button').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            var tabEl = document.getElementById('tab-' + view);
+            if (tabEl) tabEl.classList.add('active');
+            document.querySelectorAll('.view-container').forEach(function(v) {
+                v.style.display = 'none';
+                v.classList.remove('active');
+            });
+            var viewEl = document.getElementById('view-' + view);
+            if (viewEl) { viewEl.style.display = 'block'; viewEl.classList.add('active'); }
+            appState.currentView = view;
+            if (view === 'people') {
+                if (typeof renderPeopleList === 'function') renderPeopleList();
+            } else if (view === 'quick') {
+                if (typeof initQuickCalculate === 'function') initQuickCalculate();
+                if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+            } else if (view === 'history') {
+                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+            } else if (view === 'settings') {
+                var lt = document.getElementById('settings-license-type');
+                if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+            } else if (view === 'salary') {
+                if (typeof initSalaryView === 'function') initSalaryView();
+            } else if (view === 'commission') {
+                if (typeof initCommissionView === 'function') initCommissionView();
+            }
+        }nction switchView(view) {
             // 更新标签按钮状态
             document.querySelectorAll('.tab-button').forEach(btn => {
                 btn.classList.remove('active');
@@ -453,157 +640,150 @@
     <!-- History 功能增强 -->
     <script>
     function loadQuickCalculateHistory() {
-        const historyList = document.getElementById('history-list');
+        var historyList = document.getElementById('history-list');
         if (!historyList) return;
-        
-        const reports = window.appState && window.appState.config && window.appState.config.reportHistory 
-                        ? window.appState.config.reportHistory : [];
-        
-        if (reports.length === 0) {
-            historyList.innerHTML = `
-                <div class="text-center py-12 text-gray-400">
-                    <p class="text-4xl mb-3">📋</p>
-                    <p class="text-lg font-medium">No history records yet</p>
-                    <p class="text-sm">Export an Excel report to create a history entry</p>
-                </div>`;
+
+        var history = (window.appState && window.appState.config && window.appState.config.reportHistory) || [];
+        var subEl = document.getElementById('history-sub');
+
+        var defaultRates = [
+            {min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},
+            {min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}
+        ];
+        var cfgRates = window.appState && window.appState.config && window.appState.config.monthly_commission_rates;
+        var rates = (cfgRates && cfgRates.length>0) ? cfgRates : defaultRates;
+
+        function calcC(sales,target,name){
+            if(!target||!sales||target<=0||sales<=0)return 0;
+            var ach=(sales/target)*100,r=rates;
+            var nu=name?name.toUpperCase():null;
+            if(nu&&window.appState.config.person_commission_rates&&window.appState.config.person_commission_rates[nu])r=window.appState.config.person_commission_rates[nu];
+            for(var i=0;i<r.length;i++)if(ach>=r[i].min&&ach<=r[i].max)return sales*(r[i].rate||0);
+            return 0;
+        }
+
+        var monthOrder=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        var curMonthIdx=new Date().getMonth();
+        var sorted=history.slice()
+            .filter(function(r){
+                var mi=monthOrder.indexOf((r.month||'').toUpperCase());
+                return mi<=curMonthIdx && (r.data||[]).some(function(p){return (p.target||0)>0||(p.sales||0)>0;});
+            })
+            .sort(function(a,b){return monthOrder.indexOf((b.month||'').toUpperCase())-monthOrder.indexOf((a.month||'').toUpperCase());});
+
+        if (subEl) subEl.textContent = sorted.length + ' records · ' + new Date().getFullYear();
+
+        if (sorted.length === 0) {
+            historyList.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--ink4);">'
+                +'<div style="font-size:48px;margin-bottom:16px;">📋</div>'
+                +'<div style="font-size:15px;font-weight:600;margin-bottom:6px;">No history yet</div>'
+                +'<div style="font-size:13px;">Import Excel or save data to create history</div></div>';
             return;
         }
-        
-        const sorted = [...reports]
-            .map((r, i) => ({...r, originalIndex: i}))
-            .sort((a, b) => {
-                const dateA = new Date(b.timestamp || Date.now());
-                const dateB = new Date(a.timestamp || Date.now());
-                return dateA - dateB;
-            });
-        
-        historyList.innerHTML = sorted.map(report => {
-            const timestamp = report.timestamp ? new Date(report.timestamp) : new Date();
-            const yearStr = timestamp.getFullYear ? timestamp.getFullYear() : new Date().getFullYear();
-            const dateStr = timestamp.toLocaleString ? timestamp.toLocaleString('en-GB') : 'Unknown Date';
-            
-            return `
-            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-3">
-                <div class="flex justify-between items-start flex-wrap gap-3">
-                    <div>
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-lg font-bold text-gray-900">${report.month || 'Unknown'} ${yearStr}</span>
-                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">${report.count || 0} people</span>
-                        </div>
-                        <p class="text-sm text-gray-500">${dateStr}</p>
-                        <p class="text-sm font-semibold text-green-700 mt-1">Total Commission: RM ${(report.totalCommission || 0).toFixed(2)}</p>
-                    </div>
-                    <div class="flex gap-2 flex-wrap">
-                        <button onclick="viewHistoryReport(${report.originalIndex})" class="px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium">👁 View</button>
-                        <button onclick="reExportHistory(${report.originalIndex})" class="px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-medium">📥 Excel</button>
-                        <button onclick="printHistoryPDF(${report.originalIndex})" class="px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium">🖨️ Print PDF</button>
-                        <button onclick="deleteHistoryReport(${report.originalIndex})" class="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm font-medium">🗑️ Delete</button>
-                    </div>
-                </div>
-                <div class="mt-3 pt-3 border-t border-gray-100 grid grid-cols-4 gap-2 text-xs text-center">
-                    ${(report.data || []).map(p => `
-                        <div class="bg-gray-50 rounded p-2">
-                            <p class="font-semibold text-gray-700">${p.name || 'Unknown'}</p>
-                            <p class="text-green-600">RM ${((p.commission||0)+(p.collectionIncentive||0)+(p.activeCallIncentive||0)+(p.quarterlyBonus||0)).toFixed(0)}</p>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `}).join('');
+
+        historyList.innerHTML = '<div class="history-grid">'
+            + sorted.map(function(report) {
+                var people=report.data||[];
+                var month=(report.month||'').toUpperCase();
+                var realIndex=history.indexOf(report);
+                var totalComm=0;
+                people.forEach(function(p){
+                    var comm=calcC(p.sales,p.target,p.name);
+                    var collPct=(p.collectionTarget||0)>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
+                    var callPct=(p.callTarget||0)>0?(p.callActual||0)/p.callTarget*100:0;
+                    totalComm+=comm;
+                });
+                var peopleHtml=people.slice(0,4).map(function(p){
+                    var ach=(p.target||0)>0?(p.sales||0)/p.target*100:0;
+                    var comm=calcC(p.sales,p.target,p.name);
+                    var achColor=ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
+                    return '<div class="h-person">'
+                        +'<div class="h-pname">'+((p.name||'').substring(0,6))+'</div>'
+                        +'<div class="h-pach" style="color:'+achColor+';">'+ach.toFixed(0)+'%</div>'
+                        +'<div class="h-pcomm">'+comm.toFixed(0)+'</div>'
+                        +'</div>';
+                }).join('');
+                return '<div class="h-card">'
+                    +'<div class="h-card-top">'
+                    +'<div><div class="h-month">'+month+'</div><div class="h-year">'+new Date().getFullYear()+'</div></div>'
+                    +'<div><div class="h-comm-lbl">Commission</div><div class="h-comm-val">RM '+totalComm.toFixed(0)+'</div></div>'
+                    +'</div>'
+                    +(people.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
+                    +'<div class="h-foot">'
+                    +'<button class="hbtn" style="background:#e0f2fe;color:#0284c7;" onclick="viewHistoryReport('+realIndex+')">👁 View</button>'
+                    +'<button class="hbtn" style="background:#d1fae5;color:#059669;" onclick="openHistoryExcel('+realIndex+')">📊 Open Excel</button>'
+                    +'<button class="hbtn" style="background:#ffe4e6;color:#e11d48;" onclick="deleteHistoryReport('+realIndex+')">🗑️</button>'
+                    +'</div></div>';
+            }).join('')+'</div>';
     }
 
-    function viewHistoryReport(index) {
-        const report = window.appState.config.reportHistory[index];
-        if (!report) return;
-        const existing = document.getElementById('history-modal');
-        if (existing) existing.remove();
-        
-        // 安全地获取日期信息
-        const timestamp = report.timestamp ? new Date(report.timestamp) : new Date();
-        const yearStr = timestamp.getFullYear ? timestamp.getFullYear() : new Date().getFullYear();
-        const dateStr = timestamp.toLocaleString ? timestamp.toLocaleString('en-GB') : 'Unknown Date';
-        
-        const modal = document.createElement('div');
-        modal.id = 'history-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-        modal.innerHTML = `
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-screen overflow-y-auto">
-                <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center rounded-t-2xl">
-                    <h2 class="text-xl font-bold">${report.month || 'Unknown'} ${yearStr} Report</h2>
-                    <div class="flex gap-2">
-                        <button onclick="reExportHistory(${index})" class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm">📥 Excel</button>
-                        <button onclick="printHistoryPDF(${index})" class="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm">🖨️ Print PDF</button>
-                        <button onclick="document.getElementById('history-modal').remove()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm">✕ Close</button>
-                    </div>
-                </div>
-                <div class="p-6">
-                    <p class="text-sm text-gray-500 mb-4">${dateStr} &middot; ${report.count || 0} salespeople</p>
-                    ${(report.data || []).map(p => `
-                        <div class="border rounded-xl p-4 mb-4">
-                            <h3 class="font-bold text-lg mb-3">👤 ${p.name || 'Unknown'}</h3>
-                            <div class="grid grid-cols-2 gap-x-8 text-sm">
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Base Salary</span><span>RM ${(p.salary||0).toFixed(2)}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Monthly Target</span><span>RM ${(p.target||0).toLocaleString()}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Monthly Sales</span><span>RM ${(p.sales||0).toLocaleString()}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Achievement</span><span class="font-semibold ${(p.achievement||0)>=100?'text-green-600':'text-orange-500'}">${(p.achievement||0).toFixed(1)}%</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Commission</span><span class="text-blue-600">RM ${(p.commission||0).toFixed(2)}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Collection Incentive</span><span class="text-blue-600">RM ${(p.collectionIncentive||0).toFixed(2)}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Active Call Incentive</span><span class="text-blue-600">RM ${(p.activeCallIncentive||0).toFixed(2)}</span></div>
-                                <div class="flex justify-between border-b py-1.5"><span class="text-gray-500">Quarterly Bonus</span><span class="text-blue-600">RM ${(p.quarterlyBonus||0).toFixed(2)}</span></div>
-                                <div class="flex justify-between py-1.5 font-bold col-span-2 border-t-2 mt-1"><span>Total Commission</span><span class="text-green-600">RM ${((p.commission||0)+(p.collectionIncentive||0)+(p.activeCallIncentive||0)+(p.quarterlyBonus||0)).toFixed(2)}</span></div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-    }
 
     async function reExportHistory(index) {
-        const report = window.appState.config.reportHistory[index];
+        var report = (window.appState.config.reportHistory||[])[index];
         if (!report) return;
         if (typeof showToast === 'function') showToast('⏳', 'Generating Excel...');
         try {
-            const result = await window.electronAPI.generateSalaryTemplate({
-                salespeople: report.data,
-                config: window.appState.config,
-                month: report.month
-            });
-            if (result.success) {
-                if (typeof showToast === 'function') showToast('✅', 'Excel exported successfully!');
-            } else {
-                if (typeof showToast === 'function') showToast('❌', 'Export failed: ' + result.error);
+            var cfg = window.appState.config;
+            var defaultRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
+            var rates = (cfg.monthly_commission_rates && cfg.monthly_commission_rates.length>0) ? cfg.monthly_commission_rates : defaultRates;
+            var month = (report.month||'').toUpperCase();
+            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(month) !== -1;
+            function calcInc(pct, tiers) {
+                if (!tiers||!tiers.length) return 0;
+                var sorted = tiers.slice().sort(function(a,b){return b.min-a.min;});
+                for (var i=0;i<sorted.length;i++) if(pct>=sorted[i].min) return sorted[i].incentive||0;
+                return 0;
             }
-        } catch (e) {
-            if (typeof showToast === 'function') showToast('❌', 'Error: ' + e.message);
-        }
+            var activePeople = Object.keys(cfg.base_salaries||{}).map(function(n){return n.toUpperCase();});
+            var salesData = (report.data||[]).filter(function(p){
+                return activePeople.indexOf((p.name||'').toUpperCase()) !== -1;
+            }).map(function(p) {
+                var nu = (p.name||'').toUpperCase();
+                var salary    = (cfg.base_salaries  && cfg.base_salaries[nu])  || 1700;
+                var allowances= (cfg.allowances      && cfg.allowances[nu])     || {};
+                var epfRate   = (cfg.deductionRates  && cfg.deductionRates[nu]  && cfg.deductionRates[nu].EPF_RATE) || 11;
+                var target=parseFloat(p.target)||0, sales=parseFloat(p.sales)||0;
+                var collTgt=parseFloat(p.collectionTarget)||0, collAmt=parseFloat(p.collectionAmount)||0;
+                var callTgt=parseFloat(p.callTarget)||0, callAct=parseFloat(p.callActual)||0;
+                var ach = target>0?(sales/target*100):0;
+                var collPct = collTgt>0?(collAmt/collTgt*100):0;
+                var callPct = callTgt>0?(callAct/callTgt*100):0;
+                var personRates = (cfg.person_commission_rates&&cfg.person_commission_rates[nu])||rates;
+                var commission = 0;
+                if (target>0&&sales>0) for(var i=0;i<personRates.length;i++) if(ach>=personRates[i].min&&ach<=personRates[i].max){commission=sales*(personRates[i].rate||0);break;}
+                var collTiers = (cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[];
+                var callTiers = (cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[];
+                var qtrTiers  = (cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[nu])||cfg.quarterly_incentive||[];
+                var collectionIncentive = calcInc(collPct, collTiers);
+                var activeCallIncentive = calcInc(callPct, callTiers);
+                var quarterlyBonus      = isQtr ? calcInc(ach, qtrTiers) : 0;
+                var totalCommission     = commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
+                return { name:p.name, salary:salary, allowances:allowances, epfRate:epfRate,
+                    sales:sales, target:target, achievement:ach, commission:commission,
+                    collectionIncentive:collectionIncentive, activeCallIncentive:activeCallIncentive,
+                    quarterlyBonus:quarterlyBonus, totalCommission:totalCommission,
+                    collectionTarget:collTgt, collectionAmount:collAmt,
+                    callTarget:callTgt, callActual:callAct, quarterlySales:0, quarterlyTarget:0 };
+            });
+            var result = await window.electronAPI.generateSalaryTemplate({
+                salespeople: salesData, config: cfg, month: report.month
+            });
+            if (result.success) showToast('✅', 'Excel saved!');
+            else if (result.message === 'Cancelled') showToast('ℹ️', 'Cancelled');
+            else showToast('❌', 'Export failed: ' + (result.error||''));
+        } catch(e) { showToast('❌', e.message); }
     }
 
     async function printHistoryPDF(index) {
-        const report = window.appState.config.reportHistory[index];
+        var report = (window.appState.config.reportHistory||[])[index];
         if (!report) return;
         if (typeof showToast === 'function') showToast('⏳', 'Preparing PDF...');
         try {
-            const timestamp = report.timestamp ? new Date(report.timestamp) : new Date();
-            const yearStr = timestamp.getFullYear ? timestamp.getFullYear() : new Date().getFullYear();
-            
-            const result = await window.electronAPI.exportPDF({
-                name: (report.month || 'Unknown') + '_' + yearStr,
-                data: report.data,
-                month: report.month
-            });
-            if (result.success) {
-                if (typeof showToast === 'function') showToast('✅', 'PDF saved successfully!');
-            } else if (!result.error) {
-                if (typeof showToast === 'function') showToast('ℹ️', 'Cancelled');
-            } else {
-                if (typeof showToast === 'function') showToast('❌', 'PDF failed: ' + result.error);
-            }
-        } catch (e) {
-            if (typeof showToast === 'function') showToast('❌', 'Error: ' + e.message);
-        }
+            var result = await window.electronAPI.exportPDF({ name: report.month+'_Report', data: report.data, month: report.month });
+            if (result.success) showToast('✅', 'PDF saved!');
+            else if (!result.error) showToast('ℹ️', 'Cancelled');
+            else showToast('❌', 'PDF failed: '+result.error);
+        } catch(e) { showToast('❌', e.message); }
     }
 
     function deleteHistoryReport(index) {
@@ -638,14 +818,6 @@
                 };
             });
 
-            // 计算总佣金用于历史记录
-            const totalCommission = window.appState.salespeople.reduce((sum, person) => {
-                return sum + (parseFloat(person.commission) || 0) + 
-                            (parseFloat(person.collectionIncentive) || 0) + 
-                            (parseFloat(person.activeCallIncentive) || 0) + 
-                            (parseFloat(person.quarterlyBonus) || 0);
-            }, 0);
-
             const result = await window.electronAPI.generateSalaryTemplate({
                 salespeople: salesData,
                 config: window.appState.config,
@@ -658,17 +830,12 @@
                 return;
             }
 
-            // 保存到历史记录
-            if (typeof saveReportToHistory === 'function') {
-                saveReportToHistory(month, window.appState.salespeople, totalCommission);
-            }
-
             // Step 2: Open file for printing
             showToast('🖨️', 'Opening for print...');
             const printResult = await window.electronAPI.printExcel(result.path);
             
             if (printResult.success) {
-                showToast('✅', 'File opened — use Ctrl+P to print! 📜 Added to History');
+                showToast('✅', 'File opened — use Ctrl+P to print!');
             } else {
                 showToast('⚠️', 'Excel saved but could not open: ' + printResult.error);
             }
@@ -680,4 +847,5 @@
     </script>
 
 </body>
+
 </html>

@@ -744,17 +744,6 @@ async function exportTemplate() {
             console.log(`    - allowances:`, p.allowances);
         });
         
-        // 计算总佣金用于历史记录
-        const totalCommission = appState.salespeople.reduce((sum, person) => {
-            return sum + (parseFloat(person.commission) || 0) + 
-                        (parseFloat(person.collectionIncentive) || 0) + 
-                        (parseFloat(person.activeCallIncentive) || 0) + 
-                        (parseFloat(person.quarterlyBonus) || 0);
-        }, 0);
-        
-        // 保存到历史记录
-        saveReportToHistory(month, appState.salespeople, totalCommission);
-        
         const result = await window.electronAPI.generateSalaryTemplate({
             salespeople: salesData,
             config: appState.config,
@@ -762,7 +751,7 @@ async function exportTemplate() {
         });
         
         if (result.success) {
-            showToast('✅', 'Report generated successfully! 📜 Added to History');
+            showToast('✅', 'Report generated successfully!');
         } else {
             showToast('❌', 'Failed to generate report: ' + result.error);
         }
@@ -1331,116 +1320,195 @@ function switchQuickTab(tab) {
 
 // 加载历史记录
 function loadQuickCalculateHistory() {
-    if (!appState.config.reportHistory) {
-        appState.config.reportHistory = [];
-    }
-    
-    const historyList = document.getElementById('history-list');
+    var historyList = document.getElementById('history-list');
     if (!historyList) return;
-    
-    if (appState.config.reportHistory.length === 0) {
-        historyList.innerHTML = `
-            <div class="text-center py-8 text-gray-500">
-                <p class="text-lg mb-2">📭 No reports yet</p>
-                <p class="text-sm">Generate a report to see it here</p>
-            </div>
-        `;
+
+    if (!appState.config.reportHistory) appState.config.reportHistory = [];
+    var history = appState.config.reportHistory;
+    console.log('📜 reportHistory count:', history.length);
+
+    if (history.length === 0) {
+        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p class="text-lg mb-2">📭 No reports yet</p><p class="text-sm">Import Excel or save data to see history</p></div>';
         return;
     }
-    
-    historyList.innerHTML = appState.config.reportHistory
-        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .map((report, index) => `
-            <div class="bg-blue-50 rounded-lg p-4 border border-gray-200">
-                <div class="flex justify-between items-start mb-3">
-                    <div>
-                        <h4 class="font-semibold text-gray-900">${report.month} Report</h4>
-                        <p class="text-sm text-gray-600">${new Date(report.timestamp).toLocaleString()}</p>
-                    </div>
-                    <div class="flex space-x-2">
-                        <button onclick="viewHistoryReport(${index})" 
-                                class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
-                            👁️ View
-                        </button>
-                        <button onclick="deleteHistoryReport(${index})" 
-                                class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                            🗑️ Delete
-                        </button>
-                    </div>
-                </div>
-                <div class="text-sm text-gray-700">
-                    <p>👥 Members: ${report.count}</p>
-                    <p>💰 Total Commission: RM ${(report.totalCommission || 0).toFixed(2)}</p>
-                </div>
-            </div>
-        `).join('');
+
+    var defaultRates = [
+        {min:0,max:79.99,rate:0,label:'0%-79%'},
+        {min:80,max:89.99,rate:0.006,label:'80%-89%'},
+        {min:90,max:99.99,rate:0.007,label:'90%-99%'},
+        {min:100,max:105.99,rate:0.008,label:'100%-105%'},
+        {min:106,max:999,rate:0.01,label:'106%+'}
+    ];
+    var cfgRates = appState.config.monthly_commission_rates;
+    var rates = (cfgRates && cfgRates.length > 0) ? cfgRates : defaultRates;
+    console.log('📜 commission rates tiers:', rates.length);
+
+    function calcComm(sales, target, name) {
+        if (!target || !sales || target <= 0 || sales <= 0) return 0;
+        var ach = (sales / target) * 100;
+        var r = rates;
+        var nu = name ? name.toUpperCase() : null;
+        if (nu && appState.config.person_commission_rates && appState.config.person_commission_rates[nu])
+            r = appState.config.person_commission_rates[nu];
+        for (var i = 0; i < r.length; i++) {
+            if (ach >= r[i].min && ach <= r[i].max) {
+                var comm = sales * (r[i].rate || 0);
+                console.log('💰', name, 'ach:', ach.toFixed(1)+'%', 'comm:', comm);
+                return comm;
+            }
+        }
+        console.warn('⚠️ No tier for', name, 'ach:', (sales/target*100).toFixed(1)+'%');
+        return 0;
+    }
+
+    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var curMonthIdx = new Date().getMonth();
+
+    var sorted = history.slice()
+        .filter(function(r) {
+            var mi = monthOrder.indexOf((r.month||'').toUpperCase());
+            if (mi > curMonthIdx) return false;
+            return (r.data||[]).some(function(p){ return (p.target||0)>0||(p.sales||0)>0; });
+        })
+        .sort(function(a,b){
+            return monthOrder.indexOf((b.month||'').toUpperCase()) - monthOrder.indexOf((a.month||'').toUpperCase());
+        });
+
+    if (sorted.length === 0) {
+        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
+        return;
+    }
+
+    historyList.innerHTML = sorted.map(function(report) {
+        var people = report.data || [];
+        var month  = (report.month||'').toUpperCase();
+        var realIndex = history.indexOf(report);
+
+        var totalComm = 0;
+        people.forEach(function(p) {
+            var comm = calcComm(p.sales, p.target, p.name);
+            var collPct = (p.collectionTarget||0)>0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
+            var callPct = (p.callTarget||0)>0 ? (p.callActual||0)/p.callTarget*100 : 0;
+            var coll = typeof calculateIncentive==='function' ? calculateIncentive(collPct, appState.config.collection_incentive) : 0;
+            var callB = typeof calculateIncentive==='function' ? calculateIncentive(callPct, appState.config.active_call_incentive) : 0;
+            totalComm += comm + coll + callB;
+        });
+
+        var peopleCards = people.map(function(p) {
+            var comm = calcComm(p.sales, p.target, p.name);
+            var ach  = (p.target||0)>0 ? (p.sales||0)/p.target*100 : 0;
+            var achColor = ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500';
+            return '<div class="bg-white rounded p-3 text-center border border-gray-100">'
+                + '<div class="font-medium text-gray-800 text-sm">'+(p.name||'—')+'</div>'
+                + '<div class="text-xs text-gray-500 mt-1">Target: RM '+((p.target||0).toLocaleString())+'</div>'
+                + '<div class="text-xs text-gray-500">Sales: RM '+((p.sales||0).toLocaleString())+'</div>'
+                + '<div class="text-xs font-semibold mt-1 '+achColor+'">'+ach.toFixed(1)+'%</div>'
+                + '<div class="text-xs text-indigo-600 font-medium">RM '+comm.toFixed(2)+'</div>'
+                + '</div>';
+        }).join('');
+
+        return '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-4">'
+            + '<div class="flex justify-between items-start mb-3">'
+            + '<div><h4 class="text-lg font-bold text-gray-900">'+month+'</h4>'
+            + '<p class="text-sm text-gray-500">'+people.length+' people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">RM '+totalComm.toFixed(2)+'</span></p></div>'
+            + '<div class="flex gap-2 flex-wrap justify-end">'
+            + '<button onclick="viewHistoryReport('+realIndex+')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
+            + '<button onclick="exportHistoryToExcel('+realIndex+')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
+            + '<button onclick="printHistoryReport('+realIndex+')" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>'
+            + '<button onclick="deleteHistoryReport('+realIndex+')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>'
+            + '</div></div>'
+            + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">'+peopleCards+'</div>'
+            + '</div>';
+    }).join('');
 }
 
-// 查看历史报告
 function viewHistoryReport(index) {
-    if (!appState.config.reportHistory || !appState.config.reportHistory[index]) return;
-    
-    const report = appState.config.reportHistory[index];
-    
-    const html = `
-        <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-xl p-6 w-full max-w-4xl max-h-96 overflow-y-auto shadow-xl">
-                <div class="flex justify-between items-center mb-4 border-b pb-4">
-                    <div>
-                        <h3 class="text-xl font-semibold text-gray-900">${report.month} Report</h3>
-                        <p class="text-sm text-gray-600">${new Date(report.timestamp).toLocaleString()}</p>
-                    </div>
-                    <button onclick="closeReportModal()" class="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
-                </div>
-                
-                <div class="space-y-3 max-h-80 overflow-y-auto">
-                    <div class="grid grid-cols-4 gap-4 font-semibold bg-gray-100 p-3 rounded">
-                        <div>Name</div>
-                        <div class="text-right">Target</div>
-                        <div class="text-right">Sales</div>
-                        <div class="text-right">Commission</div>
-                    </div>
-                    ${report.data.map(person => `
-                        <div class="grid grid-cols-4 gap-4 p-3 border-b hover:bg-gray-50">
-                            <div class="font-medium text-gray-900">${person.name}</div>
-                            <div class="text-right text-gray-700">RM ${(person.target || 0).toFixed(2)}</div>
-                            <div class="text-right text-gray-700">RM ${(person.sales || 0).toFixed(2)}</div>
-                            <div class="text-right font-semibold text-blue-600">RM ${(person.commission || 0).toFixed(2)}</div>
-                        </div>
-                    `).join('')}
-                </div>
-                
-                <div class="mt-4 pt-4 border-t">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-blue-50 p-3 rounded">
-                            <p class="text-sm text-gray-600">Total Members</p>
-                            <p class="text-2xl font-bold text-blue-600">${report.count}</p>
-                        </div>
-                        <div class="bg-green-50 p-3 rounded">
-                            <p class="text-sm text-gray-600">Total Commission</p>
-                            <p class="text-2xl font-bold text-green-600">RM ${(report.totalCommission || 0).toFixed(2)}</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mt-4 flex justify-end space-x-3">
-                    <button onclick="closeReportModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // 添加到页面
-    if (!document.getElementById('report-modal-container')) {
-        const container = document.createElement('div');
-        container.id = 'report-modal-container';
-        document.body.appendChild(container);
+    var report = (appState.config.reportHistory||[])[index];
+    if (!report) { return; }
+
+    var people = report.data || [];
+    var month  = (report.month||'').toUpperCase();
+    var qMonths = ['MAR','JUN','SEP','DEC'];
+    var isQtr  = qMonths.indexOf(month) !== -1;
+
+    var defaultRates = [
+        {min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},
+        {min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}
+    ];
+    var cfgRates = appState.config.monthly_commission_rates;
+    var rates = (cfgRates && cfgRates.length > 0) ? cfgRates : defaultRates;
+
+    function calcC(sales, target, name) {
+        if (!target||!sales||target<=0||sales<=0) return 0;
+        var ach=(sales/target)*100, r=rates;
+        var nu=name?name.toUpperCase():null;
+        if(nu&&appState.config.person_commission_rates&&appState.config.person_commission_rates[nu]) r=appState.config.person_commission_rates[nu];
+        for(var i=0;i<r.length;i++) if(ach>=r[i].min&&ach<=r[i].max) return sales*(r[i].rate||0);
+        return 0;
     }
-    
-    document.getElementById('report-modal-container').innerHTML = html;
+
+    var existing = document.getElementById('history-view-modal');
+    if (existing) existing.remove();
+
+    var cards = people.map(function(p) {
+        var nu      = (p.name||'').toUpperCase();
+        var salary  = (appState.config.base_salaries&&appState.config.base_salaries[nu])||0;
+        var allow   = (appState.config.allowances&&appState.config.allowances[nu])||{};
+        var epfRate = (appState.config.deductionRates&&appState.config.deductionRates[nu]&&appState.config.deductionRates[nu].EPF_RATE)||11;
+        var totalAllow = Object.values(allow).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
+        var target=parseFloat(p.target)||0, sales=parseFloat(p.sales)||0;
+        var collTgt=parseFloat(p.collectionTarget)||0, collAmt=parseFloat(p.collectionAmount)||0;
+        var callTgt=parseFloat(p.callTarget)||0, callAct=parseFloat(p.callActual)||0;
+        var ach=target>0?(sales/target*100):0;
+        var collPct=collTgt>0?(collAmt/collTgt*100):0;
+        var callPct=callTgt>0?(callAct/callTgt*100):0;
+        var comm=calcC(sales,target,p.name);
+        var collBon=typeof calculateIncentive==='function'?calculateIncentive(collPct,appState.config.collection_incentive):0;
+        var callBon=typeof calculateIncentive==='function'?calculateIncentive(callPct,appState.config.active_call_incentive):0;
+        var qtrBon=isQtr&&typeof calculateIncentive==='function'?calculateIncentive(ach,appState.config.quarterly_incentive):0;
+        var totalComm=comm+collBon+callBon+qtrBon;
+        var totalIncome=salary+totalAllow+totalComm;
+        var epfAmt=Math.round(totalIncome*(epfRate/100)*100)/100;
+        var grandTotal=totalIncome-epfAmt;
+        var achColor=ach>=100?'#16a34a':ach>=90?'#d97706':'#dc2626';
+        return '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
+            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
+            +'<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">'+p.name+'</h3></div>'
+            +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">'
+            +'<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">RM '+salary.toFixed(2)+'</div>'
+            +'<div style="color:#6b7280;">Monthly Target</div><div style="text-align:right;">RM '+target.toLocaleString()+'</div>'
+            +'<div style="color:#6b7280;">Monthly Sales</div><div style="text-align:right;">RM '+sales.toFixed(2)+'</div>'
+            +'<div style="color:#6b7280;">Achievement</div><div style="text-align:right;font-weight:600;color:'+achColor+';">'+ach.toFixed(2)+'%</div>'
+            +'<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+            +'<div style="color:#6b7280;">Commission</div><div style="text-align:right;color:#2563eb;">RM '+comm.toFixed(2)+'</div>'
+            +'<div style="color:#6b7280;">Collection Bonus</div><div style="text-align:right;color:#2563eb;">RM '+collBon.toFixed(2)+'</div>'
+            +'<div style="color:#6b7280;">Call Bonus</div><div style="text-align:right;color:#2563eb;">RM '+callBon.toFixed(2)+'</div>'
+            +(isQtr?'<div style="color:#6b7280;">Quarterly Bonus</div><div style="text-align:right;color:#2563eb;">RM '+qtrBon.toFixed(2)+'</div>':'')
+            +'<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">RM '+totalComm.toFixed(2)+'</div>'
+            +'<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+            +'<div style="color:#6b7280;">EPF ('+epfRate+'%)</div><div style="text-align:right;color:#dc2626;">- RM '+epfAmt.toFixed(2)+'</div>'
+            +'<div style="font-weight:700;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">RM '+grandTotal.toFixed(2)+'</div>'
+            +'</div></div>';
+    }).join('');
+
+    var modal = document.createElement('div');
+    modal.id = 'history-view-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;z-index:99999;padding:20px;box-sizing:border-box;overflow-y:auto;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#f9fafb;border-radius:16px;max-width:640px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,0.3);overflow:hidden;margin:auto;';
+    box.innerHTML = '<div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:20px 24px;color:#fff;display:flex;justify-content:space-between;align-items:center;">'
+        +'<div><div style="font-size:20px;font-weight:700;">'+month+' Report</div><div style="font-size:13px;opacity:0.85;">'+people.length+' salespeople</div></div>'
+        +'<div style="display:flex;gap:8px;">'
+        +'<button onclick="exportHistoryToExcel('+index+')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">📊 Excel</button>'
+        +'<button onclick="document.getElementById(\'history-view-modal\').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:8px;cursor:pointer;">✕ Close</button>'
+        +'</div></div>'
+        +'<div style="padding:20px;max-height:70vh;overflow-y:auto;">'+(people.length>0?cards:'<div style="text-align:center;padding:40px;color:#6b7280;">No data</div>')+'</div>';
+    box.addEventListener('click',function(e){e.stopPropagation();});
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    modal.addEventListener('click',function(){modal.remove();});
 }
+
 
 // 关闭报告模态框
 function closeReportModal() {

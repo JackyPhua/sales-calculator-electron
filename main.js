@@ -1,23 +1,29 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const fs = require('fs').promises;
 const crypto = require('crypto');
+
+// ── SQLite DB setup ──────────────────────────────────────────────────────────
+let db = null;
+function initDB() {
+    try {
+        const Database = require('better-sqlite3');
+        const dbPath = path.join(app.getPath('userData'), 'commission_pro.db');
+        db = new Database(dbPath);
+        db.exec(`CREATE TABLE IF NOT EXISTS kv_store (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER DEFAULT (strftime('%s','now'))
+        )`);
+        console.log('✅ SQLite DB ready:', dbPath);
+    } catch (e) {
+        console.error('❌ SQLite init failed:', e.message);
+        db = null;
+    }
+}
 const excelStyles = require('./src/excelStyles');
 const { styles } = excelStyles;
-
-// ── SQLite DB ──
-let db = null;
-try {
-    const Database = require('better-sqlite3');
-    const dbPath = require('path').join(require('electron').app.getPath
-        ? require('electron').app.getPath('userData')
-        : require('os').homedir(), 'commission_pro.db');
-    // We'll init db properly in app.whenReady
-    global._dbPath = dbPath;
-} catch(e) {
-    console.warn('better-sqlite3 not available:', e.message);
-}
 
 let mainWindow;
 
@@ -202,24 +208,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-    // ── Init SQLite DB ──
-    try {
-        const Database = require('better-sqlite3');
-        const dbPath = path.join(app.getPath('userData'), 'commission_pro.db');
-        db = new Database(dbPath);
-        db.exec(`
-            CREATE TABLE IF NOT EXISTS kv_store (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at INTEGER DEFAULT (strftime('%s','now'))
-            );
-        `);
-        console.log('✅ SQLite DB ready:', dbPath);
-    } catch(e) {
-        console.warn('SQLite init failed, falling back to JSON:', e.message);
-        db = null;
-    }
-
+    initDB();
     // 确保配置文件存在
     const configPath = path.join(app.getPath('userData'), 'config.json');
     try {
@@ -230,6 +219,94 @@ app.whenReady().then(async () => {
         await fs.writeFile(configPath, JSON.stringify(getDefaultConfig(), null, 2));
     }
     createWindow();
+});
+
+
+ipcMain.handle('open-excel-preview', async (event, data) => {
+    try {
+        const os = require('os');
+        const tempPath = path.join(os.tmpdir(), 
+            'CommissionPro_' + (data.month || 'Report') + '_' + Date.now() + '.xlsx');
+
+        const workbook = new ExcelJS.Workbook();
+        
+        // 计算团队总销售额
+        const totalTeamSales = data.salespeople.reduce((sum, person) => {
+            return sum + (parseFloat(person.sales) || 0);
+        }, 0);
+        
+        console.log('📊 Total team sales:', totalTeamSales);
+        
+        // 为每个销售员创建工作表
+        for (const person of data.salespeople) {
+            const sheet = workbook.addWorksheet(person.name.substring(0, 31));
+            await createSalarySheet(sheet, person, data.config, data.month, totalTeamSales);
+        }
+
+        // Group Summary sheet
+        const groupSheet = workbook.addWorksheet('Group Summary');
+        await createGroupSummarySheet(groupSheet, data.salespeople, data.config, data.month);
+
+        // Commission Summary sheet
+        const commSheet = workbook.addWorksheet('Commission Summary');
+        await createCommissionSummarySheet(commSheet, data.salespeople, data.config, data.month);
+
+        await workbook.xlsx.writeFile(tempPath);
+
+        // Open with system Excel directly
+        await shell.openPath(tempPath);
+
+        return { success: true, path: tempPath };
+    } catch (error) {
+        console.error('open-excel-preview error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// ── SQLite KV handlers ──────────────────────────────────────────────────────
+ipcMain.handle('db-save', (event, key, value) => {
+    try {
+        if (!db) return { success: false, error: 'DB not initialized' };
+        const json = typeof value === 'string' ? value : JSON.stringify(value);
+        db.prepare('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)').run(key, json);
+        return { success: true, key, value };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('db-load', (event, key) => {
+    try {
+        if (!db) return null;
+        const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get(key);
+        if (!row) return null;
+        try { return { success: true, key, value: JSON.parse(row.value) }; }
+        catch { return { success: true, key, value: row.value }; }
+    } catch (e) {
+        return null;
+    }
+});
+
+ipcMain.handle('db-delete', (event, key) => {
+    try {
+        if (!db) return { success: false };
+        db.prepare('DELETE FROM kv_store WHERE key = ?').run(key);
+        return { success: true, key };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('db-list', (event, prefix) => {
+    try {
+        if (!db) return { keys: [] };
+        const rows = prefix
+            ? db.prepare("SELECT key FROM kv_store WHERE key LIKE ?").all(prefix + '%')
+            : db.prepare("SELECT key FROM kv_store").all();
+        return { keys: rows.map(r => r.key) };
+    } catch (e) {
+        return { keys: [] };
+    }
 });
 
 app.on('window-all-closed', () => {
@@ -268,9 +345,21 @@ ipcMain.handle('license-increment-export', async () => {
 // 加载配置
 ipcMain.handle('load-config', async () => {
     try {
+        // Try SQLite first
+        if (db) {
+            const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get('config');
+            if (row) return JSON.parse(row.value);
+        }
+        // Fallback to JSON file (migration)
         const configPath = path.join(app.getPath('userData'), 'config.json');
         const data = await fs.readFile(configPath, 'utf-8');
-        return JSON.parse(data);
+        const config = JSON.parse(data);
+        // Migrate to DB
+        if (db) {
+            db.prepare('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)').run('config', JSON.stringify(config));
+            console.log('✅ Config migrated from JSON to DB');
+        }
+        return config;
     } catch (error) {
         return getDefaultConfig();
     }
@@ -279,13 +368,18 @@ ipcMain.handle('load-config', async () => {
 // 保存配置
 ipcMain.handle('save-config', async (event, config) => {
     try {
+        if (db) {
+            db.prepare('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)').run('config', JSON.stringify(config));
+            return { success: true };
+        }
+        // Fallback to JSON if DB not available
         const configPath = path.join(app.getPath('userData'), 'config.json');
         await fs.writeFile(configPath, JSON.stringify(config, null, 2));
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };
     }
-});
+});;
 
 // 加载本地化资源
 ipcMain.handle('load-locale', async (event, lang = 'en') => {
@@ -1109,54 +1203,6 @@ ipcMain.handle('readBackupFile', async (event, filePath) => {
         return { success: true, data };
     } catch (error) {
         return { success: false, error: error.message };
-    }
-});
-
-// ========== SQLite DB IPC Handlers ==========
-
-ipcMain.handle('db-save', async (event, key, value) => {
-    try {
-        if (!db) return { success: false, error: 'DB not available' };
-        const json = typeof value === 'string' ? value : JSON.stringify(value);
-        db.prepare('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, strftime(\'%s\',\'now\'))').run(key, json);
-        return { success: true };
-    } catch(e) {
-        return { success: false, error: e.message };
-    }
-});
-
-ipcMain.handle('db-load', async (event, key) => {
-    try {
-        if (!db) return { success: false, error: 'DB not available' };
-        const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get(key);
-        if (!row) return { success: false, error: 'Key not found' };
-        return { success: true, value: JSON.parse(row.value) };
-    } catch(e) {
-        return { success: false, error: e.message };
-    }
-});
-
-ipcMain.handle('db-delete', async (event, key) => {
-    try {
-        if (!db) return { success: false, error: 'DB not available' };
-        db.prepare('DELETE FROM kv_store WHERE key = ?').run(key);
-        return { success: true };
-    } catch(e) {
-        return { success: false, error: e.message };
-    }
-});
-
-ipcMain.handle('db-list', async (event, prefix) => {
-    try {
-        if (!db) return { success: false, error: 'DB not available' };
-        const rows = prefix
-            ? db.prepare("SELECT key, value FROM kv_store WHERE key LIKE ?").all(prefix + '%')
-            : db.prepare("SELECT key, value FROM kv_store").all();
-        const result = {};
-        rows.forEach(r => { try { result[r.key] = JSON.parse(r.value); } catch(e) { result[r.key] = r.value; } });
-        return { success: true, data: result };
-    } catch(e) {
-        return { success: false, error: e.message };
     }
 });
 
