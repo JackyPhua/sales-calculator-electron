@@ -263,6 +263,181 @@ ipcMain.handle('open-excel-preview', async (event, data) => {
     }
 });
 
+// ── Projection Report Excel ──────────────────────────────────────────────
+ipcMain.handle('export-projection-excel', async (event, data) => {
+    try {
+        const os = require('os');
+        const tempPath = path.join(os.tmpdir(),
+            'Projection_' + (data.personName || 'Report') + '_' + (data.month || '') + '_' + Date.now() + '.xlsx');
+
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Projection Report');
+
+        // Column widths
+        sheet.getColumn(1).width = 22;
+        sheet.getColumn(2).width = 18;
+        sheet.getColumn(3).width = 18;
+        sheet.getColumn(4).width = 18;
+
+        const blueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+        const lightBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
+        const greenFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
+        const purpleFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F3FF' } };
+        const thinBorder = { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} };
+        const rmFmt = '#,##0.00';
+        const pctFmt = '0.0%';
+
+        let row = 1;
+
+        // ── Title ──
+        sheet.mergeCells(row, 1, row, 4);
+        const titleCell = sheet.getCell(row, 1);
+        titleCell.value = (data.personName || '') + ' — PROJECTION REPORT';
+        titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+        titleCell.fill = blueFill;
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        sheet.getRow(row).height = 32;
+        row++;
+
+        sheet.mergeCells(row, 1, row, 4);
+        sheet.getCell(row, 1).value = (data.month || '') + ' ' + new Date().getFullYear();
+        sheet.getCell(row, 1).font = { size: 11, color: { argb: 'FF64748B' } };
+        sheet.getCell(row, 1).alignment = { horizontal: 'center' };
+        row += 2;
+
+        // ── Sales Summary ──
+        const d = data.projData;
+        const summaryItems = [
+            ['Sale Target', d.target, rmFmt],
+            ['Current Sales', d.sales, rmFmt],
+            ['Achievement', d.achievement / 100, pctFmt],
+            ['Commission Rate', d.commissionRate / 100, '0.00%'],
+            ['Current Commission', d.commission, rmFmt]
+        ];
+
+        sheet.mergeCells(row, 1, row, 4);
+        sheet.getCell(row, 1).value = 'SALES SUMMARY';
+        sheet.getCell(row, 1).font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        sheet.getCell(row, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+        sheet.getCell(row, 1).alignment = { horizontal: 'center' };
+        for (let c=1;c<=4;c++) sheet.getCell(row,c).border = thinBorder;
+        row++;
+
+        summaryItems.forEach(item => {
+            sheet.getCell(row, 1).value = item[0];
+            sheet.getCell(row, 1).font = { color: { argb: 'FF475569' } };
+            sheet.getCell(row, 2).value = item[1];
+            sheet.getCell(row, 2).font = { bold: true, color: item[0] === 'Commission Rate' ? { argb: 'FF2563EB' } : {} };
+            sheet.getCell(row, 2).numFmt = item[2];
+            sheet.getCell(row, 2).alignment = { horizontal: 'right' };
+            for (let c=1;c<=2;c++) sheet.getCell(row,c).border = thinBorder;
+            row++;
+        });
+        row++;
+
+        // ── Sales Balance to Go ──
+        if (d.saleMilestones && d.saleMilestones.length > 0) {
+            sheet.mergeCells(row, 1, row, 4);
+            sheet.getCell(row, 1).value = 'SALES — BALANCE TO GO & EXTRA COMMISSION';
+            sheet.getCell(row, 1).font = { bold: true, size: 10, color: { argb: 'FF64748B' } };
+            row++;
+
+            // Headers
+            ['Milestone', 'Balance to Go', 'Extra Commission'].forEach((h, i) => {
+                sheet.getCell(row, i+1).value = h;
+                sheet.getCell(row, i+1).font = { bold: true };
+                sheet.getCell(row, i+1).fill = lightBlueFill;
+                sheet.getCell(row, i+1).border = thinBorder;
+            });
+            row++;
+
+            d.saleMilestones.forEach(ms => {
+                sheet.getCell(row, 1).value = ms.label;
+                sheet.getCell(row, 1).font = { bold: true };
+                sheet.getCell(row, 2).value = ms.gap;
+                sheet.getCell(row, 2).numFmt = rmFmt;
+                sheet.getCell(row, 2).font = { color: { argb: 'FFDC2626' }, bold: true };
+                sheet.getCell(row, 3).value = ms.extraComm;
+                sheet.getCell(row, 3).numFmt = rmFmt;
+                sheet.getCell(row, 3).font = { color: { argb: 'FF166534' }, bold: true };
+                for (let c=1;c<=3;c++) sheet.getCell(row,c).border = thinBorder;
+                row++;
+            });
+
+            if (d.saleMilestones.length === 0) {
+                sheet.mergeCells(row, 1, row, 3);
+                sheet.getCell(row, 1).value = '✓ All sales milestones achieved!';
+                sheet.getCell(row, 1).font = { color: { argb: 'FF166534' }, bold: true };
+                row++;
+            }
+            row++;
+        }
+
+        // ── Call Summary ──
+        sheet.mergeCells(row, 1, row, 4);
+        sheet.getCell(row, 1).value = 'ACTIVE CALL SUMMARY';
+        sheet.getCell(row, 1).font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        sheet.getCell(row, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7C3AED' } };
+        sheet.getCell(row, 1).alignment = { horizontal: 'center' };
+        for (let c=1;c<=4;c++) sheet.getCell(row,c).border = thinBorder;
+        row++;
+
+        const callItems = [
+            ['Call Target', d.callTarget, '0'],
+            ['Actual Calls', d.callActual, '0'],
+            ['Call Achievement', d.callAchievement / 100, pctFmt],
+            ['Call Incentive', d.callIncentive, rmFmt],
+            ['Call Progress', d.callProgress / 100, pctFmt]
+        ];
+        callItems.forEach(item => {
+            sheet.getCell(row, 1).value = item[0];
+            sheet.getCell(row, 1).font = { color: { argb: 'FF5B21B6' } };
+            sheet.getCell(row, 2).value = item[1];
+            sheet.getCell(row, 2).font = { bold: true, color: { argb: 'FF4C1D95' } };
+            sheet.getCell(row, 2).numFmt = item[2];
+            sheet.getCell(row, 2).alignment = { horizontal: 'right' };
+            for (let c=1;c<=2;c++) sheet.getCell(row,c).border = thinBorder;
+            row++;
+        });
+        row++;
+
+        // ── Call Balance to Go ──
+        if (d.callMilestones && d.callMilestones.length > 0) {
+            sheet.mergeCells(row, 1, row, 4);
+            sheet.getCell(row, 1).value = 'ACTIVE CALLS — BALANCE TO GO & EXTRA INCENTIVE';
+            sheet.getCell(row, 1).font = { bold: true, size: 10, color: { argb: 'FF5B21B6' } };
+            row++;
+
+            ['Milestone', 'Balance (Calls)', 'Extra Incentive'].forEach((h, i) => {
+                sheet.getCell(row, i+1).value = h;
+                sheet.getCell(row, i+1).font = { bold: true };
+                sheet.getCell(row, i+1).fill = purpleFill;
+                sheet.getCell(row, i+1).border = thinBorder;
+            });
+            row++;
+
+            d.callMilestones.forEach(ms => {
+                sheet.getCell(row, 1).value = ms.label;
+                sheet.getCell(row, 1).font = { bold: true };
+                sheet.getCell(row, 2).value = ms.gap + ' calls';
+                sheet.getCell(row, 2).font = { color: { argb: 'FF4C1D95' }, bold: true };
+                sheet.getCell(row, 3).value = ms.extraInc;
+                sheet.getCell(row, 3).numFmt = rmFmt;
+                sheet.getCell(row, 3).font = { color: { argb: 'FF166534' }, bold: true };
+                for (let c=1;c<=3;c++) sheet.getCell(row,c).border = thinBorder;
+                row++;
+            });
+        }
+
+        await workbook.xlsx.writeFile(tempPath);
+        await shell.openPath(tempPath);
+        return { success: true, path: tempPath };
+    } catch (error) {
+        console.error('export-projection-excel error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 // ── SQLite KV handlers ──────────────────────────────────────────────────────
 ipcMain.handle('db-save', (event, key, value) => {
     try {
@@ -1727,14 +1902,21 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     }
     currentRow++;
 
-    // 费率数据
-    const rateData = [
-        ['0%-79%', 'None'],
-        ['80%-89%', '0.60%'],
-        ['90%-99%', '0.70%'],
-        ['100%-105%', '0.80%'],
-        ['106% & Above', '1.00%']
-    ];
+    // 费率数据 - read from config
+    const cfgRates = (config && config.monthly_commission_rates) || [];
+    const rateData = cfgRates.length > 0
+        ? cfgRates.slice().sort((a, b) => a.min - b.min).map(t => {
+            const label = t.label || (t.min + '%-' + t.max + '%');
+            const rateStr = (t.rate && t.rate > 0) ? (t.rate * 100).toFixed(2) + '%' : 'None';
+            return [label, rateStr];
+        })
+        : [
+            ['0%-79%', 'None'],
+            ['80%-89%', '0.60%'],
+            ['90%-99%', '0.70%'],
+            ['100%-105%', '0.80%'],
+            ['106% & Above', '1.00%']
+        ];
 
     rateData.forEach((row, idx) => {
         sheet.getCell(currentRow + idx, 1).value = row[0];
@@ -1749,7 +1931,7 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         }
         
         if (row[1] !== 'None') {
-            sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF008000' }, bold: true };
+            sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF0097A7' }, bold: true };
         }
     });
     
@@ -1785,11 +1967,14 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     }
     currentRow++;
 
-    // 季度奖励数据
-    const quarterData = [
-        ['90%-99%', 'RM200.00'],
-        ['100%', 'RM400.00']
+    // 季度奖励数据 - read from config
+    const qtrTiers = (config && config.quarterly_incentive) || [
+        { min: 90, incentive: 200, label: '90%-99%' },
+        { min: 100, incentive: 400, label: '100%' }
     ];
+    const quarterData = qtrTiers.slice().sort((a, b) => a.min - b.min).map(t => {
+        return [t.label || (t.min + '%'), 'RM' + (parseFloat(t.incentive) || 0).toFixed(2)];
+    });
 
     quarterData.forEach((row, idx) => {
         sheet.getCell(currentRow + idx, 1).value = row[0];
@@ -1801,15 +1986,70 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
                 top: {style:'thin'}, bottom: {style:'thin'},
                 left: {style:'thin'}, right: {style:'thin'}
             };
-            if (col === 2) {
-                cell.numFmt = '"RM" #,##0.00';
-            }
         }
+        // Set teal color on value column
+        sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF0097A7' }, bold: true };
     });
     
     currentRow += quarterData.length + 2; // 空两行
 
-    // 表格3: Active Call Incentive
+    // 表格3: Collection Incentive
+    sheet.mergeCells(currentRow, 1, currentRow, 2);
+    const title3aCell = sheet.getCell(currentRow, 1);
+    title3aCell.value = 'COLLECTION INCENTIVE';
+    title3aCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    title3aCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    title3aCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    title3aCell.border = {
+        top: {style:'thin'}, bottom: {style:'thin'},
+        left: {style:'thin'}, right: {style:'thin'}
+    };
+    sheet.getRow(currentRow).height = 25;
+    currentRow++;
+
+    // 表头
+    sheet.getCell(currentRow, 1).value = 'Collection Achievement';
+    sheet.getCell(currentRow, 2).value = 'Incentive (RM)';
+    sheet.getCell(currentRow, 1).font = { bold: true };
+    sheet.getCell(currentRow, 2).font = { bold: true };
+    sheet.getCell(currentRow, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    sheet.getCell(currentRow, 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    
+    for (let col = 1; col <= 2; col++) {
+        sheet.getCell(currentRow, col).border = {
+            top: {style:'thin'}, bottom: {style:'thin'},
+            left: {style:'thin'}, right: {style:'thin'}
+        };
+    }
+    currentRow++;
+
+    // Collection incentive data from config
+    const collTiers = (config && config.collection_incentive) || [
+        { min: 90, incentive: 150, label: '90%-99%' },
+        { min: 100, incentive: 300, label: '100%' }
+    ];
+    const collData = collTiers.slice().sort((a, b) => a.min - b.min).map(t => {
+        return [t.label || (t.min + '%'), 'RM' + (parseFloat(t.incentive) || 0).toFixed(2)];
+    });
+
+    collData.forEach((row, idx) => {
+        sheet.getCell(currentRow + idx, 1).value = row[0];
+        sheet.getCell(currentRow + idx, 2).value = row[1];
+        
+        for (let col = 1; col <= 2; col++) {
+            const cell = sheet.getCell(currentRow + idx, col);
+            cell.border = {
+                top: {style:'thin'}, bottom: {style:'thin'},
+                left: {style:'thin'}, right: {style:'thin'}
+            };
+        }
+        // Set teal color on value column
+        sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF0097A7' }, bold: true };
+    });
+    
+    currentRow += collData.length + 2; // 空两行
+
+    // 表格4: Active Call Incentive
     sheet.mergeCells(currentRow, 1, currentRow, 2);
     const title3Cell = sheet.getCell(currentRow, 1);
     title3Cell.value = 'ACTIVE CALL INCENTIVE';
@@ -1839,12 +2079,15 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     }
     currentRow++;
 
-    // 活跃电话奖励数据
-    const callData = [
-        ['65%', 'RM50.00'],
-        ['70%', 'RM200.00'],
-        ['80%', 'RM350.00']
+    // 活跃电话奖励数据 - read from config
+    const callTiers = (config && config.active_call_incentive) || [
+        { min: 65, incentive: 50, label: '65%' },
+        { min: 70, incentive: 200, label: '70%' },
+        { min: 80, incentive: 350, label: '80%' }
     ];
+    const callData = callTiers.slice().sort((a, b) => a.min - b.min).map(t => {
+        return [t.label || (t.min + '%'), 'RM' + (parseFloat(t.incentive) || 0).toFixed(2)];
+    });
 
     callData.forEach((row, idx) => {
         sheet.getCell(currentRow + idx, 1).value = row[0];
@@ -1856,14 +2099,9 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
                 top: {style:'thin'}, bottom: {style:'thin'},
                 left: {style:'thin'}, right: {style:'thin'}
             };
-            if (col === 2) {
-                cell.numFmt = '"RM" #,##0.00';
-            }
         }
-        
-        if (row[0] === '80%') {
-            sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF008000' }, bold: true };
-        }
+        // Set teal color on value column
+        sheet.getCell(currentRow + idx, 2).font = { color: { argb: 'FF0097A7' }, bold: true };
     });
 
     // 添加备注

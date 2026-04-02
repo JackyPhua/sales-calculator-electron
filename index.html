@@ -193,6 +193,7 @@
 <div id="app-tabbar">
     <button onclick="switchView('people')"  id="tab-people"   class="tab-button">👤 Salesperson</button>
     <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculate</button>
+    <button onclick="switchView('report')"  id="tab-report"   class="tab-button">📈 Projection</button>
     <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 History</button>
     <button onclick="switchView('settings')"id="tab-settings" class="tab-button">⚙️ Settings</button>
 </div>
@@ -201,7 +202,7 @@
 <div id="app-body">
 
 <!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
-<div id="view-quick" class="view-container active" style="display:block" style="display:block">
+<div id="view-quick" class="view-container active" style="display:block">
     <!-- Toolbar -->
     <div class="toolbar">
         <div class="month-select-wrap">
@@ -216,7 +217,6 @@
             </select>
         </div>
         <div class="tool-sep"></div>
-        <button onclick="importFromExcel()" class="tbtn blue">📂 Import Excel</button>
         <button onclick="manualSave()" class="tbtn dark">💾 Save</button>
         <div class="tool-sep"></div>
         <button onclick="clearAllQuickCalculateData()" class="tbtn red">🗑️ Clear</button>
@@ -256,27 +256,6 @@
 
         <!-- Right: Summary -->
         <div class="calc-right">
-            <div id="summary-view">
-                <div class="sum-title">TOTAL COMMISSION</div>
-                <div id="summary-commission" style="font-size:28px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-1px;">RM 0.00</div>
-                <div class="sum-sub"><span id="summary-count">0</span> people</div>
-                <div class="sum-toggle">
-                    <button class="sum-toggle-btn active" onclick="setSummaryMode('current')">Current</button>
-                    <button class="sum-toggle-btn" onclick="setSummaryMode('all')">All People</button>
-                </div>
-            </div>
-
-            <div class="stat-grid2" id="summary-stats" style="display:none;">
-                <div class="stat-box2"><div class="stat-lbl2">Total Sales</div><div class="stat-val2" id="stat-total-sales">—</div></div>
-                <div class="stat-box2"><div class="stat-lbl2">Avg Ach</div><div class="stat-val2" id="stat-avg-ach" style="color:var(--em);">—</div></div>
-                <div class="stat-box2"><div class="stat-lbl2">Hit Target</div><div class="stat-val2" id="stat-hit-target">—</div></div>
-                <div class="stat-box2"><div class="stat-lbl2">Total Target</div><div class="stat-val2" id="stat-total-target">—</div></div>
-            </div>
-
-            <div class="action-btns">
-                <button onclick="exportTemplate()" class="tbtn green" style="width:100%;justify-content:center;padding:11px;">📊 Export Excel</button>
-                <button onclick="exportAndPrint()" class="tbtn" style="width:100%;justify-content:center;padding:11px;">🖨️ Export &amp; Print</button>
-            </div>
             <!-- Live Payslip Preview -->
             <div id="live-payslip" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:block;margin-top:4px;">
                 <div style="background:#185FA5;padding:10px 14px;text-align:center;">
@@ -334,6 +313,46 @@
     <div id="people-list-container"></div>
 </div>
 
+<!-- ══════════════════ PROJECTION REPORT VIEW ══════════════════ -->
+<div id="view-report" class="view-container" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Person</div>
+                <select id="proj-person-select" onchange="renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="">— Select —</option>
+                </select>
+            </div>
+            <div>
+                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Month</div>
+                <select id="proj-month-select" onchange="renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option>
+                    <option value="MAR">MAR</option><option value="APR">APR</option>
+                    <option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option>
+                    <option value="SEP">SEP</option><option value="OCT">OCT</option>
+                    <option value="NOV">NOV</option><option value="DEC">DEC</option>
+                </select>
+            </div>
+            <div style="margin-top:18px;">
+                <div id="proj-person-name" style="font-size:18px;font-weight:700;color:var(--ink);display:inline;">—</div>
+                <span id="proj-month-label" style="font-size:13px;color:var(--ink3);margin-left:8px;">No data</span>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="printProjectionExcel()" class="tbtn blue" style="padding:10px 22px;font-size:13px;">🖨️ Print Excel</button>
+            <button onclick="printProjectionReport()" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print PDF</button>
+        </div>
+    </div>
+    <div id="projection-report-body">
+        <div style="text-align:center;padding:48px;color:var(--ink4);">
+            <div style="font-size:32px;margin-bottom:12px;">📈</div>
+            <div style="font-size:14px;font-weight:600;">No data yet</div>
+            <div style="font-size:12px;margin-top:6px;">Go to Calculate tab, enter sales data, then come back here.</div>
+        </div>
+    </div>
+</div>
+
 <!-- ══════════════════ HISTORY VIEW ══════════════════ -->
 <div id="view-history" class="view-container">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;">
@@ -351,17 +370,8 @@
     <div class="settings-grid">
         <div class="set-card">
             <div class="set-title">🔒 Backup &amp; Restore</div>
-            <button onclick="exportFullBackup()" class="set-btn sb-blue">🔄 Export Full Backup</button>
+            <button onclick="exportFullBackup()" class="set-btn sb-blue">📦 Export Backup</button>
             <button onclick="importBackup()" class="set-btn sb-green">📂 Import Backup</button>
-            <button onclick="restoreAutoBackup()" class="set-btn">⏰ Restore Auto Backup</button>
-            <button onclick="createManualBackup()" class="set-btn">💾 Create Manual Backup</button>
-            <div style="margin-top:6px;padding-top:14px;border-top:1px solid var(--line);">
-                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Config Only</div>
-                <div style="display:flex;gap:8px;">
-                    <button onclick="exportConfig()" class="set-btn" style="flex:1;justify-content:center;margin-bottom:0;">Export Config</button>
-                    <button onclick="importConfig()" class="set-btn" style="flex:1;justify-content:center;margin-bottom:0;">Import Config</button>
-                </div>
-            </div>
         </div>
         <div class="set-card">
             <div class="set-title">🔑 License</div>
@@ -388,8 +398,8 @@
 </div>
 
 <!-- Hidden legacy views for backward compat -->
-<div id="view-salary" style="display:none;"><div id="salary-config-container"></div></div>
-<div id="view-commission" style="display:none;"><div id="commission-config-container"></div></div>
+<div id="view-salary" class="view-container" style="display:none;"><div id="salary-config-container"></div></div>
+<div id="view-commission" class="view-container" style="display:none;"><div id="commission-config-container"></div></div>
 
 </div><!-- end app-body -->
 
@@ -457,6 +467,8 @@
             } else if (view === 'quick') {
                 if (typeof initQuickCalculate === 'function') initQuickCalculate();
                 if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+            } else if (view === 'report') {
+                if (typeof renderProjectionReport === 'function') renderProjectionReport();
             } else if (view === 'history') {
                 if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
             } else if (view === 'settings') {
@@ -466,95 +478,6 @@
                 if (typeof initSalaryView === 'function') initSalaryView();
             } else if (view === 'commission') {
                 if (typeof initCommissionView === 'function') initCommissionView();
-            }
-        }nction switchView(view) {
-            document.querySelectorAll('.tab-button').forEach(function(btn) {
-                btn.classList.remove('active');
-            });
-            var tabEl = document.getElementById('tab-' + view);
-            if (tabEl) tabEl.classList.add('active');
-            document.querySelectorAll('.view-container').forEach(function(v) {
-                v.style.display = 'none';
-                v.classList.remove('active');
-                v.classList.add('hidden');
-            });
-            var viewEl = document.getElementById('view-' + view);
-            if (viewEl) {
-                viewEl.style.display = 'block';
-                viewEl.classList.add('active');
-                viewEl.classList.remove('hidden');
-            }
-            appState.currentView = view;
-            if (view === 'people') {
-                if (typeof renderPeopleList === 'function') renderPeopleList();
-            } else if (view === 'quick') {
-                if (typeof initQuickCalculate === 'function') initQuickCalculate();
-                if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
-            } else if (view === 'history') {
-                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
-            } else if (view === 'settings') {
-                var lt = document.getElementById('settings-license-type');
-                if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
-            } else if (view === 'salary') {
-                if (typeof initSalaryView === 'function') initSalaryView();
-            } else if (view === 'commission') {
-                if (typeof initCommissionView === 'function') initCommissionView();
-            }
-        }nction switchView(view) {
-            document.querySelectorAll('.tab-button').forEach(function(btn) {
-                btn.classList.remove('active');
-            });
-            var tabEl = document.getElementById('tab-' + view);
-            if (tabEl) tabEl.classList.add('active');
-            document.querySelectorAll('.view-container').forEach(function(v) {
-                v.style.display = 'none';
-                v.classList.remove('active');
-            });
-            var viewEl = document.getElementById('view-' + view);
-            if (viewEl) { viewEl.style.display = 'block'; viewEl.classList.add('active'); }
-            appState.currentView = view;
-            if (view === 'people') {
-                if (typeof renderPeopleList === 'function') renderPeopleList();
-            } else if (view === 'quick') {
-                if (typeof initQuickCalculate === 'function') initQuickCalculate();
-                if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
-            } else if (view === 'history') {
-                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
-            } else if (view === 'settings') {
-                var lt = document.getElementById('settings-license-type');
-                if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
-            } else if (view === 'salary') {
-                if (typeof initSalaryView === 'function') initSalaryView();
-            } else if (view === 'commission') {
-                if (typeof initCommissionView === 'function') initCommissionView();
-            }
-        }nction switchView(view) {
-            // 更新标签按钮状态
-            document.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.getElementById(`tab-${view}`).classList.add('active');
-            
-            // 隐藏所有视图
-            document.querySelectorAll('.view-container').forEach(v => {
-                v.classList.add('hidden');
-            });
-            
-            // 显示选中的视图
-            document.getElementById(`view-${view}`).classList.remove('hidden');
-            
-            appState.currentView = view;
-            
-            // 初始化对应视图
-            if (view === 'quick') {
-                if (typeof initQuickCalculate === 'function') initQuickCalculate();
-                else if (typeof addSalespersonCard === 'function' && document.getElementById('salespeople-container') && document.getElementById('salespeople-container').children.length === 0) addSalespersonCard();
-            } else if (view === 'salary') {
-                if (typeof initSalaryView === 'function') initSalaryView();
-            } else if (view === 'commission') {
-                if (typeof initCommissionView === 'function') initCommissionView();
-            } else if (view === 'history') {
-                if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
             }
         }
 
@@ -644,23 +567,33 @@
         if (!historyList) return;
 
         var history = (window.appState && window.appState.config && window.appState.config.reportHistory) || [];
+        var cfg = window.appState.config || {};
         var subEl = document.getElementById('history-sub');
 
         var defaultRates = [
             {min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},
             {min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}
         ];
-        var cfgRates = window.appState && window.appState.config && window.appState.config.monthly_commission_rates;
+        var cfgRates = cfg.monthly_commission_rates;
         var rates = (cfgRates && cfgRates.length>0) ? cfgRates : defaultRates;
 
         function calcC(sales,target,name){
             if(!target||!sales||target<=0||sales<=0)return 0;
             var ach=(sales/target)*100,r=rates;
             var nu=name?name.toUpperCase():null;
-            if(nu&&window.appState.config.person_commission_rates&&window.appState.config.person_commission_rates[nu])r=window.appState.config.person_commission_rates[nu];
+            if(nu&&cfg.person_commission_rates&&cfg.person_commission_rates[nu])r=cfg.person_commission_rates[nu];
             for(var i=0;i<r.length;i++)if(ach>=r[i].min&&ach<=r[i].max)return sales*(r[i].rate||0);
             return 0;
         }
+        function calcInc(pct,tiers){
+            if(!tiers||!tiers.length)return 0;
+            var s=tiers.slice().sort(function(a,b){return b.min-a.min;});
+            for(var i=0;i<s.length;i++)if(pct>=s[i].min)return s[i].incentive||0;
+            return 0;
+        }
+
+        // Get all configured people
+        var configuredPeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
 
         var monthOrder=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
         var curMonthIdx=new Date().getMonth();
@@ -677,23 +610,36 @@
             historyList.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--ink4);">'
                 +'<div style="font-size:48px;margin-bottom:16px;">📋</div>'
                 +'<div style="font-size:15px;font-weight:600;margin-bottom:6px;">No history yet</div>'
-                +'<div style="font-size:13px;">Import Excel or save data to create history</div></div>';
+                +'<div style="font-size:13px;">Save data in Calculate tab to create history</div></div>';
             return;
         }
 
         historyList.innerHTML = '<div class="history-grid">'
             + sorted.map(function(report) {
-                var people=report.data||[];
+                // Merge configured people with report data
+                var reportData = report.data || [];
+                var people = configuredPeople.map(function(name) {
+                    var existing = reportData.find(function(p){ return (p.name||'').toUpperCase() === name; });
+                    return existing || { name: name, target: 0, sales: 0, collectionTarget: 0, collectionAmount: 0, callTarget: 0, callActual: 0 };
+                });
+                // Also include people in report data not in config (legacy)
+                reportData.forEach(function(p) {
+                    if (configuredPeople.indexOf((p.name||'').toUpperCase()) === -1) people.push(p);
+                });
+
                 var month=(report.month||'').toUpperCase();
                 var realIndex=history.indexOf(report);
                 var totalComm=0;
                 people.forEach(function(p){
+                    var nu=(p.name||'').toUpperCase();
                     var comm=calcC(p.sales,p.target,p.name);
                     var collPct=(p.collectionTarget||0)>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
                     var callPct=(p.callTarget||0)>0?(p.callActual||0)/p.callTarget*100:0;
-                    totalComm+=comm;
+                    var collI=calcInc(collPct,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
+                    var callI=calcInc(callPct,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
+                    totalComm+=comm+collI+callI;
                 });
-                var peopleHtml=people.slice(0,4).map(function(p){
+                var peopleHtml=people.filter(function(p){return (p.target||0)>0||(p.sales||0)>0;}).slice(0,4).map(function(p){
                     var ach=(p.target||0)>0?(p.sales||0)/p.target*100:0;
                     var comm=calcC(p.sales,p.target,p.name);
                     var achColor=ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
@@ -706,12 +652,12 @@
                 return '<div class="h-card">'
                     +'<div class="h-card-top">'
                     +'<div><div class="h-month">'+month+'</div><div class="h-year">'+new Date().getFullYear()+'</div></div>'
-                    +'<div><div class="h-comm-lbl">Commission</div><div class="h-comm-val">RM '+totalComm.toFixed(0)+'</div></div>'
+                    +'<div><div class="h-comm-lbl">Total Commission</div><div class="h-comm-val">RM '+totalComm.toFixed(0)+'</div></div>'
                     +'</div>'
-                    +(people.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
+                    +(peopleHtml.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
                     +'<div class="h-foot">'
                     +'<button class="hbtn" style="background:#e0f2fe;color:#0284c7;" onclick="viewHistoryReport('+realIndex+')">👁 View</button>'
-                    +'<button class="hbtn" style="background:#d1fae5;color:#059669;" onclick="openHistoryExcel('+realIndex+')">📊 Open Excel</button>'
+                    +'<button class="hbtn" style="background:#d1fae5;color:#059669;" onclick="openHistoryExcel('+realIndex+')">📊 Excel</button>'
                     +'<button class="hbtn" style="background:#ffe4e6;color:#e11d48;" onclick="deleteHistoryReport('+realIndex+')">🗑️</button>'
                     +'</div></div>';
             }).join('')+'</div>';

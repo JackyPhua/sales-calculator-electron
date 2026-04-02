@@ -1,3 +1,13 @@
+function onSalespersonNameChange(index) {
+    // Update card header display
+    var sel = document.getElementById('name-' + index);
+    var nm  = sel ? sel.value : '';
+    var nd  = document.getElementById('card-name-display-' + index);
+    var av  = document.getElementById('card-avatar-' + index);
+    if (nd) nd.textContent = nm || '—';
+    if (av) av.textContent = nm ? nm[0] : '?';
+}
+
 // ── SQLite DB helpers ──
 async function dbSave(key, value) {
     try {
@@ -14,6 +24,15 @@ async function dbLoad(key) {
     } catch(e) { console.warn('dbLoad failed:', e); }
     return null;
 }
+
+
+// Inject locked field styles
+(function() {
+    var s = document.createElement('style');
+    s.id = 'quarterly-locked-style';
+    s.textContent = 'input:disabled { background:#f1f5f9 !important; color:#64748b !important; cursor:not-allowed !important; opacity:1 !important; -webkit-text-fill-color:#64748b !important; pointer-events:none !important; }';
+    document.head.appendChild(s);
+})();
 
 // ==================== Global State Management ====================
 
@@ -270,6 +289,7 @@ async function initApp() {
         
         // Load configuration
         await loadConfig();
+        fixSalaryHistory();
         
         // Initialize current view
         switchView('quick');
@@ -423,6 +443,8 @@ function switchView(view) {
         if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
     } else if (view === 'history') {
         if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+    } else if (view === 'report') {
+        if (typeof renderProjectionReport === 'function') renderProjectionReport();
     } else if (view === 'settings') {
         var lt = document.getElementById('settings-license-type');
         if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
@@ -444,12 +466,60 @@ async function initQuickCalculate() {
     const monthSelect = document.getElementById('report-month');
     if (monthSelect) {
         monthSelect.value = currentMonth;
+                window._currentMonth = monthSelect.value.toUpperCase();
 
         // When month changes, re-fill cards from imported Excel data or recalc locked fields
         if (!monthSelect._hasAutoFillListener) {
             monthSelect.addEventListener('change', function() {
                 const newMonth = this.value.toUpperCase();
-                console.log('📅 Month changed to', newMonth);
+                const oldMonth = window._currentMonth || '';
+                console.log('📅 Month changed from', oldMonth, 'to', newMonth);
+
+                // ── SAVE current month data before switching ──────────────
+                if (oldMonth && oldMonth !== newMonth) {
+                    var curPerson = window.appState.salespeople[0];
+                    var curNameEl = document.getElementById('name-0');
+                    var curNameDisp = document.getElementById('card-name-text-0');
+                    var curName = (curPerson && curPerson.name) ? curPerson.name
+                                : (curNameDisp && curNameDisp.textContent !== '—') ? curNameDisp.textContent
+                                : (curNameEl ? curNameEl.value : '');
+                    if (curName) {
+                        function getF(id) {
+                            var el = document.getElementById(id + '-0');
+                            if (!el) return 0;
+                            if (el.disabled) {
+                                if (id==='target' && curPerson && curPerson.target) return curPerson.target;
+                                if (id==='collection-target' && curPerson && curPerson.collectionTarget) return curPerson.collectionTarget;
+                                if (id==='call-target' && curPerson && curPerson.callTarget) return curPerson.callTarget;
+                            }
+                            return parseFloat(el.value)||0;
+                        }
+                        var saveData = {
+                            name:            curName.toUpperCase(),
+                            target:          getF('target'),
+                            sales:           getF('sales'),
+                            quarterlyTarget: getF('quarterly-target'),
+                            quarterlySales:  getF('quarterly-sales'),
+                            collectionTarget:getF('collection-target'),
+                            collectionAmount:getF('collection-amount'),
+                            callTarget:      getF('call-target'),
+                            callActual:      getF('call-actual')
+                        };
+                        var hist = window.appState.config.reportHistory || [];
+                        var hIdx = hist.findIndex(function(r){ return (r.month||'').toUpperCase() === oldMonth; });
+                        if (hIdx < 0) { hist.push({month:oldMonth, data:[]}); hIdx = hist.length-1; }
+                        var pIdx = hist[hIdx].data.findIndex(function(p){ return (p.name||'').toUpperCase() === curName.toUpperCase(); });
+                        if (pIdx >= 0) hist[hIdx].data[pIdx] = saveData;
+                        else hist[hIdx].data.push(saveData);
+                        window.appState.config.reportHistory = hist;
+                        saveConfig();
+                        dbSave('reportHistory', hist).catch(function(){});
+                        console.log('💾 Saved', curName, 'data for', oldMonth);
+                    }
+                }
+                window._currentMonth = newMonth;
+                // Also update the select to reflect current month
+                if (monthSelect) monthSelect.value = newMonth;
 
                 // If we have imported Excel data, refill cards for the new month
                 if (window.appState.importedExcelData && window.appState.importedExcelData.length > 0) {
@@ -464,6 +534,21 @@ async function initQuickCalculate() {
                         // User can click sidebar to switch between people
                         var firstPerson = histEntry.data[0];
                         if (firstPerson && window.appState.salespeople.length > 0) {
+                            // Set person name FIRST (critical for preview and calculation)
+                            var restoredName = firstPerson.name || '';
+                            window.appState.salespeople[0].name = restoredName;
+                            var nameEl0 = document.getElementById('name-0');
+                            if (nameEl0) nameEl0.value = restoredName;
+                            var nameText0 = document.getElementById('card-name-text-0');
+                            var avatar0 = document.getElementById('card-avatar-0');
+                            if (nameText0) nameText0.textContent = restoredName || '—';
+                            if (avatar0) avatar0.textContent = restoredName ? restoredName[0] : '?';
+
+                            // Also pre-set target in appState so locked field logic works
+                            window.appState.salespeople[0].target = parseFloat(firstPerson.target) || 0;
+                            window.appState.salespeople[0].collectionTarget = parseFloat(firstPerson.collectionTarget) || 0;
+                            window.appState.salespeople[0].callTarget = parseFloat(firstPerson.callTarget) || 0;
+
                             var set = function(id, v) {
                                 var el = document.getElementById(id + '-0');
                                 if (el) el.value = (v != null && v !== 0) ? v : '';
@@ -476,11 +561,16 @@ async function initQuickCalculate() {
                             set('collection-amount',  firstPerson.collectionAmount || '');
                             set('call-target',        firstPerson.callTarget || '');
                             set('call-actual',        firstPerson.callActual || '');
+
+                            // Apply target locks BEFORE update so locked values are correct
+                            if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
                             updateSalespersonData(0);
                         }
                         // Store full history data so sidebar click can load per-person
                         window._currentMonthHistory = histEntry.data;
                         updateSummaryView();
+                        // Update sidebar to reflect restored person
+                        if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
                         showToast('📅', newMonth + ' data restored');
                     } else {
                         // No saved data — clear the single card fields
@@ -539,11 +629,18 @@ async function initQuickCalculate() {
         saved.salespeople.forEach(function(sp,idx) {
             var nameEl=document.getElementById('name-'+idx);
             if(nameEl&&sp.name) nameEl.value=sp.name;
+            // Update card header
+            var nt=document.getElementById('card-name-text-'+idx);
+            var av=document.getElementById('card-avatar-'+idx);
+            if(nt&&sp.name) nt.textContent=sp.name;
+            if(av&&sp.name) av.textContent=sp.name[0];
             var set=function(id,v){var el=document.getElementById(id+'-'+idx);if(el&&v!=null&&v!=='')el.value=v;};
             set('target',sp.target); set('sales',sp.sales);
             set('quarterly-target',sp.quarterlyTarget); set('quarterly-sales',sp.quarterlySales);
             set('collection-target',sp.collectionTarget); set('collection-amount',sp.collectionAmount);
             set('call-target',sp.callTarget); set('call-actual',sp.callActual);
+            // Apply target lock BEFORE updateSalespersonData
+            if (typeof applyPersonTarget === 'function') applyPersonTarget(idx);
             updateSalespersonData(idx);
         });
         updateSummaryView();
@@ -591,30 +688,27 @@ function createBlankSalespersonCard() {
             ✕
         </button>
         
-        <div class="flex justify-between items-start mb-4">
-            <h4 class="text-lg font-semibold text-gray-900">👤 Salesperson #${newId}</h4>
+        <!-- Person name display -->
+        <div id="card-name-display-${index}" style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
+            <span id="card-avatar-${index}" style="width:30px;height:30px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">?</span>
+            <span id="card-name-text-${index}" style="letter-spacing:0.3px;">—</span>
         </div>
         
         <div class="grid grid-cols-2 gap-4">
-            <div class="col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                <select id="name-${index}"
-                        class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                        onchange="onSalespersonNameChange(${index})">
-                    <option value="">Select...</option>
-                    ${nameOptions}
-                </select>
+            <div class="col-span-2" style="display:none;">
+                <input type="hidden" id="name-${index}" value="">
             </div>
             
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Target (RM)</label>
                 <input type="number" 
                        id="target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter target"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
                        value=""
-                       onfocus="this.readOnly=false;this.style.backgroundColor='';"
-                       oninput="updateSalespersonData(${index})">
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set in Salesperson → 🎯 Target">
             </div>
             
             <div>
@@ -637,10 +731,12 @@ function createBlankSalespersonCard() {
                 <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Target (RM)</label>
                 <input type="number" 
                        id="quarterly-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter quarterly target"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Auto (Q months total)"
                        value=""
-                       oninput="updateSalespersonData(${index})">
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Auto: sum of quarterly months targets">
                 <p class="text-xs text-gray-500 mt-1">3 months total target</p>
             </div>
             
@@ -648,10 +744,12 @@ function createBlankSalespersonCard() {
                 <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Sales (RM)</label>
                 <input type="number" 
                        id="quarterly-sales-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter quarterly sales"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Auto (Q months total)"
                        value=""
-                       oninput="updateSalespersonData(${index})">
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Auto: sum of quarterly months sales">
                 <p class="text-xs text-gray-500 mt-1">3 months total sales</p>
             </div>
             
@@ -661,21 +759,23 @@ function createBlankSalespersonCard() {
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (RM)</label>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (Outlets)</label>
                 <input type="number" 
                        id="collection-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter collection target"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
                        value=""
-                       oninput="updateSalespersonData(${index})">
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set outlets in Salesperson → Target">
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Collection Amount (RM)</label>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Collected Outlets</label>
                 <input type="number" 
                        id="collection-amount-${index}"
                        class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter collection amount"
+                       placeholder="Enter collected outlets"
                        value=""
                        oninput="updateSalespersonData(${index})">
             </div>
@@ -684,10 +784,12 @@ function createBlankSalespersonCard() {
                 <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Target)</label>
                 <input type="number" 
                        id="call-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                       placeholder="Enter call target"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
                        value=""
-                       oninput="updateSalespersonData(${index})">
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set in Salesperson → Target">
             </div>
             
             <div>
@@ -818,7 +920,7 @@ function showQuickAddPersonModal() {
     hdr.innerHTML = '<div style="font-size:18px;font-weight:700;">Add New Salesperson</div><div style="font-size:13px;margin-top:4px;opacity:0.9;">Fill in salary & allowances</div>';
 
     var body = document.createElement('div');
-    body.style.cssText = 'padding:20px 24px;overflow-y:auto;flex:1;';
+    body.style.cssText = 'padding:20px 24px;';
 
     body.appendChild(mkRow('Name <span style="color:#ef4444">*</span>', mkInp('quick-person-name','text','','e.g., CHONG JIA YING')));
 
@@ -828,7 +930,7 @@ function showQuickAddPersonModal() {
 
     var alBox = mkBox('#eff6ff','#bfdbfe','ALLOWANCES (RM)','#1e40af');
     var grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;';
     [['HP','quick-allow-hp'],['Car','quick-allow-car'],
      ['Local Fuel','quick-allow-localfuel'],['Outstation Fuel','quick-allow-outfuel'],
      ['Housing','quick-allow-housing'],['Food','quick-allow-food']
@@ -1061,32 +1163,27 @@ function renderAllSalespeopleCards() {
                 ✕
             </button>
             
-            <div class="flex justify-between items-start mb-4">
-                <h4 class="text-lg font-semibold text-gray-900">👤 Salesperson #${person.id}</h4>
+            <!-- Person name display -->
+            <div id="card-name-display-${index}" style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
+                <span id="card-avatar-${index}" style="width:30px;height:30px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${person.name ? person.name[0] : '?'}</span>
+                <span id="card-name-text-${index}" style="letter-spacing:0.3px;">${person.name || '—'}</span>
             </div>
             
             <div class="grid grid-cols-2 gap-4">
-                <div class="col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                    <select id="name-${index}"
-                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                            onchange="onSalespersonNameChange(${index})">
-                        <option value="">Select...</option>
-                        ${nameOptions}
-                        ${person.name && !configuredPeople.includes(person.name) ? 
-                            `<option value="${person.name}" selected>${person.name}</option>` : ''}
-                    </select>
+                <div class="col-span-2" style="display:none;">
+                    <input type="hidden" id="name-${index}" value="${person.name || ''}">
                 </div>
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Target (RM)</label>
                     <input type="number" 
-                           id="target-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="50000"
-                           value="${person.target || ''}"
-                           onfocus="this.readOnly=false;this.style.backgroundColor='';"
-                           oninput="updateSalespersonData(${index})">
+                       id="target-${index}"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
+                       value=""
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set in Salesperson → Target">
                 </div>
                 
                 <div>
@@ -1108,22 +1205,26 @@ function renderAllSalespeopleCards() {
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Target (RM)</label>
                     <input type="number" 
-                           id="quarterly-target-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="150000"
-                           value="${person.quarterlyTarget || 150000}"
-                           oninput="updateSalespersonData(${index})">
+                       id="quarterly-target-${index}"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Auto (Q months total)"
+                       value=""
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Auto: sum of quarterly months targets">
                     <p class="text-xs text-gray-500 mt-1">3 months total target</p>
                 </div>
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Sales (RM)</label>
                     <input type="number" 
-                           id="quarterly-sales-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="145000"
-                           value="${person.quarterlySales || 145000}"
-                           oninput="updateSalespersonData(${index})">
+                       id="quarterly-sales-${index}"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Auto (Q months total)"
+                       value=""
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Auto: sum of quarterly months sales">
                     <p class="text-xs text-gray-500 mt-1">3 months total sales</p>
                 </div>
                 
@@ -1133,17 +1234,19 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (RM)</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (Outlets)</label>
                     <input type="number" 
-                           id="collection-target-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="30000"
-                           value="${person.collectionTarget || 30000}"
-                           oninput="updateSalespersonData(${index})">
+                       id="collection-target-${index}"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
+                       value=""
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set in Salesperson → Target">
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Collection Amount (RM)</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Collected Outlets</label>
                     <input type="number" 
                            id="collection-amount-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -1155,11 +1258,13 @@ function renderAllSalespeopleCards() {
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Target)</label>
                     <input type="number" 
-                           id="call-target-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="100"
-                           value="${person.callTarget || 100}"
-                           oninput="updateSalespersonData(${index})">
+                       id="call-target-${index}"
+                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       placeholder="Set in Salesperson tab"
+                       value=""
+                       disabled readonly
+                       style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
+                       title="Set in Salesperson → Target">
                 </div>
                 
                 <div>
@@ -1214,28 +1319,13 @@ function renderAllSalespeopleCards() {
         
         // Restore data and re-apply locked fields
         setTimeout(() => {
-            // Restore name select value for configured people
+            // Sync hidden name input
             const nameEl = document.getElementById('name-' + index);
             if (nameEl && person.name) {
-                // Try to select matching option
-                const option = Array.from(nameEl.options).find(
-                    o => o.value.toUpperCase() === person.name.toUpperCase()
-                );
-                if (option) {
-                    nameEl.value = option.value;
-                } else if (person.name) {
-                    // Add option if not found
-                    const opt = document.createElement('option');
-                    opt.value = person.name;
-                    opt.text = person.name;
-                    nameEl.appendChild(opt);
-                    nameEl.value = person.name;
-                }
+                nameEl.value = person.name;
             }
-            // Re-apply locked fields (quarterly target, collection target)
-            if (typeof autoFillLockedFields === 'function') {
-                autoFillLockedFields(index);
-            }
+            // Apply target locks from config
+            if (typeof applyPersonTarget === 'function') applyPersonTarget(index);
             updateSalespersonData(index);
         }, 50);
     });
@@ -1256,8 +1346,24 @@ function updateSalespersonData(index) {
         return;
     }
     
-    person.name = nameInput.value;
-    person.target = parseFloat(targetInput.value) || 0;
+    // Use appState name as primary source (set by sidebar click)
+    // Only update from DOM if appState is empty
+    if (!person.name || person.name.trim() === '') {
+        if (nameInput && nameInput.value && nameInput.value.trim() !== '') {
+            person.name = nameInput.value.trim();
+        } else {
+            var nd = document.getElementById('card-name-text-' + index);
+            if (nd && nd.textContent && nd.textContent.trim() !== '—') {
+                person.name = nd.textContent.trim();
+            }
+        }
+    }
+    // Always sync hidden input with appState name
+    if (nameInput && person.name) nameInput.value = person.name;
+    // If target field is locked (disabled), read from appState to preserve locked value
+    person.target = (targetInput && targetInput.disabled && person.target)
+        ? person.target
+        : (parseFloat(targetInput ? targetInput.value : 0) || 0);
     person.sales = parseFloat(salesInput.value) || 0;
 
     // ── Re-calculate quarterly fields if quarter-end month ──
@@ -1400,7 +1506,15 @@ function updateSalespersonData(index) {
         // Sync valid people into reportHistory
         if (_month) {
             if (!window.appState.config.reportHistory) window.appState.config.reportHistory = [];
-            var _valid = window.appState.salespeople.filter(function(p){ return p.name && (p.target>0||p.sales>0); });
+            // Also sync sales from input fields before saving
+            window.appState.salespeople.forEach(function(p, i) {
+                var sEl = document.getElementById('sales-' + i);
+                if (sEl) p.sales = parseFloat(sEl.value) || p.sales || 0;
+                var tEl = document.getElementById('target-' + i);
+                if (tEl && tEl.disabled && p.target) {} // keep appState value
+                else if (tEl) p.target = parseFloat(tEl.value) || p.target || 0;
+            });
+            var _valid = window.appState.salespeople.filter(function(p){ return p.name && p.name.trim() !== ''; });
             if (_valid.length > 0) {
                 var _ei = window.appState.config.reportHistory.findIndex(function(r){ return (r.month||'').toUpperCase()===_month; });
                 var _hd = _valid.map(function(p){ return {name:(p.name||'').toUpperCase(),target:p.target||0,sales:p.sales||0,collectionTarget:p.collectionTarget||0,collectionAmount:p.collectionAmount||0,callTarget:p.callTarget||0,callActual:p.callActual||0}; });
@@ -1606,19 +1720,76 @@ function renderPersonSidebar() {
             + (ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(0)+'%</span>' : '');
 
         row.addEventListener('click', (function(name){ return function() {
-            // Mark active
+            var mon = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+            var hist = window.appState.config.reportHistory || [];
+
+            // ── SAVE current card data back to current person ──────────────
+            var curName = (document.getElementById('name-0')||{}).value || '';
+            if (curName && curName.toUpperCase() !== name.toUpperCase()) {
+                function getField(id) {
+                    var el = document.getElementById(id + '-0');
+                    if (!el) return 0;
+                    // For disabled fields, also check appState
+                    if (el.disabled) {
+                        var sp = window.appState.salespeople[0];
+                        if (id === 'target' && sp && sp.target) return sp.target;
+                        if (id === 'collection-target' && sp && sp.collectionTarget) return sp.collectionTarget;
+                        if (id === 'call-target' && sp && sp.callTarget) return sp.callTarget;
+                    }
+                    return parseFloat(el.value)||0;
+                }
+                var curData = {
+                    name: curName.toUpperCase(),
+                    target:          getField('target'),
+                    sales:           getField('sales'),
+                    quarterlyTarget: getField('quarterly-target'),
+                    quarterlySales:  getField('quarterly-sales'),
+                    collectionTarget:getField('collection-target'),
+                    collectionAmount:getField('collection-amount'),
+                    callTarget:      getField('call-target'),
+                    callActual:      getField('call-actual')
+                };
+                // Save into reportHistory for current month
+                var hIdx = hist.findIndex(function(r){ return (r.month||'').toUpperCase() === mon; });
+                if (hIdx < 0) {
+                    hist.push({ month: mon, data: [] });
+                    hIdx = hist.length - 1;
+                }
+                var pIdx = hist[hIdx].data.findIndex(function(p){ return (p.name||'').toUpperCase() === curName.toUpperCase(); });
+                if (pIdx >= 0) hist[hIdx].data[pIdx] = curData;
+                else hist[hIdx].data.push(curData);
+                window.appState.config.reportHistory = hist;
+                // Update appState
+                if (window.appState.salespeople[0]) {
+                    window.appState.salespeople[0].sales           = curData.sales;
+                    window.appState.salespeople[0].target          = curData.target;
+                    window.appState.salespeople[0].collectionAmount= curData.collectionAmount;
+                    window.appState.salespeople[0].callActual      = curData.callActual;
+                }
+                // Persist to DB
+                saveConfig();
+                dbSave('reportHistory', hist).catch(function(){});
+                // Persist to DB
+                saveConfig();
+                dbSave('reportHistory', hist).catch(function(){});
+            }
+
+            // ── Mark active ───────────────────────────────────────────────
             document.querySelectorAll('.person-row').forEach(function(r){ r.classList.remove('active'); });
             row.classList.add('active');
 
-            // Get this month's history for this person
-            var mon = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
-            var hist = window.appState.config.reportHistory || [];
+            // ── Load selected person's data ───────────────────────────────
             var hEntry = hist.find(function(r){ return (r.month||'').toUpperCase() === mon; });
             var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){ return (p.name||'').toUpperCase() === name.toUpperCase(); }) : null;
 
-            // Update the single card
+            // Update hidden input
             var nameEl = document.getElementById('name-0');
             if (nameEl) nameEl.value = name;
+            // Update card header display
+            var nameText = document.getElementById('card-name-text-0');
+            var avatarEl = document.getElementById('card-avatar-0');
+            if (nameText) nameText.textContent = name;
+            if (avatarEl) avatarEl.textContent = name ? name[0] : '?';
 
             function setField(id, v) {
                 var el = document.getElementById(id + '-0');
@@ -1635,17 +1806,24 @@ function renderPersonSidebar() {
                 setField('call-target',      pd.callTarget      || '');
                 setField('call-actual',      pd.callActual      || '');
             } else {
-                // No history — clear fields for fresh input
                 ['target','sales','quarterly-target','quarterly-sales',
                  'collection-target','collection-amount','call-target','call-actual'].forEach(function(id){
                     setField(id, '');
                 });
             }
 
-            // Update appState salespeople[0] name
+            // Update appState
             if (window.appState.salespeople.length > 0) {
                 window.appState.salespeople[0].name = name;
+                // Pre-set target values in appState for locked field logic
+                if (pd) {
+                    window.appState.salespeople[0].target = parseFloat(pd.target) || 0;
+                    window.appState.salespeople[0].collectionTarget = parseFloat(pd.collectionTarget) || 0;
+                    window.appState.salespeople[0].callTarget = parseFloat(pd.callTarget) || 0;
+                }
             }
+            // Apply target locks BEFORE updateSalespersonData
+            if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
             updateSalespersonData(0);
         }; })(personName));
 
@@ -3118,38 +3296,16 @@ function autoFillLockedFields(index) {
         }
 
         const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
-        if (qTargetEl) { qTargetEl.value = qTarget || ''; qTargetEl.readOnly = true; qTargetEl.style.backgroundColor = '#f0fdf4'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
-        if (qSalesEl) { qSalesEl.value = qSales || ''; qSalesEl.readOnly = true; qSalesEl.style.backgroundColor = '#f0fdf4'; qSalesEl.title = tooltip; person.quarterlySales = qSales; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = qTarget || ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
+        if (qSalesEl) { qSalesEl.removeAttribute('disabled'); qSalesEl.value = qSales || ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.title = tooltip; person.quarterlySales = qSales; }
         console.log(`📊 Quarterly auto-fill for ${nameUpper} (${month}):`, details);
     } else {
-        if (qTargetEl) { qTargetEl.value = ''; qTargetEl.readOnly = false; qTargetEl.style.backgroundColor = ''; qTargetEl.title = 'Quarterly bonus only applies in MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
-        if (qSalesEl) { qSalesEl.value = ''; qSalesEl.readOnly = false; qSalesEl.style.backgroundColor = ''; qSalesEl.title = 'Quarterly bonus only applies in MAR/JUN/SEP/DEC'; person.quarterlySales = 0; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
+        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlySales  = 0; }
     }
 
-    // ══════════════════════════════════════════════════════
-    // Collection Target — auto from 2 months ago sales
-    // ══════════════════════════════════════════════════════
-    let collTarget = 0, collLabel = '';
-    if (currentIdx >= 0) {
-        let twoMonthsAgo;
-        if (currentIdx >= 2) { twoMonthsAgo = months[currentIdx - 2]; }
-        else if (currentIdx === 1) { twoMonthsAgo = months[11]; }
-        else { twoMonthsAgo = months[10]; }
-
-        const d = getData(twoMonthsAgo);
-        if (d) {
-            collTarget = d.sales;
-            collLabel = 'Auto: ' + twoMonthsAgo + ' sales = RM ' + collTarget.toLocaleString() + ' (' + d.source + ')';
-        } else {
-            collLabel = 'No data for ' + twoMonthsAgo;
-        }
-    }
-    const cEl = document.getElementById('collection-target-' + index);
-    if (cEl) {
-        if (collTarget>0) { cEl.value=collTarget; cEl.readOnly=true; cEl.style.backgroundColor='#f3f4f6'; cEl.title=collLabel; }
-        else { cEl.value=''; cEl.readOnly=false; cEl.style.backgroundColor=''; cEl.title=''; }
-        person.collectionTarget=collTarget;
-    }
+    // Collection Target (Outlets) — set from person_outlet_targets via applyPersonTarget
+    // No auto-calculation here; handled by applyPersonTarget
 }
 
 // Import Excel
@@ -3337,11 +3493,11 @@ function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
         }
 
         const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
-        if (qTargetEl) { qTargetEl.value = qTarget || ''; qTargetEl.readOnly = true; qTargetEl.style.backgroundColor = '#f0fdf4'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
-        if (qSalesEl) { qSalesEl.value = qSales || ''; qSalesEl.readOnly = true; qSalesEl.style.backgroundColor = '#f0fdf4'; qSalesEl.title = tooltip; person.quarterlySales = qSales; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = qTarget || ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
+        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = qSales  || ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = tooltip; person.quarterlySales  = qSales; }
     } else {
-        if (qTargetEl) { qTargetEl.value = ''; qTargetEl.readOnly = false; qTargetEl.style.backgroundColor = ''; qTargetEl.title = 'Quarterly bonus only in MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
-        if (qSalesEl) { qSalesEl.value = ''; qSalesEl.readOnly = false; qSalesEl.style.backgroundColor = ''; qSalesEl.title = 'Quarterly bonus only in MAR/JUN/SEP/DEC'; person.quarterlySales = 0; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
+        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlySales  = 0; }
     }
 
     // ── Collection Target — from 2 months ago (try Excel first, then history) ──
@@ -3368,9 +3524,13 @@ function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
     }
     const cEl = document.getElementById('collection-target-' + index);
     if (cEl) {
-        if (collTarget>0) { cEl.value=collTarget; cEl.readOnly=true; cEl.style.backgroundColor='#f3f4f6'; cEl.title=collLabel; }
-        else { cEl.value=''; cEl.readOnly=false; cEl.style.backgroundColor=''; cEl.title=''; }
-        person.collectionTarget=collTarget;
+        // Keep disabled — value set by applyPersonTarget from person_outlet_targets
+        cEl.removeAttribute('disabled');
+        cEl.value = collTarget || '';
+        cEl.setAttribute('disabled', 'disabled');
+        cEl.style.background = '#f1f5f9';
+        cEl.style.color = '#64748b';
+        person.collectionTarget = collTarget;
     }
 }
 
@@ -3498,7 +3658,7 @@ function viewHistoryReport(index) {
     var existing = document.getElementById('history-view-modal');
     if (existing) existing.remove();
 
-    var cards = people.map(function(p) {
+    var cards = people.map(function(p, pIdx) {
         var nu       = (p.name || '').toUpperCase();
         var salary   = (cfg.base_salaries && cfg.base_salaries[nu]) || 0;
         var allow    = (cfg.allowances    && cfg.allowances[nu])    || {};
@@ -3529,7 +3689,7 @@ function viewHistoryReport(index) {
 
         var achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
 
-        return '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
+        return '<div id="hv-person-'+pIdx+'" style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
             + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
             + '<span style="font-size:20px;">&#128100;</span>'
             + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + '</h3></div>'
@@ -3550,6 +3710,14 @@ function viewHistoryReport(index) {
             + '</div></div>';
     }).join('');
 
+    // Build person quick-jump buttons
+    var personBtns = people.map(function(p, i) {
+        var shortName = (p.name||'').substring(0,8);
+        return '<button data-person-idx="'+i+'" style="padding:5px 12px;border:1px solid rgba(255,255,255,0.3);border-radius:20px;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;font-size:11px;font-weight:600;font-family:Sora,sans-serif;white-space:nowrap;" '
+            + 'onclick="(function(){var el=document.getElementById(\'hv-person-'+i+'\');if(el)el.scrollIntoView({behavior:\'smooth\',block:\'start\'});})()">'
+            + shortName + '</button>';
+    }).join('');
+
     var modal = document.createElement('div');
     modal.id = 'history-view-modal';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:flex-start;justify-content:center;z-index:99999;padding:20px;box-sizing:border-box;overflow-y:auto;';
@@ -3558,13 +3726,15 @@ function viewHistoryReport(index) {
     box.style.cssText = 'background:#f9fafb;border-radius:16px;max-width:640px;width:100%;box-shadow:0 25px 60px rgba(0,0,0,0.3);overflow:hidden;margin:auto;';
 
     var closeBtn = '<button onclick="document.getElementById(\'history-view-modal\').remove()" style="padding:8px 16px;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">&#10005; Close</button>';
-    var excelBtn = '<button onclick="exportHistoryToExcel(' + index + ')" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">&#128202; Excel</button>';
 
-    box.innerHTML = '<div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:20px 24px;color:#fff;display:flex;justify-content:space-between;align-items:center;">'
+    box.innerHTML = '<div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:20px 24px;color:#fff;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
         + '<div><div style="font-size:20px;font-weight:700;">' + month + ' Report</div>'
         + '<div style="font-size:13px;opacity:0.85;margin-top:4px;">' + people.length + ' salespeople</div></div>'
-        + '<div style="display:flex;gap:8px;">' + excelBtn + closeBtn + '</div></div>'
-        + '<div style="padding:20px;max-height:70vh;overflow-y:auto;">'
+        + '<div style="display:flex;gap:8px;">' + closeBtn + '</div></div>'
+        + (people.length > 1 ? '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">' + personBtns + '</div>' : '')
+        + '</div>'
+        + '<div id="hv-scroll-area" style="padding:20px;max-height:70vh;overflow-y:auto;">'
         + (people.length > 0 ? cards : '<div style="text-align:center;padding:40px;color:#6b7280;">No data for this month</div>')
         + '</div>';
 
@@ -3687,7 +3857,7 @@ function loadQuickCalculateHistory() {
             + '<p class="text-sm text-gray-500">' + people.length + ' people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">' + formatCurrency(totalComm) + '</span></p></div>'
             + '<div class="flex gap-2 flex-wrap justify-end">'
             + '<button onclick="viewHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
-            + '<button onclick="exportHistoryToExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
+            + '<button onclick="openHistoryExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
             + '<button onclick="printHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>'
             + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>'
             + '</div></div>'
@@ -3719,9 +3889,12 @@ function updateLivePayslip() {
     }
     var cfg = window.appState.config;
     var nu  = (person.name || '').toUpperCase();
-    var salary  = (cfg.base_salaries  && cfg.base_salaries[nu])  || 0;
-    var allow   = (cfg.allowances     && cfg.allowances[nu])     || {};
-    var epfRate = (cfg.deductionRates && cfg.deductionRates[nu]  && cfg.deductionRates[nu].EPF_RATE) || 11;
+    // Use salary for the current report month (not latest salary)
+    var curMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var salaryRec = getSalaryForMonth(person.name, curMonth);
+    var salary  = salaryRec.salary;
+    var allow   = salaryRec.allowances;
+    var epfRate = salaryRec.epfRate;
     var hp=allow.HP||0, car=allow.CAR||0, lf=allow['LOCAL FUEL']||0;
     var of2=allow['OUTSTATION FUEL']||0, hs=allow.HOUSING||0, food=allow.FOOD||0, oth=allow.OTHERS||0;
     var sales   = parseFloat(person.sales)  || 0;
@@ -3756,7 +3929,33 @@ function updateLivePayslip() {
     }
     if(g('ps-team')) g('ps-team').textContent = formatCurrency(teamSales || sales);
     if(g('ps-grand'))    g('ps-grand').textContent    = formatCurrency(grand);
+    // Calculate team total income for TEAM% column
+    var teamTotalIncome = 0;
+    if (hEntry && hEntry.data) {
+        hEntry.data.forEach(function(tp) {
+            var tnu = (tp.name||'').toUpperCase();
+            var tSalRec = getSalaryForMonth(tp.name, curMonth);
+            var tSalary = tSalRec.salary;
+            var tAllow = tSalRec.allowances;
+            var tTotalAllow = (tAllow.HP||0)+(tAllow.CAR||0)+(tAllow['LOCAL FUEL']||0)+(tAllow['OUTSTATION FUEL']||0)+(tAllow.HOUSING||0)+(tAllow.FOOD||0)+(tAllow.OTHERS||0);
+            var tFixed = tSalary + tTotalAllow;
+            var tSales = parseFloat(tp.sales)||0;
+            var tTarget = parseFloat(tp.target)||0;
+            var tComm = calculateCommission(tSales, tTarget, tp.name);
+            var tCollPct = (tp.collectionTarget||0)>0?(tp.collectionAmount||0)/tp.collectionTarget*100:0;
+            var tCallPct = (tp.callTarget||0)>0?(tp.callActual||0)/tp.callTarget*100:0;
+            var tCollBon = calculateIncentive(tCollPct, cfg.collection_incentive||[]);
+            var tCallBon = calculateIncentive(tCallPct, cfg.active_call_incentive||[]);
+            var tAch = tTarget>0?(tSales/tTarget*100):0;
+            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(curMonth)!==-1;
+            var tQtrBon = isQtr?calculateIncentive(tAch, cfg.quarterly_incentive||[]):0;
+            teamTotalIncome += tFixed + tComm + tCollBon + tCallBon + tQtrBon;
+        });
+    }
+    if (teamTotalIncome <= 0) teamTotalIncome = totalInc; // fallback to individual
+
     function fp(v){ return totalInc>0 ? (v/totalInc*100).toFixed(2)+'%' : '0.00%'; }
+    function tp(v){ return teamTotalIncome>0 ? (v/teamTotalIncome*100).toFixed(2)+'%' : '0.00%'; }
     function fc(v){ return formatCurrency(v); }
     function sec(l){ return '<tr style="background:#E6F1FB;"><td colspan="4" style="padding:4px 10px;font-weight:600;color:#0C447C;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'+l+'</td></tr>'; }
     function row(l,v,blue,bold){
@@ -3767,14 +3966,14 @@ function updateLivePayslip() {
             +'<td style="padding:4px 10px;'+fw+lc+'">'+l+'</td>'
             +'<td style="padding:4px 6px;text-align:right;'+fw+tc+'">'+fc(v)+'</td>'
             +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td></tr>';
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
     }
     function erow(v){
         return '<tr style="border-top:0.5px solid var(--line);">'
             +'<td style="padding:4px 10px;color:var(--ink3);">EPF '+epfRate+'%</td>'
             +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
             +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td></tr>';
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
     }
     var html = sec('INCOME') + row('SALARY',salary,true,false) + sec('ALLOWANCES');
     if(hp)   html += row('HP',              hp,   true, false);
@@ -3915,9 +4114,11 @@ function openHistoryExcel(index) {
         });
         var salesData=reportData.map(function(p){
             var nu=(p.name||'').toUpperCase();
-            var salary=(cfg.base_salaries&&cfg.base_salaries[nu])||1700;
-            var allowances=(cfg.allowances&&cfg.allowances[nu])||{};
-            var epfRate=(cfg.deductionRates&&cfg.deductionRates[nu]&&cfg.deductionRates[nu].EPF_RATE)||11;
+            // Use salary that was effective for that month
+            var salRec = getSalaryForMonth(p.name, report.month);
+            var salary    = salRec.salary;
+            var allowances= salRec.allowances;
+            var epfRate   = salRec.epfRate;
             var target=parseFloat(p.target)||0,sales=parseFloat(p.sales)||0;
             var collTgt=parseFloat(p.collectionTarget)||0,collAmt=parseFloat(p.collectionAmount)||0;
             var callTgt=parseFloat(p.callTarget)||0,callAct=parseFloat(p.callActual)||0;
@@ -3941,6 +4142,705 @@ function openHistoryExcel(index) {
     } catch(e){ showToast('❌', e.message); }
 }
 window.openHistoryExcel = openHistoryExcel;
+
+
+// ==================== Salary History Helpers ====================
+
+function getSalaryForMonth(personName, monthStr) {
+    var cfg = window.appState.config;
+    var nu = (personName||'').toUpperCase();
+    var history = cfg.salary_history && cfg.salary_history[nu];
+
+    if (!history || history.length === 0) {
+        return {
+            salary:     (cfg.base_salaries && cfg.base_salaries[nu]) || 1700,
+            allowances: (cfg.allowances    && cfg.allowances[nu])    || {},
+            epfRate:    (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11
+        };
+    }
+
+    // Build targetYM from monthStr + current year (e.g. 'MAR' -> '2026-03')
+    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var curYear = new Date().getFullYear();
+    var mIdx = monthOrder.indexOf((monthStr||'').toUpperCase());
+    if (mIdx < 0) mIdx = 0;
+    var targetYM = curYear + '-' + String(mIdx + 1).padStart(2, '0');
+
+    // Sort ascending by effectiveFrom
+    var sorted = history.slice().sort(function(a, b) {
+        return (a.effectiveFrom||'').localeCompare(b.effectiveFrom||'');
+    });
+
+    // Find the LAST entry whose effectiveFrom <= targetYM
+    // i.e. the salary that was in effect at that month
+    var match = null;
+    for (var i = 0; i < sorted.length; i++) {
+        if ((sorted[i].effectiveFrom||'') <= targetYM) {
+            match = sorted[i]; // keep updating - we want the latest applicable
+        }
+    }
+
+    // If no record is <= targetYM, use the oldest (earliest) record
+    // (salary was set before we started tracking history)
+    if (!match) match = sorted[0];
+
+    return {
+        salary:     match.salary     || 1700,
+        allowances: match.allowances || {},
+        epfRate:    match.epfRate    || 11
+    };
+}
+
+function getCurrentSalary(personName) {
+    var cfg = window.appState.config;
+    var nu = (personName||'').toUpperCase();
+    var history = cfg.salary_history && cfg.salary_history[nu];
+    if (!history || history.length === 0) {
+        return {
+            salary:     (cfg.base_salaries && cfg.base_salaries[nu]) || 1700,
+            allowances: (cfg.allowances    && cfg.allowances[nu])    || {},
+            epfRate:    (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11
+        };
+    }
+    // Most recent entry
+    var sorted = history.slice().sort(function(a,b){ return (b.effectiveFrom||'').localeCompare(a.effectiveFrom||''); });
+    return { salary: sorted[0].salary||1700, allowances: sorted[0].allowances||{}, epfRate: sorted[0].epfRate||11 };
+}
+
+window.getSalaryForMonth = getSalaryForMonth;
+window.getCurrentSalary  = getCurrentSalary;
+
+
+// ==================== Salary History Migration ====================
+function fixSalaryHistory() {
+    // Run on startup - ensure every person has an origin salary record
+    var cfg = window.appState.config;
+    if (!cfg || !cfg.base_salaries) return;
+    if (!cfg.salary_history) cfg.salary_history = {};
+
+    var changed = false;
+    Object.keys(cfg.base_salaries).forEach(function(nu) {
+        var history = cfg.salary_history[nu];
+        
+        if (!history || history.length === 0) {
+            // No history at all - create origin from current flat values
+            cfg.salary_history[nu] = [{
+                salary:        cfg.base_salaries[nu] || 1700,
+                allowances:    (cfg.allowances && cfg.allowances[nu])    || {},
+                epfRate:       (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11,
+                effectiveFrom: '2000-01'
+            }];
+            changed = true;
+            console.log('✅ Created origin salary record for', nu);
+        } else {
+            // Has history - check if earliest record covers all report months
+            var sorted = history.slice().sort(function(a,b){
+                return (a.effectiveFrom||'').localeCompare(b.effectiveFrom||'');
+            });
+            var earliest = sorted[0].effectiveFrom || '';
+            
+            // Find earliest report month in reportHistory
+            var reports = cfg.reportHistory || [];
+            var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+            var curYear = new Date().getFullYear();
+            var earliestReport = null;
+            reports.forEach(function(r) {
+                var mi = monthOrder.indexOf((r.month||'').toUpperCase());
+                if (mi < 0) return;
+                var ym = curYear + '-' + String(mi+1).padStart(2,'0');
+                if (!earliestReport || ym < earliestReport) earliestReport = ym;
+            });
+
+            // If earliest salary record is AFTER earliest report, need an origin record
+            if (earliestReport && earliest > earliestReport) {
+                // The oldest salary record is newer than some reports
+                // Add an origin record with the oldest known salary
+                cfg.salary_history[nu].push({
+                    salary:        sorted[0].salary,
+                    allowances:    sorted[0].allowances || {},
+                    epfRate:       sorted[0].epfRate || 11,
+                    effectiveFrom: '2000-01'
+                });
+                cfg.salary_history[nu].sort(function(a,b){
+                    return (a.effectiveFrom||'').localeCompare(b.effectiveFrom||'');
+                });
+                changed = true;
+                console.log('✅ Added origin record for', nu, '- old salary preserved for reports before', earliest);
+            }
+        }
+    });
+
+    if (changed) {
+        saveConfig();
+        console.log('✅ Salary history migration complete');
+    }
+}
+window.fixSalaryHistory = fixSalaryHistory;
+
+
+// ==================== Target Setup ====================
+
+function showTargetModal(personName) {
+    var ex = document.getElementById('target-setup-modal');
+    if (ex) ex.remove();
+
+    var cfg = window.appState.config;
+    var nu  = personName.toUpperCase();
+    var targets = (cfg.person_targets && cfg.person_targets[nu]) || {};
+    var months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+    var overlay = document.createElement('div');
+    overlay.id = 'target-setup-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:flex-start;justify-content:center;z-index:99999;overflow-y:auto;box-sizing:border-box;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:16px;width:920px;min-width:920px;margin:20px auto;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.addEventListener('click', function(e){ e.stopPropagation(); });
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:linear-gradient(135deg,#0f172a,#0369a1);padding:20px 24px;color:#fff;flex-shrink:0;';
+    hdr.innerHTML = '<div style="font-size:17px;font-weight:800;">🎯 Monthly Target Setting</div>'
+        + '<div style="font-size:12px;opacity:.6;margin-top:3px;">' + personName + ' — Set target for each month</div>';
+    card.appendChild(hdr);
+
+    // Body - month grid
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:20px 24px;overflow-y:auto;flex:1;';
+
+    // Year selector
+    var curYear = new Date().getFullYear();
+    var yearRow = document.createElement('div');
+    yearRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:16px;';
+    yearRow.innerHTML = '<label style="font-size:12px;font-weight:700;color:var(--ink3);">Year:</label>';
+    var yearSel = document.createElement('select');
+    yearSel.style.cssText = 'padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);';
+    [curYear-1, curYear, curYear+1].forEach(function(y){
+        var opt = document.createElement('option');
+        opt.value = y; opt.textContent = y;
+        if (y === curYear) opt.selected = true;
+        yearSel.appendChild(opt);
+    });
+    yearRow.appendChild(yearSel);
+    body.appendChild(yearRow);
+
+    // Month grid
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:16px;width:100%;';
+
+    function buildGrid(year) {
+        grid.innerHTML = '';
+        var outletTargets = (cfg.person_outlet_targets && cfg.person_outlet_targets[nu]) || {};
+        months.forEach(function(mon) {
+            var key = year + '-' + mon;
+            var val = targets[key] || '';
+            var outletVal = outletTargets[key] || '';
+            var cell = document.createElement('div');
+            cell.style.cssText = 'background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;';
+
+            var hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:13px;font-weight:800;color:var(--ink);letter-spacing:.5px;margin-bottom:12px;';
+            hdr.textContent = mon + ' ' + year;
+            cell.appendChild(hdr);
+
+            // Target (RM)
+            var lbl1 = document.createElement('div');
+            lbl1.style.cssText = 'font-size:11px;color:var(--ink4);margin-bottom:5px;text-transform:uppercase;font-weight:600;';
+            lbl1.textContent = 'Sale Target (RM)';
+            cell.appendChild(lbl1);
+            var inp = document.createElement('input');
+            inp.type = 'number'; inp.placeholder = '0'; inp.value = val;
+            inp.dataset.key = key; inp.dataset.fieldtype = 'target';
+            inp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
+            inp.addEventListener('focus', function(){ this.style.borderColor='var(--blue)'; });
+            inp.addEventListener('blur',  function(){ this.style.borderColor='var(--line)'; });
+            cell.appendChild(inp);
+
+            // Outlets
+            var lbl2 = document.createElement('div');
+            lbl2.style.cssText = 'font-size:11px;color:#92400e;margin-bottom:5px;text-transform:uppercase;font-weight:700;';
+            lbl2.textContent = 'Collection Target';
+            cell.appendChild(lbl2);
+            var outInp = document.createElement('input');
+            outInp.type = 'number'; outInp.placeholder = '0'; outInp.value = outletVal;
+            outInp.dataset.key = key; outInp.dataset.fieldtype = 'outlet';
+            outInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #fde68a;border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:#fffbeb;color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
+            outInp.addEventListener('focus', function(){ this.style.borderColor='var(--am)'; });
+            outInp.addEventListener('blur',  function(){ this.style.borderColor='#fde68a'; });
+            cell.appendChild(outInp);
+
+            // Active Calls Target
+            var callTargets = (cfg.person_call_targets && cfg.person_call_targets[nu]) || {};
+            var callVal = callTargets[key] || '';
+            var lbl3 = document.createElement('div');
+            lbl3.style.cssText = 'font-size:11px;color:#5b21b6;margin-bottom:5px;text-transform:uppercase;font-weight:700;';
+            lbl3.textContent = 'Active Calls Target';
+            cell.appendChild(lbl3);
+            var callInp = document.createElement('input');
+            callInp.type = 'number'; callInp.placeholder = '0'; callInp.value = callVal;
+            callInp.dataset.key = key; callInp.dataset.fieldtype = 'call';
+            callInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #ddd6fe;border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:#f5f3ff;color:var(--ink);box-sizing:border-box;';
+            callInp.addEventListener('focus', function(){ this.style.borderColor='var(--vi)'; });
+            callInp.addEventListener('blur',  function(){ this.style.borderColor='#ddd6fe'; });
+            cell.appendChild(callInp);
+
+            grid.appendChild(cell);
+        });
+    }
+
+    buildGrid(curYear);
+    yearSel.addEventListener('change', function(){ buildGrid(parseInt(this.value)); });
+    body.appendChild(grid);
+    card.appendChild(body);
+
+    // Footer
+    var foot = document.createElement('div');
+    foot.style.cssText = 'padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--paper);flex-shrink:0;';
+    var btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
+    var btnSave = document.createElement('button');
+    btnSave.textContent = '💾 Save & Confirm ✓';
+    btnSave.style.cssText = 'padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#0369a1);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+    foot.appendChild(btnCancel);
+    foot.appendChild(btnSave);
+    card.appendChild(foot);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+    btnCancel.addEventListener('click', function(){ overlay.remove(); });
+    btnSave.addEventListener('click', function(){
+        if (!cfg.person_targets) cfg.person_targets = {};
+        if (!cfg.person_targets[nu]) cfg.person_targets[nu] = {};
+        if (!cfg.person_outlet_targets) cfg.person_outlet_targets = {};
+        if (!cfg.person_outlet_targets[nu]) cfg.person_outlet_targets[nu] = {};
+        if (!cfg.person_call_targets) cfg.person_call_targets = {};
+        if (!cfg.person_call_targets[nu]) cfg.person_call_targets[nu] = {};
+        grid.querySelectorAll('input').forEach(function(inp){
+            var key = inp.dataset.key;
+            var val = parseFloat(inp.value) || 0;
+            if (inp.dataset.fieldtype === 'outlet') {
+                if (val > 0) cfg.person_outlet_targets[nu][key] = val;
+                else delete cfg.person_outlet_targets[nu][key];
+            } else if (inp.dataset.fieldtype === 'call') {
+                if (val > 0) cfg.person_call_targets[nu][key] = val;
+                else delete cfg.person_call_targets[nu][key];
+            } else {
+                if (val > 0) cfg.person_targets[nu][key] = val;
+                else delete cfg.person_targets[nu][key];
+            }
+        });
+        saveConfig();
+        overlay.remove();
+        showToast('✅', personName + ' targets saved!');
+        // Refresh calculate card if visible
+        if (window.appState.salespeople.length > 0) {
+            applyPersonTarget(0);
+        }
+    });
+}
+
+function applyPersonTarget(cardIndex) {
+    // Apply the set target for current person + month to the card
+    var person = window.appState.salespeople[cardIndex];
+    if (!person || !person.name) return;
+    var cfg = window.appState.config;
+    var nu  = person.name.toUpperCase();
+    var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var year  = new Date().getFullYear();
+    var key   = year + '-' + month;
+    var targets = cfg.person_targets && cfg.person_targets[nu];
+    var targetVal = targets && targets[key];
+
+    var targetEl = document.getElementById('target-' + cardIndex);
+    if (targetEl) {
+        if (targetVal) {
+            targetEl.value = targetVal;
+            targetEl.removeAttribute('disabled');
+            targetEl.value = targetVal;
+            targetEl.setAttribute('disabled', 'disabled');
+            targetEl.setAttribute('readonly', 'readonly');
+            targetEl.style.cssText += ';background:#f1f5f9!important;color:#64748b!important;cursor:not-allowed!important;pointer-events:none!important;user-select:none!important;';
+            targetEl.title = 'Target locked — change in Salesperson → Target';
+            // Force value lock — prevent any changes via events
+            if (!targetEl._locked) {
+                targetEl._locked = true;
+                targetEl._lockedValue = targetVal;
+                targetEl.addEventListener('input',  function(){ this.value = this._lockedValue; });
+                targetEl.addEventListener('change', function(){ this.value = this._lockedValue; });
+                targetEl.addEventListener('keydown',function(e){ e.preventDefault(); });
+                targetEl.addEventListener('paste',  function(e){ e.preventDefault(); });
+            } else {
+                targetEl._lockedValue = targetVal;
+            }
+            if (window.appState.salespeople[cardIndex]) {
+                window.appState.salespeople[cardIndex].target = targetVal;
+            }
+        } else {
+            targetEl.removeAttribute('disabled');
+            targetEl.removeAttribute('readonly');
+            targetEl.style.background = '';
+            targetEl.style.color = '';
+            targetEl.style.cursor = '';
+            targetEl.style.pointerEvents = '';
+            targetEl.title = '';
+            targetEl._locked = false;
+            targetEl._lockedValue = null;
+        }
+    }
+
+    // Apply Collection Target (Outlets)
+    var collEl = document.getElementById('collection-target-' + cardIndex);
+    if (collEl) {
+        var outletTargets = cfg.person_outlet_targets && cfg.person_outlet_targets[nu];
+        var outletVal = outletTargets && outletTargets[key];
+        collEl.removeAttribute('disabled');
+        collEl.value = outletVal || '';
+        collEl.setAttribute('disabled', 'disabled');
+        collEl.style.background = '#f1f5f9';
+        collEl.style.color = '#64748b';
+        if (window.appState.salespeople[cardIndex]) {
+            window.appState.salespeople[cardIndex].collectionTarget = parseFloat(outletVal) || 0;
+        }
+    }
+
+    // Apply Active Call Target
+    var callEl = document.getElementById('call-target-' + cardIndex);
+    if (callEl) {
+        var callTargets = cfg.person_call_targets && cfg.person_call_targets[nu];
+        var callVal = callTargets && callTargets[key];
+        callEl.removeAttribute('disabled');
+        callEl.value = callVal || '';
+        callEl.setAttribute('disabled', 'disabled');
+        callEl.style.background = '#f1f5f9';
+        callEl.style.color = '#64748b';
+        if (window.appState.salespeople[cardIndex]) {
+            window.appState.salespeople[cardIndex].callTarget = parseFloat(callVal) || 0;
+        }
+    }
+}
+window.applyPersonTarget = applyPersonTarget;
+window.showTargetModal   = showTargetModal;
+
+
+// ==================== Projection Report ====================
+
+function renderProjectionReport() {
+    var cfg  = window.appState.config;
+    var body = document.getElementById('projection-report-body');
+    if (!body) return;
+
+    // ── Populate person selector ──
+    var personSelect = document.getElementById('proj-person-select');
+    if (personSelect) {
+        var configPeople = Object.keys(cfg.base_salaries || {});
+        var curVal = personSelect.value;
+        // Only rebuild options if list changed
+        var existingNames = Array.from(personSelect.options).map(function(o){return o.value;}).filter(function(v){return v;});
+        if (existingNames.join(',') !== configPeople.join(',')) {
+            var html = '<option value="">— Select —</option>';
+            configPeople.forEach(function(n){ html += '<option value="'+n+'">'+n+'</option>'; });
+            personSelect.innerHTML = html;
+        }
+        // Auto-select: use current value, or fallback to Calculate card person
+        if (!curVal) {
+            var person0 = window.appState.salespeople[0];
+            var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+            if (calcName && configPeople.indexOf(calcName) >= 0) {
+                personSelect.value = calcName;
+            } else if (configPeople.length > 0) {
+                personSelect.value = configPeople[0];
+            }
+        }
+    }
+
+    // ── Auto-select month ──
+    var monthSelect = document.getElementById('proj-month-select');
+    if (monthSelect && !monthSelect._initialized) {
+        var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+        if (calcMonth) monthSelect.value = calcMonth;
+        monthSelect._initialized = true;
+    }
+
+    // ── Read selected values ──
+    var personName = personSelect ? personSelect.value : '';
+    var month = monthSelect ? monthSelect.value.toUpperCase() : '';
+
+    document.getElementById('proj-person-name').textContent = personName || '—';
+    document.getElementById('proj-month-label').textContent = month ? month + ' ' + new Date().getFullYear() : 'No data';
+
+    if (!personName || personName === '—' || !month) {
+        body.innerHTML = '<div style="text-align:center;padding:48px;color:var(--ink4);"><div style="font-size:32px;margin-bottom:12px;">📈</div><div style="font-size:14px;font-weight:600;">No data</div><div style="font-size:12px;margin-top:6px;">Go to Calculate tab, select a person and enter sales data first.</div></div>';
+        return;
+    }
+
+    var nu      = personName.toUpperCase();
+    var sales   = 0;
+    var calls   = 0;
+    var collTgt = 0, collAmt = 0;
+
+    // Read from reportHistory for selected person + month
+    var rh = window.appState.config.reportHistory || [];
+    var rEntry = rh.find(function(r){ return (r.month||'').toUpperCase() === month; });
+    if (rEntry && rEntry.data) {
+        var rp = rEntry.data.find(function(p){ return (p.name||'').toUpperCase() === nu; });
+        if (rp) {
+            sales = parseFloat(rp.sales) || 0;
+            calls = parseFloat(rp.callActual) || 0;
+            collTgt = parseFloat(rp.collectionTarget) || 0;
+            collAmt = parseFloat(rp.collectionAmount) || 0;
+        }
+    }
+    // Fallback: if selected person matches Calculate card, read live values
+    var person0 = window.appState.salespeople[0];
+    var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    if (!sales && person0 && (person0.name||'').toUpperCase() === nu && calcMonth === month) {
+        sales = parseFloat(person0.sales) || 0;
+        calls = parseFloat(person0.callActual) || 0;
+    }
+
+    // Get targets
+    var year    = new Date().getFullYear();
+    var tKey    = year + '-' + month;
+    var target  = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
+    var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
+
+    // Salary data
+    var salRec  = getSalaryForMonth(personName, month);
+    var salary  = salRec.salary || 1700;
+    var allow   = salRec.allowances || {};
+    var epfRate = (salRec.epfRate || 11) / 100;
+    var totalAllow = Object.values(allow).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
+    var fixedIncome = salary + totalAllow;
+
+    // Commission rates
+    var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.010}];
+    var rates    = (cfg.person_commission_rates && cfg.person_commission_rates[nu] && cfg.person_commission_rates[nu].length > 0)
+                    ? cfg.person_commission_rates[nu] : ((cfg.monthly_commission_rates && cfg.monthly_commission_rates.length > 0) ? cfg.monthly_commission_rates : defRates);
+
+    // Call incentive tiers
+    var callTiers = (cfg.person_call_incentive && cfg.person_call_incentive[nu] && cfg.person_call_incentive[nu].length > 0)
+                    ? cfg.person_call_incentive[nu] : (cfg.active_call_incentive || [{min:90,incentive:200},{min:75,incentive:100},{min:60,incentive:50},{min:0,incentive:0}]);
+
+    function getSaleRate(pct) {
+        var sorted = rates.slice().sort(function(a,b){return b.min-a.min;});
+        for (var i=0;i<sorted.length;i++) if (pct>=sorted[i].min) return sorted[i].rate||0;
+        return 0;
+    }
+    function getCallInc(pct) {
+        var sorted = callTiers.slice().sort(function(a,b){return b.min-a.min;});
+        for (var i=0;i<sorted.length;i++) if (pct>=sorted[i].min) return sorted[i].incentive||sorted[i].amt||0;
+        return 0;
+    }
+    function calcIncome(s, cl) {
+        var sp   = target > 0 ? s/target*100 : 0;
+        var cp   = callTgt > 0 ? cl/callTgt*100 : 0;
+        var rate = getSaleRate(sp);
+        var comm = s * rate;
+        var cInc = getCallInc(cp);
+        var tot  = fixedIncome + comm + cInc;
+        return { income: tot*(1-epfRate), comm, rate, cInc, sp, cp, tot };
+    }
+    function fmt(n){ return 'RM ' + n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function fmtN(n){ return n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+    var curr = calcIncome(sales, calls);
+    var sPct = curr.sp, cPct = curr.cp;
+
+    // Sales milestones
+    var SALE_MS = [{pct:80,label:'80%',bg:'#fefce8',bc:'#fde68a',tc:'#92400e'},{pct:90,label:'90%',bg:'#eff6ff',bc:'#bfdbfe',tc:'#1e40af'},{pct:100,label:'100%',bg:'#f0fdf4',bc:'#86efac',tc:'#166534'},{pct:106,label:'106%',bg:'#dcfce7',bc:'#4ade80',tc:'#14532d'}];
+
+    // Build call milestone labels from tiers
+    var CALL_MS = callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).map(function(t){
+        return {pct:t.min, label:t.min+'% ('+fmt(t.incentive||t.amt||0)+')', bg:'#f5f3ff', bc:'#ddd6fe', tc:'#4c1d95', inc:t.incentive||t.amt||0};
+    });
+
+    var html = '';
+
+    // ── Header stats ──────────────────────────────────────────────────────────
+    var barW  = Math.min(100, sPct).toFixed(1);
+    var barC  = sPct>=106?'#16a34a':sPct>=100?'#2563eb':sPct>=90?'#d97706':'#dc2626';
+    var cBarW = Math.min(100, cPct).toFixed(1);
+    var cBarC = cPct>=90?'#4f46e5':cPct>=75?'#7c3aed':cPct>=60?'#a78bfa':'#c4b5fd';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Sale Target</div><div style="font-size:14px;font-weight:600;color:#0f172a;">'+(target>0?fmt(target):'—')+'</div></div>';
+    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Current Sales</div><div style="font-size:14px;font-weight:600;color:#0f172a;">'+fmt(sales)+'</div></div>';
+    html += '<div style="background:'+(sPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(sPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Achievement</div><div style="font-size:14px;font-weight:600;color:'+(sPct>=100?'#166534':sPct>=90?'#92400e':'#dc2626')+';">'+sPct.toFixed(1)+'%</div></div>';
+    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Commission Rate</div><div style="font-size:14px;font-weight:600;color:#2563eb;">'+(curr.rate*100).toFixed(2)+'%</div></div>';
+    html += '<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#1e40af;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Current Commission</div><div style="font-size:14px;font-weight:600;color:#1d4ed8;">'+fmt(curr.comm)+'</div></div>';
+    html += '</div>';
+
+    // Sales progress bar
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Sales progress</span><span style="font-weight:600;">'+sPct.toFixed(1)+'%</span></div>';
+    html += '<div style="background:#f1f5f9;border-radius:99px;height:7px;overflow:hidden;margin-bottom:14px;"><div style="height:100%;border-radius:99px;width:'+barW+'%;background:'+barC+';"></div></div>';
+
+    // Sales balance to go — only show milestones NOT yet achieved
+    var unachievedMS = SALE_MS.filter(function(m){ return sales < target * m.pct / 100; });
+    if (unachievedMS.length > 0) {
+        html += '<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Sales — balance to go with Higher Earnings</div>';
+        html += '<div style="display:grid;grid-template-columns:'+('1fr '.repeat(unachievedMS.length)).trim()+';gap:8px;margin-bottom:16px;">';
+        unachievedMS.forEach(function(m){
+            var mS   = target * m.pct / 100;
+            var gap  = Math.max(0, mS - sales);
+            var mD   = calcIncome(mS, calls);
+            var extraComm = mD.comm - curr.comm;
+            html += '<div style="background:'+m.bg+';border:1px solid '+m.bc+';border-radius:10px;padding:10px;text-align:center;">';
+            html += '<div style="font-size:11px;font-weight:600;color:'+m.tc+';margin-bottom:5px;">'+m.label+'</div>';
+            html += '<div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Balance to go</div>';
+            html += '<div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:8px;">'+fmt(gap)+'</div>';
+            html += '<div style="border-top:1px solid '+m.bc+';padding-top:6px;"><div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Extra commission</div>';
+            html += '<div style="font-size:13px;font-weight:600;color:'+m.tc+';">+ '+fmt(extraComm)+'</div></div>';
+            html += '</div>';
+        });
+        html += '</div>';
+    } else {
+        html += '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;text-align:center;margin-bottom:16px;color:#166534;font-weight:600;">✓ All sales milestones achieved!</div>';
+    }
+
+    // Call stats - 5 boxes
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Target</div><div style="font-size:14px;font-weight:600;color:#3c1d8a;">'+(callTgt||'—')+'</div></div>';
+    html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Actual Calls</div><div style="font-size:14px;font-weight:600;color:#3c1d8a;">'+calls+'</div></div>';
+    html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Achievement</div><div style="font-size:14px;font-weight:600;color:#4c1d95;">'+cPct.toFixed(1)+'%</div></div>';
+    html += '<div style="background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Incentive</div><div style="font-size:14px;font-weight:600;color:#4c1d95;">'+fmt(curr.cInc)+'</div></div>';
+    html += '<div style="background:'+(cPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(cPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Progress</div><div style="font-size:14px;font-weight:600;color:'+(cPct>=100?'#166534':cPct>=75?'#92400e':'#dc2626')+';">'+cPct.toFixed(1)+'%</div></div>';
+    html += '</div>';
+
+    // Call progress bar
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Active call progress</span><span style="font-weight:600;">'+cPct.toFixed(1)+'%</span></div>';
+    html += '<div style="background:#f1f5f9;border-radius:99px;height:7px;overflow:hidden;margin-bottom:14px;"><div style="height:100%;border-radius:99px;width:'+cBarW+'%;background:'+cBarC+';"></div></div>';
+
+    // Call milestones — only show unachieved
+    var unachievedCalls = CALL_MS.filter(function(m){ return calls < Math.ceil(callTgt * m.pct / 100); });
+    if (CALL_MS.length > 0) {
+        if (unachievedCalls.length > 0) {
+            html += '<div style="font-size:10px;font-weight:600;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Active calls — balance to go  With Higher Earnings</div>';
+            html += '<div style="display:grid;grid-template-columns:'+('1fr '.repeat(unachievedCalls.length)).trim()+';gap:8px;">';
+            unachievedCalls.forEach(function(m){
+                var mC   = Math.ceil(callTgt * m.pct / 100);
+                var gap  = Math.max(0, mC - calls);
+                var extraInc = (m.inc || 0) - curr.cInc;
+                html += '<div style="background:'+m.bg+';border:1px solid '+m.bc+';border-radius:10px;padding:10px;text-align:center;">';
+                html += '<div style="font-size:11px;font-weight:600;color:'+m.tc+';margin-bottom:5px;">'+m.label+'</div>';
+                html += '<div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Balance to go</div>';
+                html += '<div style="font-size:14px;font-weight:600;color:#4c1d95;margin-bottom:8px;">'+gap+' calls</div>';
+                html += '<div style="border-top:1px solid '+m.bc+';padding-top:6px;"><div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Extra incentive</div>';
+                html += '<div style="font-size:13px;font-weight:600;color:'+m.tc+';">+ '+fmt(Math.max(0,extraInc))+'</div></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;text-align:center;color:#166534;font-weight:600;">✓ All call milestones achieved!</div>';
+        }
+    }
+
+    body.innerHTML = html;
+}
+
+function printProjectionReport() {
+    var name  = document.getElementById('proj-person-name').textContent;
+    var month = document.getElementById('proj-month-label').textContent;
+    var body  = document.getElementById('projection-report-body');
+    if (!body) return;
+
+    var win = window.open('', '_blank');
+    win.document.write('<html><head><title>Projection Report — '+name+'</title>');
+    win.document.write('<style>body{font-family:sans-serif;padding:24px;max-width:900px;margin:0 auto;}');
+    win.document.write('h1{font-size:20px;font-weight:700;margin-bottom:4px;}');
+    win.document.write('.sub{font-size:13px;color:#64748b;margin-bottom:20px;}');
+    win.document.write('</style></head><body>');
+    win.document.write('<h1>'+name+' — Projection Report</h1>');
+    win.document.write('<div class="sub">'+month+'</div>');
+    win.document.write(body.innerHTML);
+    win.document.write('</body></html>');
+    win.document.close();
+    win.focus();
+    setTimeout(function(){ win.print(); }, 300);
+}
+window.renderProjectionReport = renderProjectionReport;
+window.printProjectionReport  = printProjectionReport;
+
+function printProjectionExcel() {
+    var personSelect = document.getElementById('proj-person-select');
+    var monthSelect = document.getElementById('proj-month-select');
+    var personName = personSelect ? personSelect.value : '';
+    var month = monthSelect ? monthSelect.value.toUpperCase() : '';
+    if (!personName || !month) { showToast('⚠️', 'Please select a person and month'); return; }
+
+    var cfg = window.appState.config;
+    var nu = personName.toUpperCase();
+
+    // Get data from reportHistory
+    var rh = cfg.reportHistory || [];
+    var rEntry = rh.find(function(r){ return (r.month||'').toUpperCase() === month; });
+    var rp = rEntry && rEntry.data ? rEntry.data.find(function(p){ return (p.name||'').toUpperCase() === nu; }) : null;
+
+    var person0 = window.appState.salespeople[0];
+    var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var sales = rp ? (parseFloat(rp.sales)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.sales)||0) : 0);
+    var callActual = rp ? (parseFloat(rp.callActual)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.callActual)||0) : 0);
+
+    var year = new Date().getFullYear();
+    var tKey = year + '-' + month;
+    var target = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
+    var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
+    var ach = target > 0 ? (sales/target*100) : 0;
+    var comm = calculateCommission(sales, target, personName);
+    var callPct = callTgt > 0 ? (callActual/callTgt*100) : 0;
+    var callInc = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+
+    // Get commission rate
+    var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
+    var rates = (cfg.person_commission_rates && cfg.person_commission_rates[nu] && cfg.person_commission_rates[nu].length > 0)
+                ? cfg.person_commission_rates[nu] : ((cfg.monthly_commission_rates && cfg.monthly_commission_rates.length > 0) ? cfg.monthly_commission_rates : defRates);
+    function getSaleRate(pct) {
+        var sorted = rates.slice().sort(function(a,b){return b.min-a.min;});
+        for (var i=0;i<sorted.length;i++) if(pct>=sorted[i].min) return sorted[i].rate||0;
+        return 0;
+    }
+    var commRate = getSaleRate(ach) * 100; // as percentage
+
+    // Build sale milestones (only unachieved)
+    var SALE_MS = [{pct:80,label:'80%'},{pct:90,label:'90%'},{pct:100,label:'100%'},{pct:106,label:'106%'}];
+    var saleMilestones = [];
+    SALE_MS.forEach(function(m) {
+        var mS = target * m.pct / 100;
+        if (sales < mS) {
+            var gap = mS - sales;
+            var mRate = getSaleRate(m.pct);
+            var mComm = mS * mRate;
+            saleMilestones.push({ label: m.label, gap: gap, extraComm: mComm - comm });
+        }
+    });
+
+    // Build call milestones (only unachieved)
+    var callTiers = (cfg.person_call_incentive && cfg.person_call_incentive[nu] && cfg.person_call_incentive[nu].length > 0)
+                    ? cfg.person_call_incentive[nu] : (cfg.active_call_incentive || []);
+    var callMilestones = [];
+    callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||0)>0;}).forEach(function(t) {
+        var mC = Math.ceil(callTgt * t.min / 100);
+        if (callActual < mC) {
+            callMilestones.push({ label: t.min+'% (RM '+(t.incentive||0).toFixed(2)+')', gap: mC - callActual, extraInc: (t.incentive||0) - callInc });
+        }
+    });
+
+    var projData = {
+        target: target, sales: sales, achievement: ach, commission: comm, commissionRate: commRate,
+        callTarget: callTgt, callActual: callActual, callAchievement: callPct, callIncentive: callInc, callProgress: callPct,
+        saleMilestones: saleMilestones, callMilestones: callMilestones
+    };
+
+    showToast('⏳', 'Opening Excel...');
+    window.electronAPI.exportProjectionExcel({ personName: personName, month: month, projData: projData })
+        .then(function(result) {
+            if (result.success) showToast('✅', 'Excel opened!');
+            else showToast('❌', 'Failed: ' + (result.error||''));
+        })
+        .catch(function(e) { showToast('❌', e.message); });
+}
+window.printProjectionExcel = printProjectionExcel;
 
 // ==================== Global Function Export ====================
 
@@ -4192,7 +5092,14 @@ window.manualSave = manualSave;
 function renderPeopleList() {
     var container = document.getElementById('people-list-container');
     if (!container) return;
-    var people = Object.keys(window.appState.config.base_salaries || {});
+    // Ensure config is loaded
+    if (!window.appState || !window.appState.config) {
+        container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--ink4);">Loading...</div>';
+        setTimeout(renderPeopleList, 500);
+        return;
+    }
+    var cfg = window.appState.config;
+    var people = Object.keys(cfg.base_salaries || {});
     if (people.length === 0) {
         container.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--ink4);">'
             + '<div style="font-size:40px;margin-bottom:12px;">👥</div>'
@@ -4215,7 +5122,11 @@ function renderPeopleList() {
             + '<div style="flex:1;">'
             + '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:3px;">'+name+'</div>'
             + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
-            + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()+' &nbsp;·&nbsp; '
+            + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()
+            + (cfg.salary_history&&cfg.salary_history[name]&&cfg.salary_history[name].length>1
+                ? ' &nbsp;·&nbsp; <span style="color:var(--am);font-size:10px;font-weight:700;">'+cfg.salary_history[name].length+' salary records</span>'
+                : '')
+            + ' &nbsp;·&nbsp; '
             + (hasPersonal
                 ? '<span style="background:var(--vi-l);color:var(--vi);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;">✦ Personal</span>'
                 : '<span style="background:var(--sheet);color:var(--ink4);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--line);">Company Rate</span>')
@@ -4227,6 +5138,10 @@ function renderPeopleList() {
         bS.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bae6fd;background:#e0f2fe;color:#0284c7;';
         bS.textContent = '💵 Salary';
         bS.addEventListener('click',(function(n){return function(){showSalaryModal(n);};})(name));
+        var bT = document.createElement('button');
+        bT.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bbf7d0;background:#d1fae5;color:#065f46;';
+        bT.textContent = '🎯 Target';
+        bT.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
         var bC = document.createElement('button');
         bC.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:var(--vi-l);color:var(--vi);';
         bC.textContent = '💰 Commission';
@@ -4235,16 +5150,26 @@ function renderPeopleList() {
         bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
         bD.textContent = '🗑️';
         bD.addEventListener('click',(function(n){return function(){deleteSalespersonConfig(n);};})(name));
-        btns.appendChild(bS); btns.appendChild(bC); btns.appendChild(bD);
+        btns.appendChild(bS); btns.appendChild(bC); btns.appendChild(bT); btns.appendChild(bD);
     });
 }
 
 function showSalaryModal(personName) {
     var ex=document.getElementById('salary-setup-modal'); if(ex)ex.remove();
     var cfg=window.appState.config;
-    var allow=(cfg.allowances&&cfg.allowances[personName])||{};
-    var epfRate=(cfg.deductionRates&&cfg.deductionRates[personName]&&cfg.deductionRates[personName].EPF_RATE)||11;
-    var salary=(cfg.base_salaries&&cfg.base_salaries[personName])||1700;
+    // Get current salary from history or flat values
+    var cur = (typeof getCurrentSalary === 'function') ? getCurrentSalary(personName) : {
+        salary: (window.appState.config.base_salaries && window.appState.config.base_salaries[personName]) || 1700,
+        allowances: (window.appState.config.allowances && window.appState.config.allowances[personName]) || {},
+        epfRate: (window.appState.config.deductionRates && window.appState.config.deductionRates[personName] && window.appState.config.deductionRates[personName].EPF_RATE) || 11
+    };
+    var salary   = cur.salary;
+    var allow    = cur.allowances;
+    var epfRate  = cur.epfRate;
+    // Default effectiveFrom = current month
+    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var now = new Date();
+    var defaultEffective = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
     var IS='width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;';
     function makeRow(lbl,id,val,half){
         return '<div style="'+(half?'':'')+'margin-bottom:10px;">'
@@ -4275,6 +5200,11 @@ function showSalaryModal(personName) {
         +'<div style="background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px;">'
         +'<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Deduction</div>'
         +makeRow('EPF Rate (%)','epf',epfRate)+'</div>'
+        +'<div style="background:#fefce8;border:1px solid #fde68a;border-radius:var(--r);padding:14px;margin-top:10px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Effective From</div>'
+        +'<input id="sm-effective" type="month" value="'+defaultEffective+'" style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;">'
+        +'<div style="font-size:11px;color:#92400e;margin-top:5px;">Salary changes will only apply from this month onwards</div>'
+        +'</div>'
         +'</div>'
         +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--paper);flex-shrink:0;">'
         +'<button id="sm-cancel" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
@@ -4298,20 +5228,67 @@ function saveSalaryModal(personName) {
     var food=parseFloat(document.getElementById('sm-FOOD').value)||0;
     var oth=parseFloat(document.getElementById('sm-OTHERS').value)||0;
     var epfR=parseFloat(document.getElementById('sm-epf').value)||11;
-    if(!cfg.base_salaries)cfg.base_salaries={};
-    if(!cfg.allowances)cfg.allowances={};
-    if(!cfg.deductions)cfg.deductions={};
-    if(!cfg.deductionRates)cfg.deductionRates={};
-    cfg.base_salaries[personName]=base;
-    cfg.allowances[personName]={HP:hp,CAR:car,'LOCAL FUEL':lf,'OUTSTATION FUEL':of2,HOUSING:hs,FOOD:food,OTHERS:oth};
-    var ti=base+hp+car+lf+of2+hs+food+oth;
-    cfg.deductions[personName]={EPF:Math.round(ti*(epfR/100)*100)/100,SOCSO:Math.round(ti*0.005*100)/100,PCB:0,EIS:0};
-    cfg.deductionRates[personName]={EPF_RATE:epfR};
+    var effectiveEl = document.getElementById('sm-effective');
+    var effective = effectiveEl ? effectiveEl.value : (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+
+    var allowances = {HP:hp,CAR:car,'LOCAL FUEL':lf,'OUTSTATION FUEL':of2,HOUSING:hs,FOOD:food,OTHERS:oth};
+    var nu = personName.toUpperCase();
+
+    // Save into salary_history
+    if (!cfg.salary_history) cfg.salary_history = {};
+    if (!cfg.salary_history[nu]) cfg.salary_history[nu] = [];
+
+    var history = cfg.salary_history[nu];
+
+    // If this is the FIRST or SECOND entry and the effective date is not the earliest,
+    // auto-create an "origin" record using the current flat salary (before this change)
+    // so that earlier months still get the old salary
+    if (history.length === 0 && effective !== '') {
+        // Check if there are any history reports before this effective date
+        var histReports = cfg.reportHistory || [];
+        var hasEarlierReports = histReports.some(function(r) {
+            var monthOrder2 = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+            var rIdx = monthOrder2.indexOf((r.month||'').toUpperCase());
+            var curYr = new Date().getFullYear();
+            var rYM = curYr + '-' + String(rIdx+1).padStart(2,'0');
+            return rYM < effective;
+        });
+        if (hasEarlierReports) {
+            // Save the OLD salary as the origin record (effective from very beginning)
+            var oldSalary   = (cfg.base_salaries && cfg.base_salaries[nu]) || base;
+            var oldAllow    = (cfg.allowances    && cfg.allowances[nu])    || allowances;
+            var oldEpf      = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || epfR;
+            history.push({ salary: oldSalary, allowances: oldAllow, epfRate: oldEpf, effectiveFrom: '2000-01' });
+        }
+    }
+
+    // Check if entry for this effectiveFrom already exists - update it
+    var existingIdx = history.findIndex(function(h){ return h.effectiveFrom === effective; });
+    var entry = { salary: base, allowances: allowances, epfRate: epfR, effectiveFrom: effective };
+    if (existingIdx >= 0) {
+        history[existingIdx] = entry;
+    } else {
+        history.push(entry);
+    }
+    // Sort by effectiveFrom ascending
+    history.sort(function(a,b){ return (a.effectiveFrom||'').localeCompare(b.effectiveFrom||''); });
+
+    // Also update flat values to reflect current (latest) salary
+    if (!cfg.base_salaries)  cfg.base_salaries  = {};
+    if (!cfg.allowances)     cfg.allowances      = {};
+    if (!cfg.deductions)     cfg.deductions      = {};
+    if (!cfg.deductionRates) cfg.deductionRates  = {};
+    cfg.base_salaries[nu]  = base;
+    cfg.allowances[nu]     = allowances;
+    var ti = base+hp+car+lf+of2+hs+food+oth;
+    cfg.deductions[nu]     = {EPF:Math.round(ti*(epfR/100)*100)/100,SOCSO:Math.round(ti*0.005*100)/100,PCB:0,EIS:0};
+    cfg.deductionRates[nu] = {EPF_RATE:epfR};
+
     saveConfig();
-    var m=document.getElementById('salary-setup-modal');if(m)m.remove();
+    var m=document.getElementById('salary-setup-modal'); if(m) m.remove();
     renderPeopleList();
-    showToast('✅',personName+' salary saved!');
-    setTimeout(function(){showCommissionModal(personName);},300);
+    showToast('✅', personName+' salary saved (effective '+effective+')!');
+    setTimeout(function(){ showCommissionModal(personName); }, 300);
 }
 
 function showCommissionModal(personName) {
@@ -4372,7 +5349,7 @@ function showCommissionModal(personName) {
         +'<button id="cm-global-btn" style="padding:9px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:12px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink3);">↩ Use Company Rate</button>'
         +'<div style="display:flex;gap:8px;">'
         +'<button id="cm-cancel-btn" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
-        +'<button id="cm-save-btn" style="padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#4f46e5);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save</button>'
+        +'<button id="cm-save-btn" style="padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#4f46e5);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save & Next →</button>'
         +'</div></div>';
     modal.appendChild(card);
     document.body.appendChild(modal);
@@ -4468,6 +5445,7 @@ function saveCommissionModal(personName){
     var m=document.getElementById('commission-setup-modal');if(m)m.remove();
     renderPeopleList();
     showToast('✅',personName+' commission saved!');
+    setTimeout(function(){ showTargetModal(personName); }, 300);
 }
 
 function resetToGlobalComm(personName){

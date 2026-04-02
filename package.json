@@ -1,6 +1,6 @@
 {
   "name": "commission-pro",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "CommissionPro — Sales Commission Calculator for Teams",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,13 @@
     "build:linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": ["sales", "commission", "calculator", "excel", "payroll"],
+  "keywords": [
+    "sales",
+    "commission",
+    "calculator",
+    "excel",
+    "payroll"
+  ],
   "author": "CommissionPro",
   "license": "MIT",
   "devDependencies": {
@@ -19,8 +25,8 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
-    "exceljs": "^4.4.0",
-    "better-sqlite3": "^9.4.3"
+    "better-sqlite3": "^9.6.0",
+    "exceljs": "^4.4.0"
   },
   "build": {
     "appId": "com.commissionpro.app",
@@ -44,7 +50,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico"
@@ -60,11 +68,15 @@
       "shortcutName": "CommissionPro"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.icns"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "assets/icon.png"
     }
   }
