@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     installUpdate: () => ipcRenderer.invoke('install-update'),
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
     // ========== 平台信息 ==========
     platform: process.platform

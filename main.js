@@ -422,7 +422,7 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
         // ── Sales Balance to Go ──
         if (d.saleMilestones && d.saleMilestones.length > 0) {
             sheet.mergeCells(row, 1, row, 4);
-            sheet.getCell(row, 1).value = 'SALES — BALANCE TO GO & EXTRA COMMISSION';
+            sheet.getCell(row, 1).value = 'SALES — BALANCE TO GO WITH HIGHER EARNINGS';
             sheet.getCell(row, 1).font = { bold: true, size: 10, color: { argb: 'FF64748B' } };
             row++;
 
@@ -488,7 +488,7 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
         // ── Call Balance to Go ──
         if (d.callMilestones && d.callMilestones.length > 0) {
             sheet.mergeCells(row, 1, row, 4);
-            sheet.getCell(row, 1).value = 'ACTIVE CALLS — BALANCE TO GO & EXTRA INCENTIVE';
+            sheet.getCell(row, 1).value = 'ACTIVE CALLS — BALANCE TO GO WITH HIGHER EARNINGS';
             sheet.getCell(row, 1).font = { bold: true, size: 10, color: { argb: 'FF5B21B6' } };
             row++;
 
@@ -1463,6 +1463,11 @@ ipcMain.handle('readBackupFile', async (event, filePath) => {
     } catch (error) {
         return { success: false, error: error.message };
     }
+});
+
+// ========== App Version ==========
+ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
 });
 
 // ========== Helper Functions ==========

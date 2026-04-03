@@ -444,10 +444,22 @@ function switchView(view) {
     } else if (view === 'history') {
         if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
     } else if (view === 'report') {
+        // Reset override flags so projection syncs from Calculate card
+        var _ps = document.getElementById('proj-person-select');
+        var _ms = document.getElementById('proj-month-select');
+        if (_ps) _ps._userOverride = false;
+        if (_ms) _ms._userOverride = false;
         if (typeof renderProjectionReport === 'function') renderProjectionReport();
     } else if (view === 'settings') {
         var lt = document.getElementById('settings-license-type');
         if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+        // Load app version from package.json
+        if (window.electronAPI && window.electronAPI.getAppVersion) {
+            window.electronAPI.getAppVersion().then(function(ver) {
+                var ve = document.getElementById('settings-app-version');
+                if (ve) ve.textContent = 'v' + ver;
+            });
+        }
     } else if (view === 'salary') {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
@@ -461,9 +473,21 @@ function switchView(view) {
 async function initQuickCalculate() {
     console.log('📊 Initializing Quick Calculate');
     
-    // Set current month
-    const currentMonth = new Date().toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    const container = document.getElementById('salespeople-container');
     const monthSelect = document.getElementById('report-month');
+    
+    // If there is already data in the state, just re-render
+    // (user switched tabs and came back - do NOT wipe their data or reset month)
+    if (window.appState.salespeople && window.appState.salespeople.length > 0) {
+        if (container) container.innerHTML = '';
+        renderAllSalespeopleCards();
+        updateSummaryView();
+        console.log('✅ Quick Calculate restored existing cards:', window.appState.salespeople.length);
+        return;
+    }
+    
+    // First time init — set current month
+    const currentMonth = new Date().toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
     if (monthSelect) {
         monthSelect.value = currentMonth;
                 window._currentMonth = monthSelect.value.toUpperCase();
@@ -529,77 +553,64 @@ async function initQuickCalculate() {
                     // Try to load saved data for this month from reportHistory
                     var history = window.appState.config.reportHistory || [];
                     var histEntry = history.find(function(r){ return (r.month||'').toUpperCase() === newMonth; });
-                    if (histEntry && histEntry.data && histEntry.data.length > 0) {
-                        // Restore only the FIRST person's data into the single card (idx=0)
-                        // User can click sidebar to switch between people
-                        var firstPerson = histEntry.data[0];
-                        if (firstPerson && window.appState.salespeople.length > 0) {
-                            // Set person name FIRST (critical for preview and calculation)
-                            var restoredName = firstPerson.name || '';
-                            window.appState.salespeople[0].name = restoredName;
-                            var nameEl0 = document.getElementById('name-0');
-                            if (nameEl0) nameEl0.value = restoredName;
-                            var nameText0 = document.getElementById('card-name-text-0');
-                            var avatar0 = document.getElementById('card-avatar-0');
-                            if (nameText0) nameText0.textContent = restoredName || '—';
-                            if (avatar0) avatar0.textContent = restoredName ? restoredName[0] : '?';
-
-                            // Also pre-set target in appState so locked field logic works
-                            window.appState.salespeople[0].target = parseFloat(firstPerson.target) || 0;
-                            window.appState.salespeople[0].collectionTarget = parseFloat(firstPerson.collectionTarget) || 0;
-                            window.appState.salespeople[0].callTarget = parseFloat(firstPerson.callTarget) || 0;
-
-                            var set = function(id, v) {
-                                var el = document.getElementById(id + '-0');
-                                if (el) el.value = (v != null && v !== 0) ? v : '';
-                            };
-                            set('target',             firstPerson.target);
-                            set('sales',              firstPerson.sales);
-                            set('quarterly-target',   firstPerson.quarterlyTarget || '');
-                            set('quarterly-sales',    firstPerson.quarterlySales  || '');
-                            set('collection-target',  firstPerson.collectionTarget || '');
-                            set('collection-amount',  firstPerson.collectionAmount || '');
-                            set('call-target',        firstPerson.callTarget || '');
-                            set('call-actual',        firstPerson.callActual || '');
-
-                            // Apply target locks BEFORE update so locked values are correct
-                            if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
-                            updateSalespersonData(0);
-                        }
-                        // Store full history data so sidebar click can load per-person
-                        window._currentMonthHistory = histEntry.data;
-                        updateSummaryView();
-                        // Update sidebar to reflect restored person
-                        if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
-                        showToast('📅', newMonth + ' data restored');
-                    } else {
-                        // No saved data — clear the single card fields
-                        var clearFields = ['target','sales','quarterly-target','quarterly-sales',
-                            'collection-target','collection-amount','call-target','call-actual'];
-                        clearFields.forEach(function(id) {
-                            var el = document.getElementById(id + '-0');
-                            if (el) el.value = '';
-                        });
-                        window._currentMonthHistory = null;
-                        if (window.appState.salespeople.length > 0) updateSalespersonData(0);
-                        showToast('📅', newMonth + ' — no data yet');
+                    
+                    // Keep the CURRENT person — don't jump to anyone else
+                    var currentPersonName = (window.appState.salespeople[0] && window.appState.salespeople[0].name) || '';
+                    
+                    // Find current person's data in the new month
+                    var personData = null;
+                    if (histEntry && histEntry.data && currentPersonName) {
+                        personData = histEntry.data.find(function(p){ return (p.name||'').toUpperCase() === currentPersonName.toUpperCase(); });
                     }
+
+                    var set = function(id, v) {
+                        var el = document.getElementById(id + '-0');
+                        if (el) el.value = (v != null && v !== 0) ? v : '';
+                    };
+
+                    if (personData && window.appState.salespeople.length > 0) {
+                        // Has data — restore it
+                        window.appState.salespeople[0].target = parseFloat(personData.target) || 0;
+                        window.appState.salespeople[0].collectionTarget = parseFloat(personData.collectionTarget) || 0;
+                        window.appState.salespeople[0].callTarget = parseFloat(personData.callTarget) || 0;
+                        set('target',             personData.target);
+                        set('sales',              personData.sales);
+                        set('quarterly-target',   personData.quarterlyTarget || '');
+                        set('quarterly-sales',    personData.quarterlySales  || '');
+                        set('collection-target',  personData.collectionTarget || '');
+                        set('collection-amount',  personData.collectionAmount || '');
+                        set('call-target',        personData.callTarget || '');
+                        set('call-actual',        personData.callActual || '');
+                    } else {
+                        // No data for this person in this month — CLEAR ALL fields
+                        ['target','sales','quarterly-target','quarterly-sales',
+                         'collection-target','collection-amount','call-target','call-actual'].forEach(function(id){
+                            set(id, '');
+                        });
+                        if (window.appState.salespeople.length > 0) {
+                            window.appState.salespeople[0].target = 0;
+                            window.appState.salespeople[0].sales = 0;
+                            window.appState.salespeople[0].collectionTarget = 0;
+                            window.appState.salespeople[0].collectionAmount = 0;
+                            window.appState.salespeople[0].callTarget = 0;
+                            window.appState.salespeople[0].callActual = 0;
+                            window.appState.salespeople[0].quarterlyTarget = 0;
+                            window.appState.salespeople[0].quarterlySales = 0;
+                        }
+                    }
+
+                    // Apply target locks from config for the new month
+                    if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
+                    if (window.appState.salespeople.length > 0) updateSalespersonData(0);
+
+                    window._currentMonthHistory = histEntry ? histEntry.data : null;
+                    updateSummaryView();
+                    if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+                    showToast('📅', newMonth + (personData ? ' data restored' : ' — no data yet'));
                 }
             });
             monthSelect._hasAutoFillListener = true;
         }
-    }
-    
-    const container = document.getElementById('salespeople-container');
-    
-    // If there is already data in the state, re-render the existing cards
-    // (user switched tabs and came back - do NOT wipe their data)
-    if (window.appState.salespeople && window.appState.salespeople.length > 0) {
-        if (container) container.innerHTML = '';
-        renderAllSalespeopleCards();
-        updateSummaryView();
-        console.log('✅ Quick Calculate restored existing cards:', window.appState.salespeople.length);
-        return;
     }
     
     // First time init — restore from DB first, fallback to config
@@ -646,6 +657,24 @@ async function initQuickCalculate() {
         updateSummaryView();
     } else {
         createBlankSalespersonCard();
+        // Auto-select first configured person so target shows immediately
+        var configPeople = Object.keys(window.appState.config.base_salaries || {});
+        if (configPeople.length > 0 && window.appState.salespeople.length > 0) {
+            var firstName = configPeople[0];
+            window.appState.salespeople[0].name = firstName;
+            var _nameEl = document.getElementById('name-0');
+            if (_nameEl) _nameEl.value = firstName;
+            var _nameText = document.getElementById('card-name-text-0');
+            var _avatar = document.getElementById('card-avatar-0');
+            if (_nameText) _nameText.textContent = firstName;
+            if (_avatar) _avatar.textContent = firstName[0];
+            // Delay to ensure DOM is ready
+            setTimeout(function() {
+                if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
+                updateSalespersonData(0);
+                updateSummaryView();
+            }, 100);
+        }
     }
     // Update summary
     updateSummaryView();
@@ -1191,7 +1220,7 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="sales-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="48500"
+                           placeholder="Enter sales"
                            value="${person.sales || ''}"
                            onfocus="this.readOnly=false;this.style.backgroundColor='';"
                            oninput="updateSalespersonData(${index})">
@@ -1250,8 +1279,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="collection-amount-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="29000"
-                           value="${person.collectionAmount || 29000}"
+                           placeholder="Enter collected outlets"
+                           value="${person.collectionAmount || ''}"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
@@ -1272,8 +1301,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="call-actual-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="95"
-                           value="${person.callActual || 95}"
+                           placeholder="Enter actual calls"
+                           value="${person.callActual || ''}"
                            oninput="updateSalespersonData(${index})">
                 </div>
             </div>
@@ -1409,8 +1438,8 @@ function updateSalespersonData(index) {
         }
         const _qtEl = document.getElementById('quarterly-target-' + index);
         const _qsEl = document.getElementById('quarterly-sales-' + index);
-        if (_qtEl) { _qtEl.value = _qT || ''; person.quarterlyTarget = _qT; }
-        if (_qsEl) { _qsEl.value = _qS || ''; person.quarterlySales = _qS; }
+        if (_qtEl) { var _qtR = Math.round(_qT * 100) / 100; _qtEl.value = _qtR ? _qtR.toFixed(2) : ''; person.quarterlyTarget = _qtR; }
+        if (_qsEl) { var _qsR = Math.round(_qS * 100) / 100; _qsEl.value = _qsR ? _qsR.toFixed(2) : ''; person.quarterlySales = _qsR; }
     }
 
     person.quarterlyTarget = parseFloat(document.getElementById(`quarterly-target-${index}`).value) || 0;
@@ -3296,8 +3325,8 @@ function autoFillLockedFields(index) {
         }
 
         const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
-        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = qTarget || ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
-        if (qSalesEl) { qSalesEl.removeAttribute('disabled'); qSalesEl.value = qSales || ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.title = tooltip; person.quarterlySales = qSales; }
+        if (qTargetEl) { var _qtR2 = Math.round(qTarget * 100) / 100; qTargetEl.removeAttribute('disabled'); qTargetEl.value = _qtR2 ? _qtR2.toFixed(2) : ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.title = tooltip; person.quarterlyTarget = _qtR2; }
+        if (qSalesEl) { var _qsR2 = Math.round(qSales * 100) / 100; qSalesEl.removeAttribute('disabled'); qSalesEl.value = _qsR2 ? _qsR2.toFixed(2) : ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.title = tooltip; person.quarterlySales = _qsR2; }
         console.log(`📊 Quarterly auto-fill for ${nameUpper} (${month}):`, details);
     } else {
         if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
@@ -3493,8 +3522,8 @@ function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
         }
 
         const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
-        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = qTarget || ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = tooltip; person.quarterlyTarget = qTarget; }
-        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = qSales  || ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = tooltip; person.quarterlySales  = qSales; }
+        if (qTargetEl) { var _qtR3 = Math.round(qTarget * 100) / 100; qTargetEl.removeAttribute('disabled'); qTargetEl.value = _qtR3 ? _qtR3.toFixed(2) : ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = tooltip; person.quarterlyTarget = _qtR3; }
+        if (qSalesEl)  { var _qsR3 = Math.round(qSales * 100) / 100; qSalesEl.removeAttribute('disabled');  qSalesEl.value  = _qsR3 ? _qsR3.toFixed(2) : ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = tooltip; person.quarterlySales  = _qsR3; }
     } else {
         if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
         if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlySales  = 0; }
@@ -3929,33 +3958,9 @@ function updateLivePayslip() {
     }
     if(g('ps-team')) g('ps-team').textContent = formatCurrency(teamSales || sales);
     if(g('ps-grand'))    g('ps-grand').textContent    = formatCurrency(grand);
-    // Calculate team total income for TEAM% column
-    var teamTotalIncome = 0;
-    if (hEntry && hEntry.data) {
-        hEntry.data.forEach(function(tp) {
-            var tnu = (tp.name||'').toUpperCase();
-            var tSalRec = getSalaryForMonth(tp.name, curMonth);
-            var tSalary = tSalRec.salary;
-            var tAllow = tSalRec.allowances;
-            var tTotalAllow = (tAllow.HP||0)+(tAllow.CAR||0)+(tAllow['LOCAL FUEL']||0)+(tAllow['OUTSTATION FUEL']||0)+(tAllow.HOUSING||0)+(tAllow.FOOD||0)+(tAllow.OTHERS||0);
-            var tFixed = tSalary + tTotalAllow;
-            var tSales = parseFloat(tp.sales)||0;
-            var tTarget = parseFloat(tp.target)||0;
-            var tComm = calculateCommission(tSales, tTarget, tp.name);
-            var tCollPct = (tp.collectionTarget||0)>0?(tp.collectionAmount||0)/tp.collectionTarget*100:0;
-            var tCallPct = (tp.callTarget||0)>0?(tp.callActual||0)/tp.callTarget*100:0;
-            var tCollBon = calculateIncentive(tCollPct, cfg.collection_incentive||[]);
-            var tCallBon = calculateIncentive(tCallPct, cfg.active_call_incentive||[]);
-            var tAch = tTarget>0?(tSales/tTarget*100):0;
-            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(curMonth)!==-1;
-            var tQtrBon = isQtr?calculateIncentive(tAch, cfg.quarterly_incentive||[]):0;
-            teamTotalIncome += tFixed + tComm + tCollBon + tCallBon + tQtrBon;
-        });
-    }
-    if (teamTotalIncome <= 0) teamTotalIncome = totalInc; // fallback to individual
 
-    function fp(v){ return totalInc>0 ? (v/totalInc*100).toFixed(2)+'%' : '0.00%'; }
-    function tp(v){ return teamTotalIncome>0 ? (v/teamTotalIncome*100).toFixed(2)+'%' : '0.00%'; }
+    function fp(v){ return sales>0 ? (v/sales*100).toFixed(2)+'%' : '0.00%'; }
+    function tp(v){ return teamSales>0 ? (v/teamSales*100).toFixed(2)+'%' : '0.00%'; }
     function fc(v){ return formatCurrency(v); }
     function sec(l){ return '<tr style="background:#E6F1FB;"><td colspan="4" style="padding:4px 10px;font-weight:600;color:#0C447C;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'+l+'</td></tr>'; }
     function row(l,v,blue,bold){
@@ -4478,13 +4483,12 @@ function applyPersonTarget(cardIndex) {
                 window.appState.salespeople[cardIndex].target = targetVal;
             }
         } else {
-            targetEl.removeAttribute('disabled');
-            targetEl.removeAttribute('readonly');
-            targetEl.style.background = '';
-            targetEl.style.color = '';
-            targetEl.style.cursor = '';
-            targetEl.style.pointerEvents = '';
-            targetEl.title = '';
+            targetEl.value = '';
+            targetEl.setAttribute('disabled', 'disabled');
+            targetEl.setAttribute('readonly', 'readonly');
+            targetEl.style.cssText += ';background:#f1f5f9!important;color:#94a3b8!important;cursor:not-allowed!important;pointer-events:none!important;';
+            targetEl.title = 'Set target in Salesperson → Target';
+            targetEl.placeholder = 'Set in Salesperson tab';
             targetEl._locked = false;
             targetEl._lockedValue = null;
         }
@@ -4543,24 +4547,23 @@ function renderProjectionReport() {
             configPeople.forEach(function(n){ html += '<option value="'+n+'">'+n+'</option>'; });
             personSelect.innerHTML = html;
         }
-        // Auto-select: use current value, or fallback to Calculate card person
-        if (!curVal) {
+        // Sync from Calculate card ONLY when first entering the tab (not on dropdown change)
+        if (!personSelect._userOverride) {
             var person0 = window.appState.salespeople[0];
             var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
             if (calcName && configPeople.indexOf(calcName) >= 0) {
                 personSelect.value = calcName;
-            } else if (configPeople.length > 0) {
+            } else if (!personSelect.value && configPeople.length > 0) {
                 personSelect.value = configPeople[0];
             }
         }
     }
 
-    // ── Auto-select month ──
+    // ── Sync month from Calculate card ONLY when first entering the tab ──
     var monthSelect = document.getElementById('proj-month-select');
-    if (monthSelect && !monthSelect._initialized) {
+    if (monthSelect && !monthSelect._userOverride) {
         var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
         if (calcMonth) monthSelect.value = calcMonth;
-        monthSelect._initialized = true;
     }
 
     // ── Read selected values ──
@@ -4679,7 +4682,7 @@ function renderProjectionReport() {
     // Sales balance to go — only show milestones NOT yet achieved
     var unachievedMS = SALE_MS.filter(function(m){ return sales < target * m.pct / 100; });
     if (unachievedMS.length > 0) {
-        html += '<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Sales — balance to go with Higher Earnings</div>';
+        html += '<div style="font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Sales — Balance to Go With Higher Earnings</div>';
         html += '<div style="display:grid;grid-template-columns:'+('1fr '.repeat(unachievedMS.length)).trim()+';gap:8px;margin-bottom:16px;">';
         unachievedMS.forEach(function(m){
             var mS   = target * m.pct / 100;
@@ -4716,7 +4719,7 @@ function renderProjectionReport() {
     var unachievedCalls = CALL_MS.filter(function(m){ return calls < Math.ceil(callTgt * m.pct / 100); });
     if (CALL_MS.length > 0) {
         if (unachievedCalls.length > 0) {
-            html += '<div style="font-size:10px;font-weight:600;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Active calls — balance to go  With Higher Earnings</div>';
+            html += '<div style="font-size:10px;font-weight:600;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Active Calls — Balance to Go With Higher Earnings</div>';
             html += '<div style="display:grid;grid-template-columns:'+('1fr '.repeat(unachievedCalls.length)).trim()+';gap:8px;">';
             unachievedCalls.forEach(function(m){
                 var mC   = Math.ceil(callTgt * m.pct / 100);

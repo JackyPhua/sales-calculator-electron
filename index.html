@@ -319,13 +319,13 @@
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Person</div>
-                <select id="proj-person-select" onchange="renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <select id="proj-person-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                     <option value="">— Select —</option>
                 </select>
             </div>
             <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Month</div>
-                <select id="proj-month-select" onchange="renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <select id="proj-month-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option>
                     <option value="MAR">MAR</option><option value="APR">APR</option>
                     <option value="MAY">MAY</option><option value="JUN">JUN</option>
@@ -385,7 +385,7 @@
                 <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
                     <div style="display:flex;justify-content:space-between;">
                         <span>Version</span>
-                        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v2.0.0</span>
+                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.1.0</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;">
                         <span>Database</span>
