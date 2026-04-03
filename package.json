@@ -1,6 +1,6 @@
 {
   "name": "commission-pro",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "CommissionPro — Sales Commission Calculator for Teams",
   "main": "main.js",
   "scripts": {
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.6.0",
+    "electron-updater": "^6.1.7",
     "exceljs": "^4.4.0"
   },
   "build": {
@@ -34,6 +35,13 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "JackyPhua",
+        "repo": "sales-calculator-electron"
+      }
     ],
     "directories": {
       "output": "dist"

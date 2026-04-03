@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dbDelete: (key)        => ipcRenderer.invoke('db-delete', key),
     dbList:   (prefix)     => ipcRenderer.invoke('db-list', prefix),
 
+    // ========== Auto Update ==========
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    installUpdate: () => ipcRenderer.invoke('install-update'),
+    onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
+
     // ========== 平台信息 ==========
     platform: process.platform
 });

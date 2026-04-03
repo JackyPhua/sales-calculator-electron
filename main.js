@@ -3,6 +3,87 @@ const path = require('path');
 const ExcelJS = require('exceljs');
 const fs = require('fs').promises;
 const crypto = require('crypto');
+const { autoUpdater } = require('electron-updater');
+
+// ── Auto-updater setup ────────────────────────────────────────────────────
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function setupAutoUpdater() {
+    autoUpdater.on('update-available', (info) => {
+        console.log('🔄 Update available:', info.version);
+        if (mainWindow) {
+            mainWindow.webContents.send('update-status', {
+                status: 'available',
+                version: info.version,
+                message: 'New version ' + info.version + ' is downloading...'
+            });
+        }
+    });
+
+    autoUpdater.on('update-not-available', () => {
+        console.log('✅ App is up to date');
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+        console.log('⬇️ Download:', Math.round(progress.percent) + '%');
+        if (mainWindow) {
+            mainWindow.webContents.send('update-status', {
+                status: 'downloading',
+                percent: Math.round(progress.percent),
+                message: 'Downloading update... ' + Math.round(progress.percent) + '%'
+            });
+        }
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+        console.log('✅ Update downloaded:', info.version);
+        if (mainWindow) {
+            mainWindow.webContents.send('update-status', {
+                status: 'downloaded',
+                version: info.version,
+                message: 'Update ready! Restart to install v' + info.version
+            });
+        }
+        // Show dialog to user
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Update Ready',
+            message: 'CommissionPro v' + info.version + ' has been downloaded.',
+            detail: 'The update will be installed when you restart the app. Restart now?',
+            buttons: ['Restart Now', 'Later'],
+            defaultId: 0
+        }).then(result => {
+            if (result.response === 0) {
+                autoUpdater.quitAndInstall(false, true);
+            }
+        });
+    });
+
+    autoUpdater.on('error', (err) => {
+        console.error('❌ Auto-update error:', err.message);
+    });
+
+    // Check for updates (silently, don't bother user if no update)
+    autoUpdater.checkForUpdatesAndNotify().catch(err => {
+        console.log('Update check skipped:', err.message);
+    });
+}
+
+// IPC: manual check for updates
+ipcMain.handle('check-for-updates', async () => {
+    try {
+        const result = await autoUpdater.checkForUpdates();
+        return { success: true, version: result?.updateInfo?.version || null };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+// IPC: install update now
+ipcMain.handle('install-update', () => {
+    autoUpdater.quitAndInstall(false, true);
+});
 
 // ── SQLite DB setup ──────────────────────────────────────────────────────────
 let db = null;
@@ -219,6 +300,9 @@ app.whenReady().then(async () => {
         await fs.writeFile(configPath, JSON.stringify(getDefaultConfig(), null, 2));
     }
     createWindow();
+
+    // Check for updates after app is ready
+    setupAutoUpdater();
 });
 
 
