@@ -716,9 +716,11 @@ function createBlankSalespersonCard() {
     
     const card = document.createElement('div');
     card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
+    card.setAttribute('draggable', 'false');
+    card.addEventListener('dragstart', function(e) { e.preventDefault(); });
     card.innerHTML = `
         <!-- Delete button -->
-        <button onclick="deleteSalespersonCard(${newId})" 
+        <button onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${newId})}" 
                 class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
                 title="Delete this salesperson">
             ✕
@@ -1196,9 +1198,11 @@ function renderAllSalespeopleCards() {
         
         const card = document.createElement('div');
         card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
+        card.setAttribute('draggable', 'false');
+        card.addEventListener('dragstart', function(e) { e.preventDefault(); });
         card.innerHTML = `
             <!-- Delete button -->
-            <button onclick="deleteSalespersonCard(${person.id})" 
+            <button onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${person.id})}" 
                     class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
                     title="Delete this salesperson">
                 ✕
@@ -2779,9 +2783,41 @@ async function saveConfig() {
 
 // ==================== Delete Salesperson Card ====================
 function deleteSalespersonCard(id) {
-    window.appState.salespeople = window.appState.salespeople.filter(p => p.id !== id);
-    renderSalespersonCards();
-    updateSummaryView();
+    // Find the person name for the confirmation message
+    var person = window.appState.salespeople.find(function(p) { return p.id === id; });
+    var personName = (person && person.name) ? person.name : 'this salesperson';
+    
+    // Build confirmation modal
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--paper);border-radius:16px;max-width:380px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(8,15,26,.3);text-align:center;';
+    box.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">⚠️</div>'
+        + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:8px;">Delete ' + personName + '?</div>'
+        + '<div style="font-size:13px;color:#64748b;margin-bottom:20px;">This will remove the card and all entered data.</div>';
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+    var btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:9px 24px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
+    var btnDelete = document.createElement('button');
+    btnDelete.textContent = '🗑️ Delete';
+    btnDelete.style.cssText = 'padding:9px 24px;border:none;border-radius:8px;background:#dc2626;color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+    btnRow.appendChild(btnCancel);
+    btnRow.appendChild(btnDelete);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    
+    btnCancel.addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    btnDelete.addEventListener('click', function() {
+        overlay.remove();
+        window.appState.salespeople = window.appState.salespeople.filter(function(p) { return p.id !== id; });
+        renderSalespersonCards();
+        updateSummaryView();
+        showToast('🗑️', personName + ' removed');
+    });
 }
 
 // ==================== Data Backup & Restore ====================
@@ -4430,7 +4466,7 @@ function showTargetModal(personName) {
 
     overlay.appendChild(card);
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+    // Only close via Cancel button — clicking background does NOT close
     btnCancel.addEventListener('click', function(){ overlay.remove(); });
     btnSave.addEventListener('click', function(){
         if (!cfg.person_targets) cfg.person_targets = {};
@@ -5247,7 +5283,7 @@ function showSalaryModal(personName) {
         +'</div>';
     modal.appendChild(card);
     document.body.appendChild(modal);
-    modal.addEventListener('click',function(){modal.remove();});
+    // Only close via Cancel button — clicking background does NOT close
     document.getElementById('sm-cancel').addEventListener('click',function(){modal.remove();});
     document.getElementById('sm-save').addEventListener('click',function(){saveSalaryModal(personName);});
 }
@@ -5380,15 +5416,13 @@ function showCommissionModal(personName) {
         +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;font-size:10px;font-weight:700;color:var(--ink4);margin-bottom:4px;padding:0 2px;text-transform:uppercase;letter-spacing:.5px;"><span>Label</span><span>Min%</span><span>RM</span><span></span></div>'
         +'<div id="cm-call"></div></div>'
         +'</div>'
-        +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:space-between;background:var(--paper);flex-shrink:0;">'
-        +'<button id="cm-global-btn" style="padding:9px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:12px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink3);">↩ Use Company Rate</button>'
-        +'<div style="display:flex;gap:8px;">'
+        +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--paper);flex-shrink:0;">'
         +'<button id="cm-cancel-btn" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
         +'<button id="cm-save-btn" style="padding:9px 24px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#4f46e5);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save & Next →</button>'
-        +'</div></div>';
+        +'</div>';
     modal.appendChild(card);
     document.body.appendChild(modal);
-    modal.addEventListener('click',function(){modal.remove();});
+    // Only close via Cancel button — clicking background does NOT close
     renderTempRates();
     renderTempIncentive('qtr',window._tempQtr);
     renderTempIncentive('coll',window._tempColl);
@@ -5399,7 +5433,6 @@ function showCommissionModal(personName) {
     document.getElementById('cm-add-call').addEventListener('click',function(){addTempIncentive('call');});
     document.getElementById('cm-save-btn').addEventListener('click',function(){saveCommissionModal(personName);});
     document.getElementById('cm-cancel-btn').addEventListener('click',function(){modal.remove();});
-    document.getElementById('cm-global-btn').addEventListener('click',function(){resetToGlobalComm(personName);});
 }
 
 function renderTempRates() {
@@ -5624,11 +5657,27 @@ if (window.electronAPI && window.electronAPI.onUpdateStatus) {
         if (!msgEl) return;
 
         if (data.status === 'available') {
-            msgEl.innerHTML = '⬇️ Downloading <b>v' + data.version + '</b>...';
+            msgEl.innerHTML = '⬇️ Downloading <b>v' + data.version + '</b>...'
+                + '<div style="margin-top:8px;background:#e2e8f0;border-radius:6px;height:8px;overflow:hidden;">'
+                + '<div id="update-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#2563eb);border-radius:6px;transition:width 0.3s;"></div></div>'
+                + '<div id="update-progress-text" style="font-size:11px;color:#64748b;margin-top:4px;">Starting download...</div>';
         } else if (data.status === 'downloading') {
-            msgEl.textContent = '⬇️ Downloading... ' + data.percent + '%';
+            var pct = Math.round(data.percent || 0);
+            var bar = document.getElementById('update-progress-bar');
+            var txt = document.getElementById('update-progress-text');
+            if (bar) bar.style.width = pct + '%';
+            if (txt) txt.textContent = 'Downloading... ' + pct + '%';
+            if (!bar) {
+                msgEl.innerHTML = '⬇️ Downloading... ' + pct + '%'
+                    + '<div style="margin-top:8px;background:#e2e8f0;border-radius:6px;height:8px;overflow:hidden;">'
+                    + '<div id="update-progress-bar" style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,#3b82f6,#2563eb);border-radius:6px;transition:width 0.3s;"></div></div>'
+                    + '<div id="update-progress-text" style="font-size:11px;color:#64748b;margin-top:4px;">Downloading... '+pct+'%</div>';
+            }
         } else if (data.status === 'downloaded') {
-            msgEl.innerHTML = '✅ <b>v' + data.version + '</b> ready! Click Install to restart.';
+            msgEl.innerHTML = '✅ <b>v' + data.version + '</b> ready! Click Install to restart.'
+                + '<div style="margin-top:8px;background:#e2e8f0;border-radius:6px;height:8px;overflow:hidden;">'
+                + '<div style="height:100%;width:100%;background:linear-gradient(90deg,#059669,#10b981);border-radius:6px;"></div></div>'
+                + '<div style="font-size:11px;color:#059669;margin-top:4px;">Download complete!</div>';
             if (btnInstall) btnInstall.style.display = '';
         }
     });
