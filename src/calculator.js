@@ -5546,3 +5546,55 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, 100);
 });
+// ==================== SOFTWARE UPDATE ====================
+function checkForAppUpdate() {
+    var msgEl = document.getElementById('update-status-msg');
+    var btnCheck = document.getElementById('btn-check-update');
+    var btnInstall = document.getElementById('btn-install-update');
+    if (msgEl) msgEl.textContent = '🔄 Checking for updates...';
+    if (btnCheck) btnCheck.disabled = true;
+
+    if (!window.electronAPI || !window.electronAPI.checkForUpdates) {
+        if (msgEl) msgEl.textContent = '❌ Update feature not available in this version';
+        if (btnCheck) btnCheck.disabled = false;
+        return;
+    }
+
+    window.electronAPI.checkForUpdates().then(function(result) {
+        if (result && result.success && result.version) {
+            if (msgEl) msgEl.innerHTML = '✅ New version <b>v' + result.version + '</b> available! Downloading...';
+        } else {
+            if (msgEl) msgEl.textContent = '✅ You are on the latest version!';
+        }
+        if (btnCheck) btnCheck.disabled = false;
+    }).catch(function(e) {
+        if (msgEl) msgEl.textContent = '❌ Update check failed: ' + (e.message || e);
+        if (btnCheck) btnCheck.disabled = false;
+    });
+}
+window.checkForAppUpdate = checkForAppUpdate;
+
+function installAppUpdate() {
+    if (window.electronAPI && window.electronAPI.installUpdate) {
+        window.electronAPI.installUpdate();
+    }
+}
+window.installAppUpdate = installAppUpdate;
+
+// Listen for update status from main process
+if (window.electronAPI && window.electronAPI.onUpdateStatus) {
+    window.electronAPI.onUpdateStatus(function(data) {
+        var msgEl = document.getElementById('update-status-msg');
+        var btnInstall = document.getElementById('btn-install-update');
+        if (!msgEl) return;
+
+        if (data.status === 'available') {
+            msgEl.innerHTML = '⬇️ Downloading <b>v' + data.version + '</b>...';
+        } else if (data.status === 'downloading') {
+            msgEl.textContent = '⬇️ Downloading... ' + data.percent + '%';
+        } else if (data.status === 'downloaded') {
+            msgEl.innerHTML = '✅ <b>v' + data.version + '</b> ready! Click Install to restart.';
+            if (btnInstall) btnInstall.style.display = '';
+        }
+    });
+}
