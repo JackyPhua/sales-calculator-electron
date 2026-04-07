@@ -279,6 +279,7 @@ function createWindow() {
     });
 
     mainWindow.loadFile('index.html');
+    mainWindow.maximize();
     
     // 开发时打开 DevTools（生产环境注释掉）
     // mainWindow.webContents.openDevTools();
