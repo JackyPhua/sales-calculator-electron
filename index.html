@@ -191,15 +191,27 @@
 
 <!-- TABS -->
 <div id="app-tabbar">
+    <button onclick="switchView('dashboard')" id="tab-dashboard" class="tab-button">🏠 Dashboard</button>
     <button onclick="switchView('people')"  id="tab-people"   class="tab-button">👤 Salesperson</button>
     <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculate</button>
     <button onclick="switchView('report')"  id="tab-report"   class="tab-button">📈 Projection</button>
     <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 History</button>
+    <button onclick="switchView('annual')"  id="tab-annual"   class="tab-button">📋 Annual</button>
     <button onclick="switchView('settings')"id="tab-settings" class="tab-button">⚙️ Settings</button>
 </div>
 
 <!-- MAIN -->
 <div id="app-body">
+
+<!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
+<div id="view-dashboard" class="view-container">
+    <div id="dashboard-body">
+        <div style="text-align:center;padding:48px;color:var(--ink4);">
+            <div style="font-size:32px;margin-bottom:12px;">📊</div>
+            <div style="font-size:14px;font-weight:600;">Loading dashboard...</div>
+        </div>
+    </div>
+</div>
 
 <!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
 <div id="view-quick" class="view-container active" style="display:block">
@@ -216,10 +228,6 @@
                 <option value="NOV">NOV</option><option value="DEC">DEC</option>
             </select>
         </div>
-        <div class="tool-sep"></div>
-        <button onclick="manualSave()" class="tbtn dark">💾 Save</button>
-        <div class="tool-sep"></div>
-        <button onclick="clearAllQuickCalculateData()" class="tbtn red">🗑️ Clear</button>
         <div style="flex:1"></div>
         <button onclick="showBatchExportModal()" class="tbtn">📦 Batch Export</button>
     </div>
@@ -324,6 +332,11 @@
                 </select>
             </div>
             <div>
+                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
+                <select id="proj-year-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                </select>
+            </div>
+            <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Month</div>
                 <select id="proj-month-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option>
@@ -363,6 +376,31 @@
         <button onclick="loadQuickCalculateHistory()" class="tbtn">🔄 Refresh</button>
     </div>
     <div id="history-list"></div>
+</div>
+
+<!-- ══════════════════ SETTINGS VIEW ══════════════════ -->
+<!-- ══════════════════ ANNUAL REPORT VIEW ══════════════════ -->
+<div id="view-annual" class="view-container">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div>
+                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
+                <select id="annual-year-select" onchange="renderAnnualReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                </select>
+            </div>
+            <div style="margin-top:18px;">
+                <div style="font-size:20px;font-weight:800;color:var(--ink);letter-spacing:-.5px;">Annual Report</div>
+                <div id="annual-sub" style="font-size:12px;color:var(--ink3);margin-top:2px;">Complete sales performance summary</div>
+            </div>
+        </div>
+        <button onclick="printAnnualReport()" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print Report</button>
+    </div>
+    <div id="annual-report-body">
+        <div style="text-align:center;padding:48px;color:var(--ink4);">
+            <div style="font-size:32px;margin-bottom:12px;">📋</div>
+            <div style="font-size:14px;font-weight:600;">Loading annual report...</div>
+        </div>
+    </div>
 </div>
 
 <!-- ══════════════════ SETTINGS VIEW ══════════════════ -->

@@ -444,22 +444,10 @@ function switchView(view) {
     } else if (view === 'history') {
         if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
     } else if (view === 'report') {
-        // Reset override flags so projection syncs from Calculate card
-        var _ps = document.getElementById('proj-person-select');
-        var _ms = document.getElementById('proj-month-select');
-        if (_ps) _ps._userOverride = false;
-        if (_ms) _ms._userOverride = false;
         if (typeof renderProjectionReport === 'function') renderProjectionReport();
     } else if (view === 'settings') {
         var lt = document.getElementById('settings-license-type');
         if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
-        // Load app version from package.json
-        if (window.electronAPI && window.electronAPI.getAppVersion) {
-            window.electronAPI.getAppVersion().then(function(ver) {
-                var ve = document.getElementById('settings-app-version');
-                if (ve) ve.textContent = 'v' + ver;
-            });
-        }
     } else if (view === 'salary') {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
@@ -867,6 +855,11 @@ function createBlankSalespersonCard() {
                 </button>
             </div>
         </div>
+        <!-- Save footer inside card -->
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
+            <button onclick="clearAllQuickCalculateData()" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
+            <button onclick="manualSave()" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
+        </div>
     `;
     
     container.appendChild(card);
@@ -1220,7 +1213,7 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="sales-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="Enter sales"
+                           placeholder="48500"
                            value="${person.sales || ''}"
                            onfocus="this.readOnly=false;this.style.backgroundColor='';"
                            oninput="updateSalespersonData(${index})">
@@ -1279,8 +1272,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="collection-amount-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="Enter collected outlets"
-                           value="${person.collectionAmount || ''}"
+                           placeholder="29000"
+                           value="${person.collectionAmount || 29000}"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
@@ -1301,8 +1294,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="call-actual-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="Enter actual calls"
-                           value="${person.callActual || ''}"
+                           placeholder="95"
+                           value="${person.callActual || 95}"
                            oninput="updateSalespersonData(${index})">
                 </div>
             </div>
@@ -1341,6 +1334,11 @@ function renderAllSalespeopleCards() {
                         📄 Preview Payslip
                     </button>
                 </div>
+            </div>
+            <!-- Save footer inside card -->
+            <div style="margin-top:16px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="clearAllQuickCalculateData()" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
+                <button onclick="manualSave()" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
             </div>
         `;
         
@@ -4296,10 +4294,10 @@ function showTargetModal(personName) {
 
     var overlay = document.createElement('div');
     overlay.id = 'target-setup-modal';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:flex-start;justify-content:center;z-index:99999;overflow-y:auto;box-sizing:border-box;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;box-sizing:border-box;';
 
     var card = document.createElement('div');
-    card.style.cssText = 'background:var(--paper);border-radius:16px;width:920px;min-width:920px;margin:20px auto;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.style.cssText = 'background:var(--paper);border-radius:16px;width:920px;max-width:95vw;max-height:90vh;margin:20px auto;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(8,15,26,.25);overflow:hidden;';
     card.addEventListener('click', function(e){ e.stopPropagation(); });
 
     // Header
@@ -4483,12 +4481,13 @@ function applyPersonTarget(cardIndex) {
                 window.appState.salespeople[cardIndex].target = targetVal;
             }
         } else {
-            targetEl.value = '';
-            targetEl.setAttribute('disabled', 'disabled');
-            targetEl.setAttribute('readonly', 'readonly');
-            targetEl.style.cssText += ';background:#f1f5f9!important;color:#94a3b8!important;cursor:not-allowed!important;pointer-events:none!important;';
-            targetEl.title = 'Set target in Salesperson → Target';
-            targetEl.placeholder = 'Set in Salesperson tab';
+            targetEl.removeAttribute('disabled');
+            targetEl.removeAttribute('readonly');
+            targetEl.style.background = '';
+            targetEl.style.color = '';
+            targetEl.style.cursor = '';
+            targetEl.style.pointerEvents = '';
+            targetEl.title = '';
             targetEl._locked = false;
             targetEl._lockedValue = null;
         }
@@ -4547,21 +4546,19 @@ function renderProjectionReport() {
             configPeople.forEach(function(n){ html += '<option value="'+n+'">'+n+'</option>'; });
             personSelect.innerHTML = html;
         }
-        // Sync from Calculate card ONLY when first entering the tab (not on dropdown change)
-        if (!personSelect._userOverride) {
-            var person0 = window.appState.salespeople[0];
-            var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
-            if (calcName && configPeople.indexOf(calcName) >= 0) {
-                personSelect.value = calcName;
-            } else if (!personSelect.value && configPeople.length > 0) {
-                personSelect.value = configPeople[0];
-            }
+        // Always sync from Calculate card person (user can still override via dropdown)
+        var person0 = window.appState.salespeople[0];
+        var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+        if (calcName && configPeople.indexOf(calcName) >= 0) {
+            personSelect.value = calcName;
+        } else if (!personSelect.value && configPeople.length > 0) {
+            personSelect.value = configPeople[0];
         }
     }
 
-    // ── Sync month from Calculate card ONLY when first entering the tab ──
+    // ── Always sync month from Calculate card ──
     var monthSelect = document.getElementById('proj-month-select');
-    if (monthSelect && !monthSelect._userOverride) {
+    if (monthSelect) {
         var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
         if (calcMonth) monthSelect.value = calcMonth;
     }
