@@ -436,7 +436,9 @@ function switchView(view) {
         viewEl.classList.remove('hidden');
     }
     window.appState.currentView = view;
-    if (view === 'people') {
+    if (view === 'dashboard') {
+        if (typeof renderDashboard === 'function') renderDashboard();
+    } else if (view === 'people') {
         if (typeof renderPeopleList === 'function') renderPeopleList();
     } else if (view === 'quick') {
         if (typeof initQuickCalculate === 'function') initQuickCalculate();
@@ -444,10 +446,24 @@ function switchView(view) {
     } else if (view === 'history') {
         if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
     } else if (view === 'report') {
+        var _ps = document.getElementById('proj-person-select');
+        var _ms = document.getElementById('proj-month-select');
+        var _ys = document.getElementById('proj-year-select');
+        if (_ps) _ps._userOverride = false;
+        if (_ms) _ms._userOverride = false;
+        if (_ys) _ys._userOverride = false;
         if (typeof renderProjectionReport === 'function') renderProjectionReport();
+    } else if (view === 'annual') {
+        if (typeof renderAnnualReport === 'function') renderAnnualReport();
     } else if (view === 'settings') {
         var lt = document.getElementById('settings-license-type');
         if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+        if (window.electronAPI && window.electronAPI.getAppVersion) {
+            window.electronAPI.getAppVersion().then(function(ver) {
+                var ve = document.getElementById('settings-app-version');
+                if (ve) ve.textContent = 'v' + ver;
+            });
+        }
     } else if (view === 'salary') {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
@@ -486,6 +502,9 @@ async function initQuickCalculate() {
                 const newMonth = this.value.toUpperCase();
                 const oldMonth = window._currentMonth || '';
                 console.log('📅 Month changed from', oldMonth, 'to', newMonth);
+
+                // Cancel any pending auto-save to prevent old data leaking into new month
+                if (window._autoSaveTimer) { clearTimeout(window._autoSaveTimer); window._autoSaveTimer = null; }
 
                 // ── SAVE current month data before switching ──────────────
                 if (oldMonth && oldMonth !== newMonth) {
@@ -1213,7 +1232,7 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="sales-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="48500"
+                           placeholder="Enter sales"
                            value="${person.sales || ''}"
                            onfocus="this.readOnly=false;this.style.backgroundColor='';"
                            oninput="updateSalespersonData(${index})">
@@ -1272,8 +1291,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="collection-amount-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="29000"
-                           value="${person.collectionAmount || 29000}"
+                           placeholder="Enter collected outlets"
+                           value="${person.collectionAmount || ''}"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
@@ -1294,8 +1313,8 @@ function renderAllSalespeopleCards() {
                     <input type="number" 
                            id="call-actual-${index}"
                            class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                           placeholder="95"
-                           value="${person.callActual || 95}"
+                           placeholder="Enter actual calls"
+                           value="${person.callActual || ''}"
                            oninput="updateSalespersonData(${index})">
                 </div>
             </div>
@@ -4481,13 +4500,12 @@ function applyPersonTarget(cardIndex) {
                 window.appState.salespeople[cardIndex].target = targetVal;
             }
         } else {
-            targetEl.removeAttribute('disabled');
-            targetEl.removeAttribute('readonly');
-            targetEl.style.background = '';
-            targetEl.style.color = '';
-            targetEl.style.cursor = '';
-            targetEl.style.pointerEvents = '';
-            targetEl.title = '';
+            targetEl.value = '';
+            targetEl.setAttribute('disabled', 'disabled');
+            targetEl.setAttribute('readonly', 'readonly');
+            targetEl.style.cssText += ';background:#f1f5f9!important;color:#94a3b8!important;cursor:not-allowed!important;pointer-events:none!important;';
+            targetEl.title = 'Set target in Salesperson → Target';
+            targetEl.placeholder = 'Set in Salesperson tab';
             targetEl._locked = false;
             targetEl._lockedValue = null;
         }
@@ -4538,27 +4556,43 @@ function renderProjectionReport() {
     var personSelect = document.getElementById('proj-person-select');
     if (personSelect) {
         var configPeople = Object.keys(cfg.base_salaries || {});
-        var curVal = personSelect.value;
-        // Only rebuild options if list changed
         var existingNames = Array.from(personSelect.options).map(function(o){return o.value;}).filter(function(v){return v;});
         if (existingNames.join(',') !== configPeople.join(',')) {
             var html = '<option value="">— Select —</option>';
             configPeople.forEach(function(n){ html += '<option value="'+n+'">'+n+'</option>'; });
             personSelect.innerHTML = html;
         }
-        // Always sync from Calculate card person (user can still override via dropdown)
-        var person0 = window.appState.salespeople[0];
-        var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
-        if (calcName && configPeople.indexOf(calcName) >= 0) {
-            personSelect.value = calcName;
-        } else if (!personSelect.value && configPeople.length > 0) {
-            personSelect.value = configPeople[0];
+        if (!personSelect._userOverride) {
+            var person0 = window.appState.salespeople[0];
+            var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+            if (calcName && configPeople.indexOf(calcName) >= 0) {
+                personSelect.value = calcName;
+            } else if (!personSelect.value && configPeople.length > 0) {
+                personSelect.value = configPeople[0];
+            }
         }
     }
 
-    // ── Always sync month from Calculate card ──
+    // ── Populate year selector ──
+    var yearSelect = document.getElementById('proj-year-select');
+    if (yearSelect) {
+        var curYear = new Date().getFullYear();
+        if (yearSelect.options.length === 0) {
+            [curYear-1, curYear, curYear+1].forEach(function(y) {
+                var opt = document.createElement('option');
+                opt.value = y; opt.textContent = y;
+                if (y === curYear) opt.selected = true;
+                yearSelect.appendChild(opt);
+            });
+        }
+        if (!yearSelect._userOverride) {
+            yearSelect.value = curYear;
+        }
+    }
+
+    // ── Sync month from Calculate card ──
     var monthSelect = document.getElementById('proj-month-select');
-    if (monthSelect) {
+    if (monthSelect && !monthSelect._userOverride) {
         var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
         if (calcMonth) monthSelect.value = calcMonth;
     }
@@ -4566,9 +4600,10 @@ function renderProjectionReport() {
     // ── Read selected values ──
     var personName = personSelect ? personSelect.value : '';
     var month = monthSelect ? monthSelect.value.toUpperCase() : '';
+    var selectedYear = yearSelect ? parseInt(yearSelect.value) : new Date().getFullYear();
 
     document.getElementById('proj-person-name').textContent = personName || '—';
-    document.getElementById('proj-month-label').textContent = month ? month + ' ' + new Date().getFullYear() : 'No data';
+    document.getElementById('proj-month-label').textContent = month ? month + ' ' + selectedYear : 'No data';
 
     if (!personName || personName === '—' || !month) {
         body.innerHTML = '<div style="text-align:center;padding:48px;color:var(--ink4);"><div style="font-size:32px;margin-bottom:12px;">📈</div><div style="font-size:14px;font-weight:600;">No data</div><div style="font-size:12px;margin-top:6px;">Go to Calculate tab, select a person and enter sales data first.</div></div>';
@@ -4601,7 +4636,7 @@ function renderProjectionReport() {
     }
 
     // Get targets
-    var year    = new Date().getFullYear();
+    var year    = selectedYear;
     var tKey    = year + '-' + month;
     var target  = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
     var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
@@ -5598,3 +5633,221 @@ if (window.electronAPI && window.electronAPI.onUpdateStatus) {
         }
     });
 }
+
+// ==================== DASHBOARD ====================
+function renderDashboard() {
+    var body = document.getElementById('dashboard-body');
+    if (!body) return;
+    var cfg = window.appState.config;
+    var configPeople = Object.keys(cfg.base_salaries || {});
+    var history = cfg.reportHistory || [];
+    var curYear = new Date().getFullYear();
+    var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function fmtK(n) { return n>=1000 ? 'RM '+(n/1000).toFixed(1)+'K' : fmt(n); }
+    var peopleStats = configPeople.map(function(name) {
+        var totalSales=0, totalTarget=0, totalComm=0, monthCount=0;
+        var salesByMonth = MONTHS.map(function(m) {
+            var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+            var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){return (p.name||'').toUpperCase()===name;}) : null;
+            if (pd && (pd.sales>0 || pd.target>0)) {
+                totalSales += parseFloat(pd.sales)||0;
+                totalTarget += parseFloat(pd.target)||0;
+                totalComm += calculateCommission(pd.sales||0, pd.target||0, name);
+                var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+                var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+                totalComm += calculateIncentive(collPct, cfg.collection_incentive||[]);
+                totalComm += calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                monthCount++;
+                return parseFloat(pd.sales)||0;
+            }
+            return 0;
+        });
+        return {name:name, totalSales:totalSales, totalTarget:totalTarget, totalComm:totalComm, ach:totalTarget>0?(totalSales/totalTarget*100):0, monthCount:monthCount, salesByMonth:salesByMonth};
+    });
+    var teamSales = peopleStats.reduce(function(s,p){return s+p.totalSales;},0);
+    var teamTarget = peopleStats.reduce(function(s,p){return s+p.totalTarget;},0);
+    var teamComm = peopleStats.reduce(function(s,p){return s+p.totalComm;},0);
+    var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
+    var ranked = peopleStats.slice().sort(function(a,b){return b.totalSales-a.totalSales;});
+    var topPerson = ranked.length>0 ? ranked[0].name : '—';
+    var colors = ['#1e40af','#be185d','#15803d','#a16207','#6d28d9','#be123c'];
+    var bgColors = ['#dbeafe','#fce7f3','#dcfce7','#fef9c3','#ede9fe','#fff1f2'];
+    var medals = ['🥇','🥈','🥉'];
+    var html = '';
+    html += '<div style="margin-bottom:20px;"><div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;">Team Dashboard</div>';
+    html += '<div style="font-size:13px;color:#64748b;margin-top:4px;">'+curYear+' Overview · '+configPeople.length+' salespeople</div></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:22px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamSales)+'</div></div>';
+    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:22px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamTarget)+'</div></div>';
+    var achColor = teamAch>=100?'#059669':'#d97706';
+    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:22px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(1)+'%</div></div>';
+    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission</div><div style="font-size:22px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamComm)+'</div></div>';
+    html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:22px;font-weight:800;color:#7c3aed;margin-top:4px;">🏆 '+topPerson+'</div></div>';
+    html += '</div>';
+    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
+    ranked.forEach(function(p, i) {
+        var c = colors[i%colors.length]; var bg = bgColors[i%bgColors.length];
+        var achC = p.ach>=100?'#059669':p.ach>=90?'#d97706':'#dc2626';
+        var maxSale = Math.max.apply(null, p.salesByMonth.concat([1]));
+        var bars = p.salesByMonth.map(function(v,mi){
+            var h = maxSale>0?Math.max(3,(v/maxSale)*40):3;
+            return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;"><div style="width:100%;height:'+h+'px;background:'+(v>0?c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.3)+';"></div><div style="font-size:7px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
+        }).join('');
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 20px;margin-bottom:8px;display:grid;grid-template-columns:180px 1fr 110px 110px 110px;align-items:center;gap:16px;">';
+        html += '<div style="display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div><div style="font-size:13px;font-weight:700;color:#0f172a;">'+(medals[i]||'')+' '+p.name+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
+        html += '<div style="display:flex;align-items:end;gap:2px;height:50px;">'+bars+'</div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(p.totalSales)+'</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(1)+'%</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Commission</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(p.totalComm)+'</div></div>';
+        html += '</div>';
+    });
+    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-top:12px;">';
+    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:16px;">📈 Monthly Sales Trend</div>';
+    html += '<div style="display:flex;align-items:end;gap:6px;height:180px;padding:0 10px;">';
+    var monthTotals = MONTHS.map(function(m){return peopleStats.reduce(function(s,p){var mi=MONTHS.indexOf(m);return s+p.salesByMonth[mi];},0);});
+    var maxMonth = Math.max.apply(null, monthTotals.concat([1]));
+    MONTHS.forEach(function(m,mi){
+        var total = monthTotals[mi]; var h = maxMonth>0?Math.max(8,(total/maxMonth)*160):8; var hasData = total>0;
+        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;">';
+        if(hasData) html += '<div style="font-size:10px;font-weight:700;color:#475569;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(total)+'</div>';
+        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,#3b82f6,#1d4ed8)':'#f1f5f9')+';border-radius:6px 6px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
+        html += '<div style="font-size:11px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';">'+m+'</div></div>';
+    });
+    html += '</div></div>';
+    body.innerHTML = html;
+}
+window.renderDashboard = renderDashboard;
+
+// ==================== ANNUAL REPORT ====================
+function renderAnnualReport() {
+    var body = document.getElementById('annual-report-body');
+    if (!body) return;
+    var cfg = window.appState.config;
+    var configPeople = Object.keys(cfg.base_salaries || {});
+    var history = cfg.reportHistory || [];
+    var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var yearSelect = document.getElementById('annual-year-select');
+    var curYear = new Date().getFullYear();
+    if (yearSelect && yearSelect.options.length === 0) {
+        [curYear-1, curYear, curYear+1].forEach(function(y) { var opt = document.createElement('option'); opt.value = y; opt.textContent = y; if (y === curYear) opt.selected = true; yearSelect.appendChild(opt); });
+    }
+    var selectedYear = yearSelect ? parseInt(yearSelect.value) : curYear;
+    var subEl = document.getElementById('annual-sub');
+    if (subEl) subEl.textContent = selectedYear + ' · ' + configPeople.length + ' salespeople';
+    function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function fmtK(n) { return n>=1000 ? 'RM '+(n/1000).toFixed(1)+'K' : fmt(n); }
+    var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
+    MONTHS.forEach(function(m) {
+        var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+        if (!hEntry || !hEntry.data) return;
+        hEntry.data.forEach(function(pd) {
+            var nu = (pd.name||'').toUpperCase();
+            if (peopleData[nu]) {
+                var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
+                var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+                var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+                var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
+                var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                var ach = (pd.target||0)>0?((pd.sales||0)/(pd.target)*100):0;
+                var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
+                var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+                peopleData[nu][m] = { target: parseFloat(pd.target)||0, sales: parseFloat(pd.sales)||0, ach: ach, commission: comm, collInc: collI, callInc: callI, qtrBonus: qtrI };
+            }
+        });
+    });
+    var teamSales=0, teamTarget=0, teamComm=0;
+    configPeople.forEach(function(name) { MONTHS.forEach(function(m) { var d = peopleData[name][m]; if (d) { teamSales+=d.sales; teamTarget+=d.target; teamComm+=d.commission+d.collInc+d.callInc+d.qtrBonus; } }); });
+    var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
+    var html = '';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Team Sales</div><div style="font-size:20px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
+    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Target</div><div style="font-size:20px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
+    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Overall Achievement</div><div style="font-size:20px;font-weight:800;color:'+(teamAch>=100?'#059669':'#d97706')+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(1)+'%</div></div>';
+    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Commission Paid</div><div style="font-size:20px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
+    html += '</div>';
+    // Monthly breakdown
+    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+    html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📊 Monthly Breakdown — '+selectedYear+'</div>';
+    html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
+    html += '<thead><tr style="background:#f1f5f9;"><th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Month</th>';
+    configPeople.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
+    html += '</tr><tr style="background:#f8fafc;"><th style="padding:6px 14px;"></th>';
+    configPeople.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
+    html += '</tr></thead><tbody>';
+    MONTHS.forEach(function(m) {
+        var hasData = configPeople.some(function(p){return peopleData[p][m];});
+        if (!hasData) return;
+        html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
+        configPeople.forEach(function(p) {
+            var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmtK(d.target):'—')+'</td>';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmtK(d.sales):'—')+'</td>';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(0)+'%':'—')+'</td>';
+        });
+        html += '</tr>';
+    });
+    html += '<tr style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-top:2px solid #93c5fd;"><td style="padding:12px 14px;font-weight:800;color:#1e40af;">TOTAL</td>';
+    configPeople.forEach(function(p) {
+        var tT=0, tS=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
+        var tA = tT>0?(tS/tT*100):0;
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmtK(tT)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmtK(tS)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(1)+'%</td>';
+    });
+    html += '</tr></tbody></table></div></div>';
+    // Commission summary
+    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+    html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">💰 Commission & Incentive Summary</div>';
+    html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f0fdf4;">';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#166534;">Person</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Commission</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Collection</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Call Bonus</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#166534;">TOTAL</th></tr></thead><tbody>';
+    configPeople.forEach(function(p) {
+        var comm=0,coll=0,call=0,qtr=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;}});
+        html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">'+p+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(comm)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(coll)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(call)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qtr)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#059669;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    // Individual cards
+    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">👤 Individual Annual Summary</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(configPeople.length,3)+',1fr);gap:14px;">';
+    configPeople.forEach(function(p) {
+        var tS=0,tT=0,comm=0,coll=0,call=0,qtr=0,mc=0;
+        MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tS+=d.sales;tT+=d.target;comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;mc++;}});
+        var tComm=comm+coll+call+qtr; var tAch=tT>0?(tS/tT*100):0;
+        var sal = ((cfg.base_salaries&&cfg.base_salaries[p])||1700)*mc;
+        var allow = cfg.allowances&&cfg.allowances[p] ? Object.values(cfg.allowances[p]).reduce(function(s,v){return s+(parseFloat(v)||0);},0)*mc : 0;
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">';
+        html += '<div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:16px 18px;color:#fff;"><div style="font-size:16px;font-weight:800;">'+p+'</div><div style="font-size:12px;opacity:.7;margin-top:2px;">'+mc+' months active</div></div>';
+        html += '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:8px;font-size:13px;">';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Sales</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tS)+'</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(1)+'%</span></div>';
+        html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Salary</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal)+'</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Allowances</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(allow)+'</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#2563eb;">Total Commission</span><span style="font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tComm)+'</span></div>';
+        html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="font-weight:700;">Total Paid</span><span style="font-weight:800;color:#059669;font-size:15px;font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal+allow+tComm)+'</span></div>';
+        html += '</div></div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+}
+window.renderAnnualReport = renderAnnualReport;
+function printAnnualReport() {
+    var body = document.getElementById('annual-report-body');
+    var yearSel = document.getElementById('annual-year-select');
+    var year = yearSel ? yearSel.value : new Date().getFullYear();
+    if (!body) return;
+    var win = window.open('', '_blank');
+    win.document.write('<html><head><title>Annual Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
+    win.document.write('<h1>Annual Report — '+year+'</h1>');
+    win.document.write(body.innerHTML);
+    win.document.write('</body></html>');
+    win.document.close(); win.focus();
+    setTimeout(function(){ win.print(); }, 300);
+}
+window.printAnnualReport = printAnnualReport;
