@@ -5630,7 +5630,12 @@ function checkForAppUpdate() {
 
     window.electronAPI.checkForUpdates().then(function(result) {
         if (result && result.success && result.version) {
-            if (msgEl) msgEl.innerHTML = '✅ New version <b>v' + result.version + '</b> available! Downloading...';
+            if (msgEl) {
+                msgEl.innerHTML = '✅ New version <b>v' + result.version + '</b> available! Downloading...'
+                    + '<div style="margin-top:8px;background:#e2e8f0;border-radius:6px;height:8px;overflow:hidden;">'
+                    + '<div id="update-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#2563eb);border-radius:6px;transition:width 0.3s;"></div></div>'
+                    + '<div id="update-progress-text" style="font-size:11px;color:#64748b;margin-top:4px;">Starting download...</div>';
+            }
         } else {
             if (msgEl) msgEl.textContent = '✅ You are on the latest version!';
         }
