@@ -193,9 +193,9 @@
 <div id="app-tabbar">
     <button onclick="switchView('dashboard')" id="tab-dashboard" class="tab-button">🏠 Dashboard</button>
     <button onclick="switchView('people')"  id="tab-people"   class="tab-button">👤 Salesperson</button>
-    <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculate</button>
+    <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculation</button>
     <button onclick="switchView('report')"  id="tab-report"   class="tab-button">📈 Projection</button>
-    <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 History</button>
+    <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 Records</button>
     <button onclick="switchView('annual')"  id="tab-annual"   class="tab-button">📋 Annual</button>
     <button onclick="switchView('settings')"id="tab-settings" class="tab-button">⚙️ Settings</button>
 </div>
@@ -432,6 +432,14 @@
                 </div>
             </div>
             <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">🔒 Annual Report Password</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input id="annual-pw-setting" type="password" placeholder="Enter password" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:'Sora',sans-serif;outline:none;">
+                    <button onclick="saveAnnualPassword()" class="set-btn sb-blue" style="white-space:nowrap;">💾 Save</button>
+                </div>
+                <div style="font-size:11px;color:var(--ink4);margin-top:6px;">Default password: boss123</div>
+            </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
                 <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">Software Update</div>
                 <div id="update-status-msg" style="font-size:12px;color:var(--ink3);margin-bottom:10px;">Click to check for updates</div>
                 <div style="display:flex;gap:8px;">
@@ -508,18 +516,80 @@
                 viewEl.classList.remove('hidden');
             }
             appState.currentView = view;
-            if (view === 'people') {
+            if (view === 'dashboard') {
+                if (typeof renderDashboard === 'function') renderDashboard();
+            } else if (view === 'people') {
                 if (typeof renderPeopleList === 'function') renderPeopleList();
             } else if (view === 'quick') {
                 if (typeof initQuickCalculate === 'function') initQuickCalculate();
                 if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
             } else if (view === 'report') {
+                var _ps = document.getElementById('proj-person-select');
+                var _ms = document.getElementById('proj-month-select');
+                var _ys = document.getElementById('proj-year-select');
+                if (_ps) _ps._userOverride = false;
+                if (_ms) _ms._userOverride = false;
+                if (_ys) _ys._userOverride = false;
                 if (typeof renderProjectionReport === 'function') renderProjectionReport();
             } else if (view === 'history') {
                 if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
+            } else if (view === 'annual') {
+                // Password lock for Annual Report — boss only
+                if (!window._annualUnlocked) {
+                    // Hide the view first
+                    if (viewEl) { viewEl.style.display = 'none'; }
+                    var overlay = document.createElement('div');
+                    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+                    var box = document.createElement('div');
+                    box.style.cssText = 'background:var(--paper,#fff);border-radius:16px;max-width:380px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(8,15,26,.3);text-align:center;';
+                    box.innerHTML = '<div style="font-size:36px;margin-bottom:12px;">🔒</div>'
+                        + '<div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">Annual Report</div>'
+                        + '<div style="font-size:13px;color:#64748b;margin-bottom:20px;">Enter password to access</div>'
+                        + '<input id="annual-pw-input" type="password" placeholder="Password" style="width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;text-align:center;margin-bottom:8px;">'
+                        + '<div id="annual-pw-err" style="font-size:12px;color:#dc2626;margin-bottom:12px;min-height:18px;"></div>';
+                    var btnRow = document.createElement('div');
+                    btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+                    var btnCancel = document.createElement('button');
+                    btnCancel.textContent = 'Cancel';
+                    btnCancel.style.cssText = 'padding:9px 24px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
+                    var btnUnlock = document.createElement('button');
+                    btnUnlock.textContent = '🔓 Unlock';
+                    btnUnlock.style.cssText = 'padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+                    btnRow.appendChild(btnCancel);
+                    btnRow.appendChild(btnUnlock);
+                    box.appendChild(btnRow);
+                    overlay.appendChild(box);
+                    document.body.appendChild(overlay);
+                    setTimeout(function(){ var inp = document.getElementById('annual-pw-input'); if(inp) inp.focus(); }, 100);
+                    var annualPw = (appState.config && appState.config.annual_password) || 'boss123';
+                    function tryUnlock() {
+                        var inp = document.getElementById('annual-pw-input');
+                        var err = document.getElementById('annual-pw-err');
+                        if (inp && inp.value === annualPw) {
+                            window._annualUnlocked = true;
+                            overlay.remove();
+                            switchView('annual');
+                        } else {
+                            if (err) err.textContent = '❌ Wrong password';
+                            if (inp) { inp.value = ''; inp.focus(); }
+                        }
+                    }
+                    btnUnlock.addEventListener('click', tryUnlock);
+                    var pwInput = document.getElementById('annual-pw-input');
+                    if (pwInput) pwInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') tryUnlock(); });
+                    btnCancel.addEventListener('click', function() { overlay.remove(); switchView('quick'); });
+                    return;
+                }
+                if (typeof renderAnnualReport === 'function') renderAnnualReport();
             } else if (view === 'settings') {
                 var lt = document.getElementById('settings-license-type');
                 if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
+                if (window.electronAPI && window.electronAPI.getAppVersion) {
+                    window.electronAPI.getAppVersion().then(function(ver) {
+                        var ve = document.getElementById('settings-app-version');
+                        if (ve) ve.textContent = 'v' + ver;
+                    });
+                }
             } else if (view === 'salary') {
                 if (typeof initSalaryView === 'function') initSalaryView();
             } else if (view === 'commission') {
@@ -691,14 +761,14 @@
                     var achColor=ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
                     return '<div class="h-person">'
                         +'<div class="h-pname">'+((p.name||'').substring(0,6))+'</div>'
-                        +'<div class="h-pach" style="color:'+achColor+';">'+ach.toFixed(0)+'%</div>'
-                        +'<div class="h-pcomm">'+comm.toFixed(0)+'</div>'
+                        +'<div class="h-pach" style="color:'+achColor+';">'+ach.toFixed(2)+'%</div>'
+                        +'<div class="h-pcomm">'+formatCurrency(comm)+'</div>'
                         +'</div>';
                 }).join('');
                 return '<div class="h-card">'
                     +'<div class="h-card-top">'
                     +'<div><div class="h-month">'+month+'</div><div class="h-year">'+new Date().getFullYear()+'</div></div>'
-                    +'<div><div class="h-comm-lbl">Total Commission</div><div class="h-comm-val">RM '+totalComm.toFixed(0)+'</div></div>'
+                    +'<div><div class="h-comm-lbl">Total Commission Paid</div><div class="h-comm-val">'+formatCurrency(totalComm)+'</div></div>'
                     +'</div>'
                     +(peopleHtml.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
                     +'<div class="h-foot">'

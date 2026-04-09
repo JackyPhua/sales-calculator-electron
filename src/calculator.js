@@ -454,6 +454,52 @@ function switchView(view) {
         if (_ys) _ys._userOverride = false;
         if (typeof renderProjectionReport === 'function') renderProjectionReport();
     } else if (view === 'annual') {
+        if (!window._annualUnlocked) {
+            if (viewEl) { viewEl.style.display = 'none'; }
+            var overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+            var box = document.createElement('div');
+            box.style.cssText = 'background:var(--paper,#fff);border-radius:16px;max-width:380px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(8,15,26,.3);text-align:center;';
+            box.innerHTML = '<div style="font-size:36px;margin-bottom:12px;">🔒</div>'
+                + '<div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">Annual Report</div>'
+                + '<div style="font-size:13px;color:#64748b;margin-bottom:20px;">Enter password to access</div>'
+                + '<input id="annual-pw-input" type="password" placeholder="Password" style="width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;text-align:center;margin-bottom:8px;">'
+                + '<div id="annual-pw-err" style="font-size:12px;color:#dc2626;margin-bottom:12px;min-height:18px;"></div>';
+            var btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+            var btnCancel = document.createElement('button');
+            btnCancel.textContent = 'Cancel';
+            btnCancel.style.cssText = 'padding:9px 24px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
+            var btnUnlock = document.createElement('button');
+            btnUnlock.textContent = '🔓 Unlock';
+            btnUnlock.style.cssText = 'padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+            btnRow.appendChild(btnCancel);
+            btnRow.appendChild(btnUnlock);
+            box.appendChild(btnRow);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            setTimeout(function(){ var inp = document.getElementById('annual-pw-input'); if(inp) inp.focus(); }, 100);
+            var annualPw = (window.appState.config && window.appState.config.annual_password) || 'boss123';
+            function tryUnlock() {
+                var inp = document.getElementById('annual-pw-input');
+                var err = document.getElementById('annual-pw-err');
+                if (inp && inp.value === annualPw) {
+                    window._annualUnlocked = true;
+                    overlay.remove();
+                    switchView('annual');
+                    // Reset immediately so next time still requires password
+                    setTimeout(function(){ window._annualUnlocked = false; }, 500);
+                } else {
+                    if (err) err.textContent = '❌ Wrong password';
+                    if (inp) { inp.value = ''; inp.focus(); }
+                }
+            }
+            btnUnlock.addEventListener('click', tryUnlock);
+            var pwInput = document.getElementById('annual-pw-input');
+            if (pwInput) pwInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') tryUnlock(); });
+            btnCancel.addEventListener('click', function() { overlay.remove(); switchView('quick'); });
+            return;
+        }
         if (typeof renderAnnualReport === 'function') renderAnnualReport();
     } else if (view === 'settings') {
         var lt = document.getElementById('settings-license-type');
@@ -1523,7 +1569,7 @@ function updateSalespersonData(index) {
         if (collectionBonusEl) collectionBonusEl.textContent = formatCurrency(collectionBonus);
         if (callBonusEl) callBonusEl.textContent = formatCurrency(callBonus);
         if (quarterlyEl) quarterlyEl.textContent = person.quarterlyTarget > 0 
-            ? `${formatCurrency(quarterlyBonus)} (${quarterlyAchievement.toFixed(1)}%)`
+            ? `${formatCurrency(quarterlyBonus)} (${quarterlyAchievement.toFixed(2)}%)`
             : formatCurrency(quarterlyBonus);
         if (totalEl) totalEl.textContent = formatCurrency(totalCommission);
     } else {
@@ -1677,7 +1723,7 @@ function updateSummaryView() {
             var tSales=0,tTarget=0,hits=0;
             srcPeople.forEach(function(p){tSales+=parseFloat(p.sales)||0;tTarget+=parseFloat(p.target)||0;if(p.target>0&&p.sales/p.target>=1)hits++;});
             if (ts) ts.textContent = formatCurrency(tSales);
-            if (aa) { var avg=tTarget>0?tSales/tTarget*100:0; aa.textContent=avg.toFixed(1)+'%'; aa.style.color=avg>=100?'var(--em)':avg>=90?'var(--am)':'var(--rose)'; }
+            if (aa) { var avg=tTarget>0?tSales/tTarget*100:0; aa.textContent=avg.toFixed(2)+'%'; aa.style.color=avg>=100?'var(--em)':avg>=90?'var(--am)':'var(--rose)'; }
             if (ht) ht.textContent = hits+' / '+srcPeople.length;
             if (tt) tt.textContent = formatCurrency(tTarget);
         }
@@ -1713,7 +1759,7 @@ function updateAchievementHero() {
     var color  = ach >= 100 ? 'var(--em)' : ach >= 90 ? 'var(--am)' : 'var(--rose)';
     var fillColor = ach>=100?'linear-gradient(90deg,#10b981,#34d399)':ach>=90?'linear-gradient(90deg,#f59e0b,#fbbf24)':'linear-gradient(90deg,#f43f5e,#fb7185)';
     if (fill)   { fill.style.width=Math.min(ach,100)+'%'; fill.style.background=fillColor; }
-    if (bigPct) { bigPct.textContent=ach.toFixed(1)+'%'; bigPct.style.color=color; }
+    if (bigPct) { bigPct.textContent=ach.toFixed(2)+'%'; bigPct.style.color=color; }
     if (name)   name.textContent = person.name;
     if (sub)    sub.textContent  = 'Target: '+formatCurrency(person.target||0)+' · Sales: '+formatCurrency(person.sales||0);
     if (badge) {
@@ -1767,7 +1813,7 @@ function renderPersonSidebar() {
         row.innerHTML =
             '<div class="p-av" style="background:'+col[0]+';color:'+col[1]+';">'+personName[0]+'</div>'
             + '<span class="p-name">'+personName+'</span>'
-            + (ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(0)+'%</span>' : '');
+            + (ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(2)+'%</span>' : '');
 
         row.addEventListener('click', (function(name){ return function() {
             var mon = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
@@ -3785,7 +3831,7 @@ function viewHistoryReport(index) {
             + '<div style="color:#6b7280;">Collection Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(collBon) + '</div>'
             + '<div style="color:#6b7280;">Call Bonus</div><div style="text-align:right;color:#2563eb;">'       + formatCurrency(callBon) + '</div>'
             + (isQtr ? '<div style="color:#6b7280;">Quarterly Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(qtrBon) + '</div>' : '')
-            + '<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>'
+            + '<div style="color:#6b7280;font-weight:600;">Total Commission Paid</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>'
             + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
             + '<div style="color:#6b7280;">EPF (' + epfRate + '%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(epfAmt) + '</div>'
             + '<div style="font-weight:700;color:#111;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">' + formatCurrency(grandTotal) + '</div>'
@@ -3880,11 +3926,11 @@ function loadQuickCalculateHistory() {
         for (var i = 0; i < r.length; i++) {
             if (ach >= r[i].min && ach <= r[i].max) {
                 var comm = sales * (r[i].rate || 0);
-                console.log('💰', name, '| sales:', sales, '| target:', target, '| ach:', ach.toFixed(1)+'%', '| tier:', r[i].label, '| rate:', r[i].rate, '| comm:', comm);
+                console.log('💰', name, '| sales:', sales, '| target:', target, '| ach:', ach.toFixed(2)+'%', '| tier:', r[i].label, '| rate:', r[i].rate, '| comm:', comm);
                 return comm;
             }
         }
-        console.warn('⚠️ No tier matched for', name, 'ach:', ach.toFixed(1)+'%');
+        console.warn('⚠️ No tier matched for', name, 'ach:', ach.toFixed(2)+'%');
         return 0;
     }
 
@@ -3926,25 +3972,23 @@ function loadQuickCalculateHistory() {
             var ach  = (p.target||0) > 0 ? (p.sales||0)/p.target*100 : 0;
             return '<div class="bg-white rounded p-3 text-center border border-gray-100">'
                 + '<div class="font-medium text-gray-800 text-sm">' + (p.name||'—') + '</div>'
-                + '<div class="text-xs text-gray-500 mt-1">Target: ' + formatCurrency(p.target||0) + '</div>'
-                + '<div class="text-xs text-gray-500">Sales: ' + formatCurrency(p.sales||0) + '</div>'
-                + '<div class="text-xs font-semibold mt-1 ' + (ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500') + '">' + ach.toFixed(1) + '%</div>'
+                + '<div class="text-xs font-semibold mt-1 ' + (ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500') + '">' + ach.toFixed(2) + '%</div>'
                 + '<div class="text-xs text-indigo-600 font-medium">' + formatCurrency(comm) + '</div>'
                 + '</div>';
         }).join('');
 
-        return '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-4">'
-            + '<div class="flex justify-between items-start mb-3">'
-            + '<div><h4 class="text-lg font-bold text-gray-900">' + month + '</h4>'
-            + '<p class="text-sm text-gray-500">' + people.length + ' people &nbsp;|&nbsp; Total Commission: <span class="font-semibold text-green-600">' + formatCurrency(totalComm) + '</span></p></div>'
-            + '<div class="flex gap-2 flex-wrap justify-end">'
+        return '<div style="background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(8,15,26,.08);border:1px solid #e2e8f0;margin-bottom:16px;overflow:hidden;">'
+            + '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;">'
+            + '<div><div style="font-size:18px;font-weight:800;color:#fff;">' + month + '</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">' + new Date().getFullYear() + '</div></div>'
+            + '<div style="text-align:right;"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px;">Total Commission Paid</div><div style="font-size:18px;font-weight:800;color:#10b981;">' + formatCurrency(totalComm) + '</div></div>'
+            + '</div>'
+            + '<div style="padding:16px 20px;">'
+            + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">' + peopleCards + '</div>'
+            + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
             + '<button onclick="viewHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
             + '<button onclick="openHistoryExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
-            + '<button onclick="printHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>'
-            + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>'
-            + '</div></div>'
-            + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">' + peopleCards + '</div>'
-            + '</div>';
+            + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">🗑️</button>'
+            + '</div></div></div>';
     }).join('');
 }
 
@@ -3994,8 +4038,8 @@ function updateLivePayslip() {
     var achColor   = ach>=100 ? '#1D9E75' : ach>=90 ? '#BA7517' : '#E24B4A';
     var g = function(id){ return document.getElementById(id); };
     if(g('ps-title'))   g('ps-title').textContent   = person.name + ' — SALARY REPORT';
-    if(g('ps-ach-lbl')) g('ps-ach-lbl').textContent = 'Achievement: ' + ach.toFixed(1) + '%';
-    if(g('ps-ach-pct')){ g('ps-ach-pct').textContent = ach.toFixed(1)+'%'; g('ps-ach-pct').style.color = achColor; }
+    if(g('ps-ach-lbl')) g('ps-ach-lbl').textContent = 'Achievement: ' + ach.toFixed(2) + '%';
+    if(g('ps-ach-pct')){ g('ps-ach-pct').textContent = ach.toFixed(2)+'%'; g('ps-ach-pct').style.color = achColor; }
     if(g('ps-ach-bar')){ g('ps-ach-bar').style.width = Math.min(ach,120)+'%'; g('ps-ach-bar').style.background = achColor; }
     if(g('ps-personal')) g('ps-personal').textContent = formatCurrency(sales);
     // Team sale = sum of all salespeople sales this month
@@ -4719,8 +4763,19 @@ function renderProjectionReport() {
     var curr = calcIncome(sales, calls);
     var sPct = curr.sp, cPct = curr.cp;
 
-    // Sales milestones
-    var SALE_MS = [{pct:80,label:'80%',bg:'#fefce8',bc:'#fde68a',tc:'#92400e'},{pct:90,label:'90%',bg:'#eff6ff',bc:'#bfdbfe',tc:'#1e40af'},{pct:100,label:'100%',bg:'#f0fdf4',bc:'#86efac',tc:'#166534'},{pct:106,label:'106%',bg:'#dcfce7',bc:'#4ade80',tc:'#14532d'}];
+    // Sales milestones — built dynamically from commission rates
+    var msColors = [
+        {bg:'#fefce8',bc:'#fde68a',tc:'#92400e'},
+        {bg:'#eff6ff',bc:'#bfdbfe',tc:'#1e40af'},
+        {bg:'#f0fdf4',bc:'#86efac',tc:'#166534'},
+        {bg:'#dcfce7',bc:'#4ade80',tc:'#14532d'},
+        {bg:'#fdf4ff',bc:'#e9d5ff',tc:'#6b21a8'},
+        {bg:'#fff7ed',bc:'#fed7aa',tc:'#9a3412'}
+    ];
+    var SALE_MS = rates.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.rate||0)>0;}).map(function(t,i){
+        var c = msColors[i % msColors.length];
+        return {pct:t.min, label:t.min+'%', bg:c.bg, bc:c.bc, tc:c.tc};
+    });
 
     // Build call milestone labels from tiers
     var CALL_MS = callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).map(function(t){
@@ -4730,21 +4785,21 @@ function renderProjectionReport() {
     var html = '';
 
     // ── Header stats ──────────────────────────────────────────────────────────
-    var barW  = Math.min(100, sPct).toFixed(1);
+    var barW  = Math.min(100, sPct).toFixed(2);
     var barC  = sPct>=106?'#16a34a':sPct>=100?'#2563eb':sPct>=90?'#d97706':'#dc2626';
-    var cBarW = Math.min(100, cPct).toFixed(1);
+    var cBarW = Math.min(100, cPct).toFixed(2);
     var cBarC = cPct>=90?'#4f46e5':cPct>=75?'#7c3aed':cPct>=60?'#a78bfa':'#c4b5fd';
 
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
     html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Sale Target</div><div style="font-size:14px;font-weight:600;color:#0f172a;">'+(target>0?fmt(target):'—')+'</div></div>';
     html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Current Sales</div><div style="font-size:14px;font-weight:600;color:#0f172a;">'+fmt(sales)+'</div></div>';
-    html += '<div style="background:'+(sPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(sPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Achievement</div><div style="font-size:14px;font-weight:600;color:'+(sPct>=100?'#166534':sPct>=90?'#92400e':'#dc2626')+';">'+sPct.toFixed(1)+'%</div></div>';
+    html += '<div style="background:'+(sPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(sPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Achievement</div><div style="font-size:14px;font-weight:600;color:'+(sPct>=100?'#166534':sPct>=90?'#92400e':'#dc2626')+';">'+sPct.toFixed(2)+'%</div></div>';
     html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Commission Rate</div><div style="font-size:14px;font-weight:600;color:#2563eb;">'+(curr.rate*100).toFixed(2)+'%</div></div>';
     html += '<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#1e40af;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Current Commission</div><div style="font-size:14px;font-weight:600;color:#1d4ed8;">'+fmt(curr.comm)+'</div></div>';
     html += '</div>';
 
     // Sales progress bar
-    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Sales progress</span><span style="font-weight:600;">'+sPct.toFixed(1)+'%</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Sales progress</span><span style="font-weight:600;">'+sPct.toFixed(2)+'%</span></div>';
     html += '<div style="background:#f1f5f9;border-radius:99px;height:7px;overflow:hidden;margin-bottom:14px;"><div style="height:100%;border-radius:99px;width:'+barW+'%;background:'+barC+';"></div></div>';
 
     // Sales balance to go — only show milestones NOT yet achieved
@@ -4774,13 +4829,13 @@ function renderProjectionReport() {
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
     html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Target</div><div style="font-size:14px;font-weight:600;color:#3c1d8a;">'+(callTgt||'—')+'</div></div>';
     html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Actual Calls</div><div style="font-size:14px;font-weight:600;color:#3c1d8a;">'+calls+'</div></div>';
-    html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Achievement</div><div style="font-size:14px;font-weight:600;color:#4c1d95;">'+cPct.toFixed(1)+'%</div></div>';
+    html += '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Achievement</div><div style="font-size:14px;font-weight:600;color:#4c1d95;">'+cPct.toFixed(2)+'%</div></div>';
     html += '<div style="background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Incentive</div><div style="font-size:14px;font-weight:600;color:#4c1d95;">'+fmt(curr.cInc)+'</div></div>';
-    html += '<div style="background:'+(cPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(cPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Progress</div><div style="font-size:14px;font-weight:600;color:'+(cPct>=100?'#166534':cPct>=75?'#92400e':'#dc2626')+';">'+cPct.toFixed(1)+'%</div></div>';
+    html += '<div style="background:'+(cPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(cPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#5b21b6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Call Progress</div><div style="font-size:14px;font-weight:600;color:'+(cPct>=100?'#166534':cPct>=75?'#92400e':'#dc2626')+';">'+cPct.toFixed(2)+'%</div></div>';
     html += '</div>';
 
     // Call progress bar
-    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Active call progress</span><span style="font-weight:600;">'+cPct.toFixed(1)+'%</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Active call progress</span><span style="font-weight:600;">'+cPct.toFixed(2)+'%</span></div>';
     html += '<div style="background:#f1f5f9;border-radius:99px;height:7px;overflow:hidden;margin-bottom:14px;"><div style="height:100%;border-radius:99px;width:'+cBarW+'%;background:'+cBarC+';"></div></div>';
 
     // Call milestones — only show unachieved
@@ -5006,7 +5061,7 @@ function showPayslipPreview(index) {
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:14px;">
                     <tr style="background:#f9fafb;">
-                        <td style="padding:6px 12px 6px 24px;">Commission (${person.achievement?person.achievement.toFixed(1)+'%':'—'})</td>
+                        <td style="padding:6px 12px 6px 24px;">Commission (${person.achievement?person.achievement.toFixed(2)+'%':'—'})</td>
                         <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(commission)}</td>
                     </tr>
                     <tr>
@@ -5698,7 +5753,6 @@ function renderDashboard() {
     var curYear = new Date().getFullYear();
     var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-    function fmtK(n) { return n>=1000 ? 'RM '+(n/1000).toFixed(1)+'K' : fmt(n); }
     var peopleStats = configPeople.map(function(name) {
         var totalSales=0, totalTarget=0, totalComm=0, monthCount=0;
         var salesByMonth = MONTHS.map(function(m) {
@@ -5732,11 +5786,11 @@ function renderDashboard() {
     html += '<div style="margin-bottom:20px;"><div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;">Team Dashboard</div>';
     html += '<div style="font-size:13px;color:#64748b;margin-top:4px;">'+curYear+' Overview · '+configPeople.length+' salespeople</div></div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:22px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamSales)+'</div></div>';
-    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:22px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamTarget)+'</div></div>';
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:22px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
+    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:22px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
     var achColor = teamAch>=100?'#059669':'#d97706';
-    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:22px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(1)+'%</div></div>';
-    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission</div><div style="font-size:22px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmtK(teamComm)+'</div></div>';
+    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:22px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(2)+'%</div></div>';
+    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission Paid</div><div style="font-size:22px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
     html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:22px;font-weight:800;color:#7c3aed;margin-top:4px;">🏆 '+topPerson+'</div></div>';
     html += '</div>';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
@@ -5751,9 +5805,9 @@ function renderDashboard() {
         html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 20px;margin-bottom:8px;display:grid;grid-template-columns:180px 1fr 110px 110px 110px;align-items:center;gap:16px;">';
         html += '<div style="display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div><div style="font-size:13px;font-weight:700;color:#0f172a;">'+(medals[i]||'')+' '+p.name+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
         html += '<div style="display:flex;align-items:end;gap:2px;height:50px;">'+bars+'</div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(p.totalSales)+'</div></div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(1)+'%</div></div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Commission</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(p.totalComm)+'</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Commission</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalComm)+'</div></div>';
         html += '</div>';
     });
     html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-top:12px;">';
@@ -5764,7 +5818,7 @@ function renderDashboard() {
     MONTHS.forEach(function(m,mi){
         var total = monthTotals[mi]; var h = maxMonth>0?Math.max(8,(total/maxMonth)*160):8; var hasData = total>0;
         html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;">';
-        if(hasData) html += '<div style="font-size:10px;font-weight:700;color:#475569;font-family:\'IBM Plex Mono\',monospace;">'+fmtK(total)+'</div>';
+        if(hasData) html += '<div style="font-size:10px;font-weight:700;color:#475569;font-family:\'IBM Plex Mono\',monospace;">'+fmt(total)+'</div>';
         html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,#3b82f6,#1d4ed8)':'#f1f5f9')+';border-radius:6px 6px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
         html += '<div style="font-size:11px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';">'+m+'</div></div>';
     });
@@ -5790,7 +5844,6 @@ function renderAnnualReport() {
     var subEl = document.getElementById('annual-sub');
     if (subEl) subEl.textContent = selectedYear + ' · ' + configPeople.length + ' salespeople';
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-    function fmtK(n) { return n>=1000 ? 'RM '+(n/1000).toFixed(1)+'K' : fmt(n); }
     var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
     MONTHS.forEach(function(m) {
         var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
@@ -5817,7 +5870,7 @@ function renderAnnualReport() {
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
     html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Team Sales</div><div style="font-size:20px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
     html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Target</div><div style="font-size:20px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
-    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Overall Achievement</div><div style="font-size:20px;font-weight:800;color:'+(teamAch>=100?'#059669':'#d97706')+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(1)+'%</div></div>';
+    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Overall Achievement</div><div style="font-size:20px;font-weight:800;color:'+(teamAch>=100?'#059669':'#d97706')+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(2)+'%</div></div>';
     html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Commission Paid</div><div style="font-size:20px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
     html += '</div>';
     // Monthly breakdown
@@ -5835,9 +5888,9 @@ function renderAnnualReport() {
         html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
         configPeople.forEach(function(p) {
             var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmtK(d.target):'—')+'</td>';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmtK(d.sales):'—')+'</td>';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(0)+'%':'—')+'</td>';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmt(d.target):'—')+'</td>';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
+            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
         });
         html += '</tr>';
     });
@@ -5845,9 +5898,9 @@ function renderAnnualReport() {
     configPeople.forEach(function(p) {
         var tT=0, tS=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
         var tA = tT>0?(tS/tT*100):0;
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmtK(tT)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmtK(tS)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(1)+'%</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmt(tT)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmt(tS)+'</td>';
+        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(2)+'%</td>';
     });
     html += '</tr></tbody></table></div></div>';
     // Commission summary
@@ -5878,7 +5931,7 @@ function renderAnnualReport() {
         html += '<div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:16px 18px;color:#fff;"><div style="font-size:16px;font-weight:800;">'+p+'</div><div style="font-size:12px;opacity:.7;margin-top:2px;">'+mc+' months active</div></div>';
         html += '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:8px;font-size:13px;">';
         html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Sales</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tS)+'</span></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(1)+'%</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(2)+'%</span></div>';
         html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
         html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Salary</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal)+'</span></div>';
         html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Allowances</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(allow)+'</span></div>';
@@ -5905,3 +5958,36 @@ function printAnnualReport() {
     setTimeout(function(){ win.print(); }, 300);
 }
 window.printAnnualReport = printAnnualReport;
+
+// ==================== ANNUAL REPORT PASSWORD ====================
+function saveAnnualPassword() {
+    var inp = document.getElementById('annual-pw-setting');
+    if (!inp || !inp.value.trim()) { showToast('⚠️', 'Please enter a password'); return; }
+    window.appState.config.annual_password = inp.value.trim();
+    saveConfig();
+    window._annualUnlocked = false;
+    inp.value = '';
+    showToast('✅', 'Annual Report password updated');
+}
+window.saveAnnualPassword = saveAnnualPassword;
+
+// Load existing password into settings field when opening settings
+(function() {
+    var origSwitchSettings = null;
+    var checkSettingsPw = setInterval(function() {
+        var inp = document.getElementById('annual-pw-setting');
+        if (inp && window.appState && window.appState.config) {
+            clearInterval(checkSettingsPw);
+            // Show current password when settings tab opens
+            var observer = new MutationObserver(function() {
+                var settingsView = document.getElementById('view-settings');
+                if (settingsView && settingsView.style.display === 'block') {
+                    var pw = (window.appState.config.annual_password) || 'boss123';
+                    inp.value = pw;
+                }
+            });
+            var settingsView = document.getElementById('view-settings');
+            if (settingsView) observer.observe(settingsView, {attributes:true, attributeFilter:['style']});
+        }
+    }, 1000);
+})();
