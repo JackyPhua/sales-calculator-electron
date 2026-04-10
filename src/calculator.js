@@ -472,7 +472,7 @@ function switchView(view) {
             btnCancel.style.cssText = 'padding:9px 24px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
             var btnUnlock = document.createElement('button');
             btnUnlock.textContent = '🔓 Unlock';
-            btnUnlock.style.cssText = 'padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+            btnUnlock.style.cssText = 'padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;';
             btnRow.appendChild(btnCancel);
             btnRow.appendChild(btnUnlock);
             box.appendChild(btnRow);
@@ -487,8 +487,6 @@ function switchView(view) {
                     window._annualUnlocked = true;
                     overlay.remove();
                     switchView('annual');
-                    // Reset immediately so next time still requires password
-                    setTimeout(function(){ window._annualUnlocked = false; }, 500);
                 } else {
                     if (err) err.textContent = '❌ Wrong password';
                     if (inp) { inp.value = ''; inp.focus(); }
@@ -761,7 +759,7 @@ function createBlankSalespersonCard() {
         : '<option value="">Please configure salespeople first</option>';
     
     const card = document.createElement('div');
-    card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
+    card.className = 'card bg-white rounded-xl shadow-sm p-3 border border-gray-200 relative';
     card.setAttribute('draggable', 'false');
     card.addEventListener('dragstart', function(e) { e.preventDefault(); });
     card.innerHTML = `
@@ -773,21 +771,21 @@ function createBlankSalespersonCard() {
         </button>
         
         <!-- Person name display -->
-        <div id="card-name-display-${index}" style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
-            <span id="card-avatar-${index}" style="width:30px;height:30px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">?</span>
+        <div id="card-name-display-${index}" style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
+            <span id="card-avatar-${index}" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">?</span>
             <span id="card-name-text-${index}" style="letter-spacing:0.3px;">—</span>
         </div>
         
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-2 gap-2">
             <div class="col-span-2" style="display:none;">
                 <input type="hidden" id="name-${index}" value="">
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Target (RM)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Target (RM)</label>
                 <input type="number" 
                        id="target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -796,10 +794,10 @@ function createBlankSalespersonCard() {
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Sales (RM)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Sales (RM)</label>
                 <input type="number" 
                        id="sales-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                        placeholder="Enter sales"
                        value=""
                        onfocus="this.readOnly=false;this.style.backgroundColor='';"
@@ -807,46 +805,46 @@ function createBlankSalespersonCard() {
             </div>
             
             <div class="col-span-2">
-                <div class="h-px bg-gray-200 my-4"></div>
-                <h5 class="text-sm font-semibold text-gray-700 mb-3">📊 Quarterly Data (3 months total)</h5>
+                <div class="h-px bg-gray-200 my-1"></div>
+                <h5 class="text-xs font-semibold text-gray-700 mb-1">📊 Quarterly Data (3 months total)</h5>
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Target (RM)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Target (RM)</label>
                 <input type="number" 
                        id="quarterly-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Auto (Q months total)"
                        value=""
                        disabled readonly
                        style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
                        title="Auto: sum of quarterly months targets">
-                <p class="text-xs text-gray-500 mt-1">3 months total target</p>
+                <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total target</p>
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Sales (RM)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Sales (RM)</label>
                 <input type="number" 
                        id="quarterly-sales-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Auto (Q months total)"
                        value=""
                        disabled readonly
                        style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
                        title="Auto: sum of quarterly months sales">
-                <p class="text-xs text-gray-500 mt-1">3 months total sales</p>
+                <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total sales</p>
             </div>
             
             <div class="col-span-2">
-                <div class="h-px bg-gray-200 my-4"></div>
-                <h5 class="text-sm font-semibold text-gray-700 mb-3">🎯 Other Targets</h5>
+                <div class="h-px bg-gray-200 my-1"></div>
+                <h5 class="text-xs font-semibold text-gray-700 mb-1">🎯 Other Targets</h5>
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (Outlets)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Collection Target (Outlets)</label>
                 <input type="number" 
                        id="collection-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -855,20 +853,20 @@ function createBlankSalespersonCard() {
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Collected Outlets</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Collected Outlets</label>
                 <input type="number" 
                        id="collection-amount-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                        placeholder="Enter collected outlets"
                        value=""
                        oninput="updateSalespersonData(${index})">
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Target)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Target)</label>
                 <input type="number" 
                        id="call-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -877,10 +875,10 @@ function createBlankSalespersonCard() {
             </div>
             
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Actual)</label>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Actual)</label>
                 <input type="number" 
                        id="call-actual-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                        placeholder="Enter actual calls"
                        value=""
                        oninput="updateSalespersonData(${index})">
@@ -888,8 +886,8 @@ function createBlankSalespersonCard() {
         </div>
         
         <!-- Preview Section - Initially hidden -->
-        <div id="preview-${index}" class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 hidden">
-            <div class="grid grid-cols-2 gap-4 text-sm">
+        <div id="preview-${index}" class="mt-1 p-2 bg-blue-50 rounded-lg border border-blue-200 hidden">
+            <div class="grid grid-cols-2 gap-1 text-xs">
                 <div>
                     <span class="text-gray-600">Achievement:</span>
                     <span id="achievement-${index}" class="font-semibold ml-2"></span>
@@ -915,17 +913,17 @@ function createBlankSalespersonCard() {
                     <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                 </div>
             </div>
-            <div class="mt-3 text-right">
+            <div class="mt-1 text-right">
                 <button onclick="showPayslipPreview(${index})" 
-                        class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
+                        class="px-3 py-1 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
                     📄 Preview Payslip
                 </button>
             </div>
         </div>
         <!-- Save footer inside card -->
-        <div style="margin-top:16px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
-            <button onclick="clearAllQuickCalculateData()" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
-            <button onclick="manualSave()" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
+            <button onclick="clearAllQuickCalculateData()" style="padding:6px 16px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:11px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
+            <button onclick="manualSave()" style="padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
         </div>
     `;
     
@@ -971,7 +969,7 @@ function showQuickAddPersonModal() {
     var existing = document.getElementById('quick-add-person-modal');
     if (existing) existing.remove();
 
-    var IS = 'width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;background:#fff;color:#111827;display:block;';
+    var IS = 'width:100%;padding:7px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;background:#fff;color:#111827;display:block;';
     function mkInp(id, type, val, ph, extra) {
         var i = document.createElement('input');
         i.id = id; i.type = type; i.value = val; i.placeholder = ph;
@@ -1243,7 +1241,7 @@ function renderAllSalespeopleCards() {
             : '<option value="">Please configure salespeople first</option>';
         
         const card = document.createElement('div');
-        card.className = 'card bg-white rounded-xl shadow-sm p-6 border border-gray-200 relative';
+        card.className = 'card bg-white rounded-xl shadow-sm p-3 border border-gray-200 relative';
         card.setAttribute('draggable', 'false');
         card.addEventListener('dragstart', function(e) { e.preventDefault(); });
         card.innerHTML = `
@@ -1255,21 +1253,21 @@ function renderAllSalespeopleCards() {
             </button>
             
             <!-- Person name display -->
-            <div id="card-name-display-${index}" style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
-                <span id="card-avatar-${index}" style="width:30px;height:30px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${person.name ? person.name[0] : '?'}</span>
+            <div id="card-name-display-${index}" style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
+                <span id="card-avatar-${index}" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${person.name ? person.name[0] : '?'}</span>
                 <span id="card-name-text-${index}" style="letter-spacing:0.3px;">${person.name || '—'}</span>
             </div>
             
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-2">
                 <div class="col-span-2" style="display:none;">
                     <input type="hidden" id="name-${index}" value="${person.name || ''}">
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Target (RM)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Target (RM)</label>
                     <input type="number" 
                        id="target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -1278,10 +1276,10 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Monthly Sales (RM)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Sales (RM)</label>
                     <input type="number" 
                            id="sales-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                           class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                            placeholder="Enter sales"
                            value="${person.sales || ''}"
                            onfocus="this.readOnly=false;this.style.backgroundColor='';"
@@ -1289,46 +1287,46 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div class="col-span-2">
-                    <div class="h-px bg-gray-200 my-4"></div>
-                    <h5 class="text-sm font-semibold text-gray-700 mb-3">📊 Quarterly Data (3 months total)</h5>
+                    <div class="h-px bg-gray-200 my-1"></div>
+                    <h5 class="text-xs font-semibold text-gray-700 mb-1">📊 Quarterly Data (3 months total)</h5>
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Target (RM)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Target (RM)</label>
                     <input type="number" 
                        id="quarterly-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Auto (Q months total)"
                        value=""
                        disabled readonly
                        style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
                        title="Auto: sum of quarterly months targets">
-                    <p class="text-xs text-gray-500 mt-1">3 months total target</p>
+                    <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total target</p>
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Quarterly Sales (RM)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Sales (RM)</label>
                     <input type="number" 
                        id="quarterly-sales-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Auto (Q months total)"
                        value=""
                        disabled readonly
                        style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
                        title="Auto: sum of quarterly months sales">
-                    <p class="text-xs text-gray-500 mt-1">3 months total sales</p>
+                    <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total sales</p>
                 </div>
                 
                 <div class="col-span-2">
-                    <div class="h-px bg-gray-200 my-4"></div>
-                    <h5 class="text-sm font-semibold text-gray-700 mb-3">🎯 Other Targets</h5>
+                    <div class="h-px bg-gray-200 my-1"></div>
+                    <h5 class="text-xs font-semibold text-gray-700 mb-1">🎯 Other Targets</h5>
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Collection Target (Outlets)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Collection Target (Outlets)</label>
                     <input type="number" 
                        id="collection-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -1337,20 +1335,20 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Collected Outlets</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Collected Outlets</label>
                     <input type="number" 
                            id="collection-amount-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                           class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                            placeholder="Enter collected outlets"
                            value="${person.collectionAmount || ''}"
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Target)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Target)</label>
                     <input type="number" 
                        id="call-target-${index}"
-                       class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg"
+                       class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
                        value=""
                        disabled readonly
@@ -1359,10 +1357,10 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Active Calls (Actual)</label>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Actual)</label>
                     <input type="number" 
                            id="call-actual-${index}"
-                           class="input-field w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                           class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                            placeholder="Enter actual calls"
                            value="${person.callActual || ''}"
                            oninput="updateSalespersonData(${index})">
@@ -1370,8 +1368,8 @@ function renderAllSalespeopleCards() {
             </div>
             
             <!-- Preview Section -->
-            <div id="preview-${index}" class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div class="grid grid-cols-2 gap-4 text-sm">
+            <div id="preview-${index}" class="mt-1 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                <div class="grid grid-cols-2 gap-1 text-xs">
                     <div>
                         <span class="text-gray-600">Achievement:</span>
                         <span id="achievement-${index}" class="font-semibold ml-2"></span>
@@ -1397,17 +1395,17 @@ function renderAllSalespeopleCards() {
                         <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                     </div>
                 </div>
-                <div class="mt-3 text-right">
+                <div class="mt-1 text-right">
                     <button onclick="showPayslipPreview(${index})" 
-                            class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
+                            class="px-3 py-1 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
                         📄 Preview Payslip
                     </button>
                 </div>
             </div>
             <!-- Save footer inside card -->
-            <div style="margin-top:16px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
-                <button onclick="clearAllQuickCalculateData()" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
-                <button onclick="manualSave()" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="clearAllQuickCalculateData()" style="padding:6px 16px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:11px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
+                <button onclick="manualSave()" style="padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
             </div>
         `;
         
@@ -1977,7 +1975,7 @@ function renderCommissionConfigs(selectedName) {
     container.innerHTML = ddHtml + `
         <div class="space-y-6">
             <!-- Monthly commission settings -->
-            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <div class="bg-blue-50 rounded-lg p-2 border border-blue-200">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">\u{1F4B0} Monthly Commission Rates</h3>
                     <button onclick="addCommissionTier('${sEnc}')"
@@ -2174,7 +2172,7 @@ function renderSalaryConfigs(selectedName) {
     if (!selectedName) { const sel=document.getElementById('salary-person-select'); selectedName=sel?sel.value:people[0]; }
     if (!selectedName||!people.includes(selectedName)) selectedName=people[0];
     const opts=people.map(n=>'<option value="'+n+'"'+(n===selectedName?' selected':'')+'>'+n+'</option>').join('');
-    const dropdown='<div class="mb-6"><label class="block text-sm font-medium text-gray-700 mb-2">Select Salesperson</label><select id="salary-person-select" onchange="renderSalaryConfigs(this.value)" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 bg-white text-gray-900" style="max-width:320px;">'+opts+'</select></div>';
+    const dropdown='<div class="mb-6"><label class="block text-xs font-medium text-gray-700 mb-1">Select Salesperson</label><select id="salary-person-select" onchange="renderSalaryConfigs(this.value)" class="w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 bg-white text-gray-900" style="max-width:320px;">'+opts+'</select></div>';
     container.innerHTML = dropdown + people.filter(n=>n===selectedName).map(name => {
         const nameUpper = name.toUpperCase();
         const salary = window.appState.config.base_salaries[nameUpper] || 0;
@@ -2196,15 +2194,15 @@ function renderSalaryConfigs(selectedName) {
                     </button>
                 </div>
                 
-                <div class="mb-4">
+                <div class="mb-2">
                     <label class="block mb-2">Base Salary (RM)</label>
                     <input type="number" 
                            value="${salary}" 
                            onchange="updateSalary('${name}', this.value)" 
-                           class="w-full px-4 py-2 border border-gray-300 rounded">
+                           class="w-full px-3 py-1 border border-gray-300 rounded">
                 </div>
                 
-                <div class="mb-4">
+                <div class="mb-2">
                     <label class="block mb-2">Allowances (RM)</label>
                     <div class="grid grid-cols-2 gap-3">
                         ${Object.entries(allowances).map(([key, value]) => `
@@ -5786,12 +5784,12 @@ function renderDashboard() {
     html += '<div style="margin-bottom:20px;"><div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;">Team Dashboard</div>';
     html += '<div style="font-size:13px;color:#64748b;margin-top:4px;">'+curYear+' Overview · '+configPeople.length+' salespeople</div></div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:22px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
-    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:22px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
+    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:16px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamTarget)+'</div></div>';
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
     var achColor = teamAch>=100?'#059669':'#d97706';
-    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:22px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(2)+'%</div></div>';
-    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission Paid</div><div style="font-size:22px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
-    html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:22px;font-weight:800;color:#7c3aed;margin-top:4px;">🏆 '+topPerson+'</div></div>';
+    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:16px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+teamAch.toFixed(2)+'%</div></div>';
+    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission Paid</div><div style="font-size:16px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamComm)+'</div></div>';
+    html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:16px;font-weight:800;color:#7c3aed;margin-top:4px;white-space:nowrap;">🏆 '+topPerson+'</div></div>';
     html += '</div>';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
     ranked.forEach(function(p, i) {
@@ -5961,12 +5959,33 @@ window.printAnnualReport = printAnnualReport;
 
 // ==================== ANNUAL REPORT PASSWORD ====================
 function saveAnnualPassword() {
-    var inp = document.getElementById('annual-pw-setting');
-    if (!inp || !inp.value.trim()) { showToast('⚠️', 'Please enter a password'); return; }
-    window.appState.config.annual_password = inp.value.trim();
+    var oldInp = document.getElementById('annual-pw-old');
+    var newInp = document.getElementById('annual-pw-setting');
+    var errEl = document.getElementById('annual-pw-change-err');
+    
+    var currentPw = (window.appState.config && window.appState.config.annual_password) || 'boss123';
+    
+    if (!oldInp || !oldInp.value.trim()) {
+        if (errEl) errEl.textContent = '❌ Please enter current password';
+        return;
+    }
+    if (oldInp.value.trim() !== currentPw) {
+        if (errEl) errEl.textContent = '❌ Current password is wrong';
+        oldInp.value = '';
+        oldInp.focus();
+        return;
+    }
+    if (!newInp || !newInp.value.trim()) {
+        if (errEl) errEl.textContent = '❌ Please enter new password';
+        return;
+    }
+    
+    window.appState.config.annual_password = newInp.value.trim();
     saveConfig();
     window._annualUnlocked = false;
-    inp.value = '';
+    oldInp.value = '';
+    newInp.value = '';
+    if (errEl) errEl.textContent = '';
     showToast('✅', 'Annual Report password updated');
 }
 window.saveAnnualPassword = saveAnnualPassword;

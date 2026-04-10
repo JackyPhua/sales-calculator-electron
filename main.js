@@ -280,6 +280,21 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
     mainWindow.maximize();
+
+    // Auto zoom to fit screen resolution
+    mainWindow.webContents.on('did-finish-load', () => {
+        const { screen } = require('electron');
+        const display = screen.getPrimaryDisplay();
+        const { height } = display.workAreaSize;
+        // Base design is for 1080p, scale accordingly
+        let zoom = 1;
+        if (height <= 768) zoom = 0.75;
+        else if (height <= 900) zoom = 0.85;
+        else if (height <= 1080) zoom = 0.95;
+        else if (height <= 1440) zoom = 1.0;
+        else zoom = 1.1;
+        mainWindow.webContents.setZoomFactor(zoom);
+    });
     
     // 开发时打开 DevTools（生产环境注释掉）
     // mainWindow.webContents.openDevTools();
