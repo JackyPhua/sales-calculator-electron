@@ -5145,11 +5145,58 @@ function exportHistoryToExcel(index) {
 }
 
 function printHistoryReport(index) {
-    const report = (window.appState.config.reportHistory || [])[index];
+    var report = (window.appState.config.reportHistory || [])[index];
     if (!report) return;
-    window.electronAPI.exportPDF({ name: report.month + '_Report' })
-        .then(r => { if (r.success) showToast('✅', 'PDF saved!'); })
-        .catch(e => showToast('❌', e.message));
+    var people = report.data || [];
+    var month = (report.month || '').toUpperCase();
+    var cfg = window.appState.config;
+
+    var html = '';
+    people.forEach(function(p) {
+        var name = (p.name || '').toUpperCase();
+        var sales = parseFloat(p.sales) || 0;
+        var target = parseFloat(p.target) || 0;
+        var ach = target > 0 ? (sales / target * 100) : 0;
+        var comm = calculateCommission(sales, target, name);
+        var collAch = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0) / p.collectionTarget * 100 : 0;
+        var callAch = (p.callTarget||0) > 0 ? (p.callActual||0) / p.callTarget * 100 : 0;
+        var collI = calculateIncentive(collAch, cfg.collection_incentive || []);
+        var callI = calculateIncentive(callAch, cfg.active_call_incentive || []);
+        var totalComm = comm + collI + callI;
+        var salary = (cfg.base_salaries && cfg.base_salaries[name]) || 0;
+        var allowances = cfg.allowances && cfg.allowances[name] ? Object.values(cfg.allowances[name]).reduce(function(s,v){return s+(parseFloat(v)||0);},0) : 0;
+        var totalFixed = salary + allowances;
+        var epfRate = (cfg.deductionRates && cfg.deductionRates[name] && cfg.deductionRates[name].EPF_RATE) || 11;
+        var epf = (totalFixed + totalComm) * epfRate / 100;
+        var grandTotal = totalFixed + totalComm - epf;
+
+        html += '<div style="page-break-inside:avoid;border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:16px;">';
+        html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+' — '+month+' 2026</h3>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Target</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(target)+'</td></tr>';
+        html += '<tr><td style="padding:6px 10px;font-weight:600;">Sales</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(sales)+'</td></tr>';
+        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Achievement</td><td style="padding:6px 10px;text-align:right;color:'+(ach>=100?'#059669':'#d97706')+';">'+ach.toFixed(2)+'%</td></tr>';
+        html += '<tr><td style="padding:6px 10px;">Salary</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(salary)+'</td></tr>';
+        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;">Allowances</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(allowances)+'</td></tr>';
+        html += '<tr><td style="padding:6px 10px;font-weight:600;">Total Fixed Income</td><td style="padding:6px 10px;text-align:right;font-weight:600;">'+formatCurrency(totalFixed)+'</td></tr>';
+        html += '<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Commission</td><td style="padding:6px 10px;text-align:right;color:#2563eb;">'+formatCurrency(comm)+'</td></tr>';
+        html += '<tr><td style="padding:6px 10px;">Collection Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(collI)+'</td></tr>';
+        html += '<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Active Call Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(callI)+'</td></tr>';
+        html += '<tr style="background:#dcfce7;"><td style="padding:6px 10px;font-weight:700;">Total Commission Paid</td><td style="padding:6px 10px;text-align:right;font-weight:700;color:#059669;">'+formatCurrency(totalComm)+'</td></tr>';
+        html += '<tr><td style="padding:6px 10px;color:#dc2626;">EPF '+epfRate+'%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(epf)+'</td></tr>';
+        html += '<tr style="background:#0f172a;color:#fff;"><td style="padding:8px 10px;font-weight:700;">Grand Total Payable</td><td style="padding:8px 10px;text-align:right;font-weight:800;font-size:14px;color:#fbbf24;">'+formatCurrency(grandTotal)+'</td></tr>';
+        html += '</table></div>';
+    });
+
+    var win = window.open('', '_blank');
+    win.document.write('<html><head><title>'+month+' Report</title>');
+    win.document.write('<style>body{font-family:sans-serif;padding:20px;max-width:800px;margin:0 auto;}h2{font-size:20px;margin-bottom:16px;}</style></head><body>');
+    win.document.write('<h2>Commission Report — '+month+' 2026</h2>');
+    win.document.write(html);
+    win.document.write('</body></html>');
+    win.document.close();
+    win.focus();
+    setTimeout(function(){ win.print(); }, 300);
 }
 
 window.exportHistoryToExcel = exportHistoryToExcel;
