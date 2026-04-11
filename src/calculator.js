@@ -6237,10 +6237,11 @@ function renderEmployerCostReport() {
 
     // Summary cards
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px;">';
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
-    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+(selectedPerson==='ALL'?'Selected':'') +' Sales</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
-    html += '<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.8px;">Expenses</div><div style="font-size:16px;font-weight:800;color:#be123c;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalCost)+'</div></div>';
-    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Cost / Sales</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, displayTotalSales)+'</div></div>';
+    var salesLabel = (selectedPerson === 'ALL' && selectedMonth === 'ALL') ? 'Grand Total Sales' : (selectedPerson !== 'ALL' ? 'Individual Sales' : 'Selected Sales');
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Grand Total Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+salesLabel+'</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
+    html += '<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (RM)</div><div style="font-size:16px;font-weight:800;color:#be123c;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalCost)+'</div></div>';
+    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (%)</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, displayTotalSales)+'</div></div>';
     html += '</div>';
 
     // Per person tables
@@ -6267,7 +6268,7 @@ function renderEmployerCostReport() {
         html += '<tr style="background:#f0fdf4;"><td style="padding:8px 14px;font-weight:700;color:#166534;">📈 Sales Revenue</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#166534;">'+fmt(p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">100.00%</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">'+pct(p.totalSales,teamSales)+'</td></tr>';
 
         // Divider
-        html += '<tr><td colspan="4" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expensess</td></tr>';
+        html += '<tr><td colspan="4" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expenses</td></tr>';
 
         // Cost rows
         var rows = [
