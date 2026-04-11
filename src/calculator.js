@@ -339,6 +339,7 @@ function ensureConfigStructure() {
         'allowances', 
         'deductions',
         'deductionRates',
+        'employer_epf_rates',
         'earnings',
         'active_call_targets',
         'reportHistory',
@@ -368,6 +369,7 @@ function getDefaultConfig() {
         allowances: {},
         deductions: {},
         deductionRates: {},
+        employer_epf_rates: {},
         earnings: {},
         active_call_targets: {},
         reportHistory: [],
@@ -3494,6 +3496,8 @@ function fillCardsFromImportedData(targetMonth) {
             window.appState.config.allowances[nameUpper] = {HP:0,CAR:0,'LOCAL FUEL':0,'OUTSTATION FUEL':0,HOUSING:0,FOOD:0,OTHERS:0};
             window.appState.config.deductions[nameUpper] = {EPF:Math.round(1700*0.11*100)/100,SOCSO:Math.round(1700*0.005*100)/100,PCB:0,EIS:0};
             window.appState.config.deductionRates[nameUpper] = {EPF_RATE:11};
+            if (!window.appState.config.employer_epf_rates) window.appState.config.employer_epf_rates = {};
+            window.appState.config.employer_epf_rates[nameUpper] = 13;
         }
         person.months.forEach(md => {
             if (!md.month) return;
@@ -4054,8 +4058,8 @@ function updateLivePayslip() {
     if(g('ps-team')) g('ps-team').textContent = formatCurrency(teamSales || sales);
     if(g('ps-grand'))    g('ps-grand').textContent    = formatCurrency(grand);
 
-    function fp(v){ return sales>0 ? (v/sales*100).toFixed(2)+'%' : '0.00%'; }
-    function tp(v){ return teamSales>0 ? (v/teamSales*100).toFixed(2)+'%' : '0.00%'; }
+    function fp(v){ return sales>0 ? (v/sales*100).toFixed(3)+'%' : '0.000%'; }
+    function tp(v){ return teamSales>0 ? (v/teamSales*100).toFixed(3)+'%' : '0.000%'; }
     function fc(v){ return formatCurrency(v); }
     function sec(l){ return '<tr style="background:#E6F1FB;"><td colspan="4" style="padding:4px 10px;font-weight:600;color:#0C447C;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'+l+'</td></tr>'; }
     function row(l,v,blue,bold){
@@ -5337,6 +5341,7 @@ function showSalaryModal(personName) {
     var salary   = cur.salary;
     var allow    = cur.allowances;
     var epfRate  = cur.epfRate;
+    var employerEpfRate = (window.appState.config.employer_epf_rates && window.appState.config.employer_epf_rates[personName]) || 13;
     // Default effectiveFrom = current month
     var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var now = new Date();
@@ -5368,7 +5373,10 @@ function showSalaryModal(personName) {
         +makeRow('Local Fuel','LOCALFUEL',allow['LOCAL FUEL']||0,true)+makeRow('Outstation Fuel','OUTFUEL',allow['OUTSTATION FUEL']||0,true)
         +makeRow('Housing','HOUSING',allow.HOUSING||0,true)+makeRow('Food','FOOD',allow.FOOD||0,true)
         +'</div>'+makeRow('Others','OTHERS',allow.OTHERS||0)+'</div>'
-        +'<div style="background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px;">'
+        +'<div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:var(--r);padding:14px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#be123c;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Employer Contribution</div>'
+        +makeRow('Employer EPF Rate (%)','employer-epf',employerEpfRate)+'</div>'
+        +'<div style="background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:10px;">'
         +'<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Deduction</div>'
         +makeRow('EPF Rate (%)','epf',epfRate)+'</div>'
         +'<div style="background:#fefce8;border:1px solid #fde68a;border-radius:var(--r);padding:14px;margin-top:10px;">'
@@ -5399,6 +5407,7 @@ function saveSalaryModal(personName) {
     var food=parseFloat(document.getElementById('sm-FOOD').value)||0;
     var oth=parseFloat(document.getElementById('sm-OTHERS').value)||0;
     var epfR=parseFloat(document.getElementById('sm-epf').value)||11;
+    var employerEpfR=parseFloat(document.getElementById('sm-employer-epf').value)||13;
     var effectiveEl = document.getElementById('sm-effective');
     var effective = effectiveEl ? effectiveEl.value : (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
 
@@ -5454,6 +5463,8 @@ function saveSalaryModal(personName) {
     var ti = base+hp+car+lf+of2+hs+food+oth;
     cfg.deductions[nu]     = {EPF:Math.round(ti*(epfR/100)*100)/100,SOCSO:Math.round(ti*0.005*100)/100,PCB:0,EIS:0};
     cfg.deductionRates[nu] = {EPF_RATE:epfR};
+    if (!cfg.employer_epf_rates) cfg.employer_epf_rates = {};
+    cfg.employer_epf_rates[nu] = employerEpfR;
 
     saveConfig();
     var m=document.getElementById('salary-setup-modal'); if(m) m.remove();
@@ -5886,8 +5897,17 @@ function renderAnnualReport() {
         [curYear-1, curYear, curYear+1].forEach(function(y) { var opt = document.createElement('option'); opt.value = y; opt.textContent = y; if (y === curYear) opt.selected = true; yearSelect.appendChild(opt); });
     }
     var selectedYear = yearSelect ? parseInt(yearSelect.value) : curYear;
+
+    // Person selector
+    var arPersonSel = document.getElementById('ar-person-select');
+    if (arPersonSel && arPersonSel.options.length <= 1) {
+        configPeople.forEach(function(name) { var opt = document.createElement('option'); opt.value = name; opt.textContent = name; arPersonSel.appendChild(opt); });
+    }
+    var selectedPerson = arPersonSel ? arPersonSel.value : 'ALL';
+    var displayPeople = selectedPerson === 'ALL' ? configPeople : configPeople.filter(function(n){ return n === selectedPerson; });
+
     var subEl = document.getElementById('annual-sub');
-    if (subEl) subEl.textContent = selectedYear + ' · ' + configPeople.length + ' salespeople';
+    if (subEl) subEl.textContent = selectedYear + ' · ' + (selectedPerson === 'ALL' ? configPeople.length + ' salespeople' : selectedPerson);
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
     MONTHS.forEach(function(m) {
@@ -5923,15 +5943,15 @@ function renderAnnualReport() {
     html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📊 Monthly Breakdown — '+selectedYear+'</div>';
     html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
     html += '<thead><tr style="background:#f1f5f9;"><th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Month</th>';
-    configPeople.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
+    displayPeople.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
     html += '</tr><tr style="background:#f8fafc;"><th style="padding:6px 14px;"></th>';
-    configPeople.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
+    displayPeople.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
     html += '</tr></thead><tbody>';
     MONTHS.forEach(function(m) {
-        var hasData = configPeople.some(function(p){return peopleData[p][m];});
+        var hasData = displayPeople.some(function(p){return peopleData[p][m];});
         if (!hasData) return;
         html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
-        configPeople.forEach(function(p) {
+        displayPeople.forEach(function(p) {
             var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
             html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmt(d.target):'—')+'</td>';
             html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
@@ -5940,7 +5960,7 @@ function renderAnnualReport() {
         html += '</tr>';
     });
     html += '<tr style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-top:2px solid #93c5fd;"><td style="padding:12px 14px;font-weight:800;color:#1e40af;">TOTAL</td>';
-    configPeople.forEach(function(p) {
+    displayPeople.forEach(function(p) {
         var tT=0, tS=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
         var tA = tT>0?(tS/tT*100):0;
         html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmt(tT)+'</td>';
@@ -5953,7 +5973,7 @@ function renderAnnualReport() {
     html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">💰 Commission & Incentive Summary</div>';
     html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f0fdf4;">';
     html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#166534;">Person</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Commission</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Collection</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Call Bonus</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#166534;">TOTAL</th></tr></thead><tbody>';
-    configPeople.forEach(function(p) {
+    displayPeople.forEach(function(p) {
         var comm=0,coll=0,call=0,qtr=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;}});
         html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">'+p+'</td>';
         html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(comm)+'</td>';
@@ -5965,8 +5985,8 @@ function renderAnnualReport() {
     html += '</tbody></table></div>';
     // Individual cards
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">👤 Individual Annual Summary</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(configPeople.length,3)+',1fr);gap:14px;">';
-    configPeople.forEach(function(p) {
+    html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(displayPeople.length,3)+',1fr);gap:14px;">';
+    displayPeople.forEach(function(p) {
         var tS=0,tT=0,comm=0,coll=0,call=0,qtr=0,mc=0;
         MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tS+=d.sales;tT+=d.target;comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;mc++;}});
         var tComm=comm+coll+call+qtr; var tAch=tT>0?(tS/tT*100):0;
@@ -5990,17 +6010,32 @@ function renderAnnualReport() {
 }
 window.renderAnnualReport = renderAnnualReport;
 function printAnnualReport() {
-    var body = document.getElementById('annual-report-body');
     var yearSel = document.getElementById('annual-year-select');
     var year = yearSel ? yearSel.value : new Date().getFullYear();
-    if (!body) return;
-    var win = window.open('', '_blank');
-    win.document.write('<html><head><title>Annual Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
-    win.document.write('<h1>Annual Report — '+year+'</h1>');
-    win.document.write(body.innerHTML);
-    win.document.write('</body></html>');
-    win.document.close(); win.focus();
-    setTimeout(function(){ win.print(); }, 300);
+
+    if (_annualActiveView === 'cost') {
+        // Print Expenses Report
+        var body = document.getElementById('employer-cost-body');
+        if (!body) return;
+        var win = window.open('', '_blank');
+        win.document.write('<html><head><title>Expenses Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
+        win.document.write('<h1>Expenses Report — '+year+'</h1>');
+        win.document.write(body.innerHTML);
+        win.document.write('</body></html>');
+        win.document.close(); win.focus();
+        setTimeout(function(){ win.print(); }, 300);
+    } else {
+        // Print Annual Report
+        var body = document.getElementById('annual-report-body');
+        if (!body) return;
+        var win = window.open('', '_blank');
+        win.document.write('<html><head><title>Annual Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
+        win.document.write('<h1>Annual Report — '+year+'</h1>');
+        win.document.write(body.innerHTML);
+        win.document.write('</body></html>');
+        win.document.close(); win.focus();
+        setTimeout(function(){ win.print(); }, 300);
+    }
 }
 window.printAnnualReport = printAnnualReport;
 
@@ -6057,3 +6092,209 @@ window.saveAnnualPassword = saveAnnualPassword;
         }
     }, 1000);
 })();
+
+// ==================== ANNUAL VIEW TOGGLE ====================
+var _annualActiveView = 'report';
+
+function switchAnnualView(mode) {
+    _annualActiveView = mode;
+    var reportBody = document.getElementById('annual-report-body');
+    var costBody = document.getElementById('employer-cost-body');
+    var costSelectors = document.getElementById('employer-cost-selectors');
+    var reportSelectors = document.getElementById('annual-report-selectors');
+    var btnReport = document.getElementById('btn-annual-report');
+    var btnCost = document.getElementById('btn-employer-cost');
+    var title = document.getElementById('annual-page-title');
+    var sub = document.getElementById('annual-sub');
+
+    if (mode === 'report') {
+        if (reportBody) reportBody.style.display = 'block';
+        if (costBody) costBody.style.display = 'none';
+        if (costSelectors) costSelectors.style.display = 'none';
+        if (reportSelectors) reportSelectors.style.display = 'block';
+        if (btnReport) { btnReport.style.background = '#fff'; btnReport.style.color = 'var(--ink)'; btnReport.style.boxShadow = '0 1px 3px rgba(0,0,0,.1)'; }
+        if (btnCost) { btnCost.style.background = 'transparent'; btnCost.style.color = 'var(--ink3)'; btnCost.style.boxShadow = 'none'; }
+        if (title) title.textContent = 'Annual Report';
+        renderAnnualReport();
+    } else {
+        if (reportBody) reportBody.style.display = 'none';
+        if (costBody) costBody.style.display = 'block';
+        if (costSelectors) costSelectors.style.display = 'block';
+        if (reportSelectors) reportSelectors.style.display = 'none';
+        if (btnCost) { btnCost.style.background = '#fff'; btnCost.style.color = 'var(--ink)'; btnCost.style.boxShadow = '0 1px 3px rgba(0,0,0,.1)'; }
+        if (btnReport) { btnReport.style.background = 'transparent'; btnReport.style.color = 'var(--ink3)'; btnReport.style.boxShadow = 'none'; }
+        if (title) title.textContent = 'Expenses Report';
+        initEmployerCostSelectors();
+        renderEmployerCostReport();
+    }
+}
+window.switchAnnualView = switchAnnualView;
+
+function onAnnualViewChange() {
+    if (_annualActiveView === 'report') renderAnnualReport();
+    else renderEmployerCostReport();
+}
+window.onAnnualViewChange = onAnnualViewChange;
+
+function initEmployerCostSelectors() {
+    var cfg = window.appState.config;
+    var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var configPeople = Object.keys(cfg.base_salaries || {});
+
+    // Month selector
+    var mSel = document.getElementById('ec-month-select');
+    if (mSel && mSel.options.length <= 1) {
+        MONTHS.forEach(function(m) {
+            var opt = document.createElement('option');
+            opt.value = m; opt.textContent = m;
+            mSel.appendChild(opt);
+        });
+    }
+
+    // Person selector
+    var pSel = document.getElementById('ec-person-select');
+    if (pSel && pSel.options.length <= 1) {
+        configPeople.forEach(function(name) {
+            var opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            pSel.appendChild(opt);
+        });
+    }
+}
+
+function renderEmployerCostReport() {
+    var body = document.getElementById('employer-cost-body');
+    if (!body) return;
+    var cfg = window.appState.config;
+    var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var configPeople = Object.keys(cfg.base_salaries || {});
+    var history = cfg.reportHistory || [];
+    var yearSelect = document.getElementById('annual-year-select');
+    var curYear = new Date().getFullYear();
+    var selectedYear = yearSelect ? parseInt(yearSelect.value) : curYear;
+    var monthSelect = document.getElementById('ec-month-select');
+    var selectedMonth = monthSelect ? monthSelect.value : 'ALL';
+    var personSelect = document.getElementById('ec-person-select');
+    var selectedPerson = personSelect ? personSelect.value : 'ALL';
+    function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function pct(v, t) { return t > 0 ? ((v/t)*100).toFixed(3)+'%' : '0.000%'; }
+
+    // Gather data per person
+    var allPeopleData = {};
+    configPeople.forEach(function(name) {
+        var salary = (cfg.base_salaries && cfg.base_salaries[name]) || 0;
+        var allowances = cfg.allowances && cfg.allowances[name] ? Object.values(cfg.allowances[name]).reduce(function(s,v){return s+(parseFloat(v)||0);},0) : 0;
+        var employerEpfRate = (cfg.employer_epf_rates && cfg.employer_epf_rates[name]) || 13;
+        var months = 0, totalSales = 0, totalTarget = 0, totalSalary = 0, totalAllow = 0;
+        var totalComm = 0, totalCollInc = 0, totalCallInc = 0, totalQtrBonus = 0;
+
+        MONTHS.forEach(function(m) {
+            if (selectedMonth !== 'ALL' && m !== selectedMonth) return;
+            var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+            if (!hEntry || !hEntry.data) return;
+            var pd = hEntry.data.find(function(d){return (d.name||'').toUpperCase()===name;});
+            if (!pd) return;
+            months++;
+            var sales = parseFloat(pd.sales)||0;
+            var target = parseFloat(pd.target)||0;
+            totalSales += sales; totalTarget += target;
+            totalSalary += salary; totalAllow += allowances;
+            var comm = calculateCommission(sales, target, name);
+            var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+            var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+            var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
+            var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+            var ach = target>0?(sales/target*100):0;
+            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
+            var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+            totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
+        });
+
+        var totalIncentive = totalCollInc + totalCallInc + totalQtrBonus;
+        var totalPay = totalSalary + totalAllow + totalComm + totalIncentive;
+        var employerEpf = totalPay * employerEpfRate / 100;
+        var totalCost = totalPay + employerEpf;
+
+        allPeopleData[name] = { name:name, months:months, totalSales:totalSales, totalTarget:totalTarget, totalSalary:totalSalary, totalAllow:totalAllow, totalComm:totalComm, totalCollInc:totalCollInc, totalCallInc:totalCallInc, totalQtrBonus:totalQtrBonus, totalIncentive:totalIncentive, totalPay:totalPay, employerEpf:employerEpf, totalCost:totalCost, epfRate:employerEpfRate };
+    });
+
+    // Team totals (always all people for TEAM%)
+    var teamSales = 0;
+    configPeople.forEach(function(name) { teamSales += allPeopleData[name].totalSales; });
+
+    // Filter display people
+    var displayPeople = selectedPerson === 'ALL' ? configPeople : [selectedPerson];
+    displayPeople = displayPeople.filter(function(n) { return allPeopleData[n]; });
+
+    var displayTotalCost = 0, displayTotalSales = 0;
+    displayPeople.forEach(function(n) { displayTotalCost += allPeopleData[n].totalCost; displayTotalSales += allPeopleData[n].totalSales; });
+
+    var sub = document.getElementById('annual-sub');
+    if (sub) sub.textContent = (selectedPerson === 'ALL' ? 'All Employees' : selectedPerson) + ' · ' + (selectedMonth === 'ALL' ? 'Full Year' : selectedMonth) + ' ' + selectedYear;
+
+    // Build HTML
+    var html = '';
+
+    // Summary cards
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px;">';
+    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+(selectedPerson==='ALL'?'Selected':'') +' Sales</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
+    html += '<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.8px;">Expenses</div><div style="font-size:16px;font-weight:800;color:#be123c;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalCost)+'</div></div>';
+    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Cost / Sales</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, displayTotalSales)+'</div></div>';
+    html += '</div>';
+
+    // Per person tables
+    displayPeople.forEach(function(name) {
+        var p = allPeopleData[name];
+        if (!p || p.months === 0) return;
+        var profit = p.totalSales - p.totalCost;
+        var profitColor = profit >= 0 ? '#4ade80' : '#fb7185';
+
+        html += '<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:16px;">';
+        // Header
+        html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div><div style="font-size:15px;font-weight:800;color:#fff;">'+name+'</div>';
+        html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">'+p.months+' months · '+(selectedMonth==='ALL'?'Full Year':selectedMonth)+' '+selectedYear+'</div></div>';
+        html += '<div style="text-align:right;"><div style="font-size:9px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Sales</div>';
+        html += '<div style="font-size:16px;font-weight:800;color:#4ade80;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div></div>';
+
+        // Table
+        html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:40%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:17%;">INDV%</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:18%;">TEAM%</th></tr></thead>';
+        html += '<tbody>';
+
+        // Sales row
+        html += '<tr style="background:#f0fdf4;"><td style="padding:8px 14px;font-weight:700;color:#166534;">📈 Sales Revenue</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#166534;">'+fmt(p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">100.00%</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">'+pct(p.totalSales,teamSales)+'</td></tr>';
+
+        // Divider
+        html += '<tr><td colspan="4" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expensess</td></tr>';
+
+        // Cost rows
+        var rows = [
+            {label:'💵 Basic Salary', val:p.totalSalary, bg:'#fff'},
+            {label:'🏠 Allowances', val:p.totalAllow, bg:'#f8fafc'},
+            {label:'💰 Commission', val:p.totalComm, bg:'#fff', color:'#2563eb'},
+            {label:'📦 Collection Incentive', val:p.totalCollInc, bg:'#f8fafc'},
+            {label:'📞 Call Incentive', val:p.totalCallInc, bg:'#fff'},
+            {label:'🏆 Quarterly Bonus', val:p.totalQtrBonus, bg:'#f8fafc'}
+        ];
+        rows.forEach(function(r) {
+            var c = r.color || '#475569';
+            html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+        });
+
+        // Total Pay
+        html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+
+        // Employer EPF
+        html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+
+        // Total Cost
+        html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+
+        html += '</tbody></table></div>';
+    });
+
+    body.innerHTML = html;
+}
+window.renderEmployerCostReport = renderEmployerCostReport;

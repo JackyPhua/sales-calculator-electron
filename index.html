@@ -379,22 +379,56 @@
     <div id="history-list"></div>
 </div>
 
-<!-- ══════════════════ SETTINGS VIEW ══════════════════ -->
 <!-- ══════════════════ ANNUAL REPORT VIEW ══════════════════ -->
 <div id="view-annual" class="view-container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
         <div style="display:flex;align-items:center;gap:12px;">
             <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
-                <select id="annual-year-select" onchange="renderAnnualReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <select id="annual-year-select" onchange="onAnnualViewChange()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                 </select>
             </div>
             <div style="margin-top:18px;">
-                <div style="font-size:20px;font-weight:800;color:var(--ink);letter-spacing:-.5px;">Annual Report</div>
+                <div style="font-size:20px;font-weight:800;color:var(--ink);letter-spacing:-.5px;" id="annual-page-title">Annual Report</div>
                 <div id="annual-sub" style="font-size:12px;color:var(--ink3);margin-top:2px;">Complete sales performance summary</div>
             </div>
         </div>
-        <button onclick="printAnnualReport()" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print Report</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <!-- Toggle Buttons -->
+            <div style="display:flex;background:var(--line);border-radius:8px;padding:3px;">
+                <button id="btn-annual-report" onclick="switchAnnualView('report')" style="padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1);">📊 Annual Report</button>
+                <button id="btn-employer-cost" onclick="switchAnnualView('cost')" style="padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:transparent;color:var(--ink3);">💰 Expenses</button>
+            </div>
+            <button onclick="printAnnualReport()" id="btn-annual-print" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print Report</button>
+        </div>
+    </div>
+    <!-- Employer Cost selectors (hidden by default) -->
+    <div id="employer-cost-selectors" style="display:none;margin-bottom:12px;display:none;">
+        <div style="display:flex;gap:8px;align-items:center;">
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
+                <select id="ec-month-select" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">All Months</option>
+                </select>
+            </div>
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Employee</div>
+                <select id="ec-person-select" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">All Employees</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    <!-- Annual Report person selector -->
+    <div id="annual-report-selectors" style="margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Employee</div>
+                <select id="ar-person-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">All Employees</option>
+                </select>
+            </div>
+        </div>
     </div>
     <div id="annual-report-body">
         <div style="text-align:center;padding:48px;color:var(--ink4);">
@@ -402,9 +436,13 @@
             <div style="font-size:14px;font-weight:600;">Loading annual report...</div>
         </div>
     </div>
+    <div id="employer-cost-body" style="display:none;">
+        <div style="text-align:center;padding:48px;color:var(--ink4);">
+            <div style="font-size:32px;margin-bottom:12px;">💰</div>
+            <div style="font-size:14px;font-weight:600;">Loading expenses report...</div>
+        </div>
+    </div>
 </div>
-
-<!-- ══════════════════ SETTINGS VIEW ══════════════════ -->
 <div id="view-settings" class="view-container">
     <div class="settings-grid">
         <div class="set-card">
