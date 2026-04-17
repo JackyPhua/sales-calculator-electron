@@ -45,6 +45,30 @@ if (!window.appState) {
     };
 }
 
+// ==================== Employee Type Helpers ====================
+function getEmployeeType(name) {
+    if (!name) return 'Sales';
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_types) return 'Sales';
+    return cfg.employee_types[name.toUpperCase()] || 'Sales';
+}
+function setEmployeeType(name, type) {
+    if (!name || !type) return;
+    var cfg = window.appState.config;
+    if (!cfg.employee_types) cfg.employee_types = {};
+    cfg.employee_types[name.toUpperCase()] = type;
+    saveConfig();
+}
+function getTierAmt(tiers, pct) {
+    if (!tiers || !tiers.length) return 0;
+    var sorted = tiers.slice().sort(function(a,b){return b.min-a.min;});
+    for (var i=0;i<sorted.length;i++) if (pct >= sorted[i].min) return sorted[i].amt||0;
+    return 0;
+}
+window.getEmployeeType = getEmployeeType;
+window.setEmployeeType = setEmployeeType;
+window.getTierAmt = getTierAmt;
+
 // ==================== License System ====================
 window.licenseStatus = { status: 'loading' };
 
@@ -340,6 +364,17 @@ function ensureConfigStructure() {
         'deductions',
         'deductionRates',
         'employer_epf_rates',
+        'employee_types',
+        'supervisor_sale_tiers',
+        'supervisor_coll_tiers',
+        'supervisor_call_tiers',
+        'supervisor_qtr_tiers',
+        'person_supervisor_sale_tiers',
+        'person_supervisor_coll_tiers',
+        'person_supervisor_call_tiers',
+        'person_supervisor_qtr_tiers',
+        'person_merchandiser_rates',
+        'merchandiser_block_rate',
         'earnings',
         'active_call_targets',
         'reportHistory',
@@ -351,13 +386,28 @@ function ensureConfigStructure() {
     
     requiredStructures.forEach(key => {
         if (!config[key]) {
-            if (key.includes('_rates') || key.includes('incentive')) {
+            if (key.includes('_rates') || key.includes('incentive') || key.includes('_tiers')) {
                 config[key] = getDefaultConfig()[key];
+            } else if (key === 'merchandiser_block_rate') {
+                config[key] = 10;
             } else {
                 config[key] = {};
             }
         }
     });
+
+    // Migration: ensure supervisor tiers are arrays (old configs may have them as {})
+    ['supervisor_sale_tiers', 'supervisor_coll_tiers', 'supervisor_call_tiers', 'supervisor_qtr_tiers'].forEach(function(k) {
+        if (!Array.isArray(config[k])) {
+            config[k] = getDefaultConfig()[k];
+        }
+    });
+
+    // Migration: force scalar config values to correct types
+    if (typeof config.merchandiser_block_rate !== 'number') {
+        var bv = Number(config.merchandiser_block_rate);
+        config.merchandiser_block_rate = isNaN(bv) || !bv ? 10 : bv;
+    }
     
     // Restore quickCalculateData if present (persists across restarts)
 }
@@ -370,6 +420,29 @@ function getDefaultConfig() {
         deductions: {},
         deductionRates: {},
         employer_epf_rates: {},
+        employee_types: {},
+        supervisor_sale_tiers: [
+            { min: 80, max: 89.99, amt: 500 },
+            { min: 90, max: 99.99, amt: 800 },
+            { min: 100, max: 105.99, amt: 1200 },
+            { min: 106, max: 999, amt: 1500 }
+        ],
+        supervisor_coll_tiers: [
+            { min: 80, max: 89.99, amt: 200 },
+            { min: 90, max: 99.99, amt: 400 },
+            { min: 100, max: 999, amt: 600 }
+        ],
+        supervisor_call_tiers: [
+            { min: 75, max: 89.99, amt: 100 },
+            { min: 90, max: 99.99, amt: 200 },
+            { min: 100, max: 999, amt: 300 }
+        ],
+        supervisor_qtr_tiers: [
+            { min: 90, max: 99.99, amt: 300 },
+            { min: 100, max: 105.99, amt: 500 },
+            { min: 106, max: 999, amt: 800 }
+        ],
+        merchandiser_block_rate: 10,
         earnings: {},
         active_call_targets: {},
         reportHistory: [],
@@ -899,15 +972,15 @@ function createBlankSalespersonCard() {
                     <span id="commission-${index}" class="font-semibold ml-2"></span>
                 </div>
                 <div>
-                    <span class="text-gray-600">Collection Bonus:</span>
+                    <span class="text-gray-600">Collection Incentive:</span>
                     <span id="collection-bonus-${index}" class="font-semibold ml-2"></span>
                 </div>
                 <div>
-                    <span class="text-gray-600">Call Bonus:</span>
+                    <span class="text-gray-600">Call Incentive:</span>
                     <span id="call-bonus-${index}" class="font-semibold ml-2"></span>
                 </div>
                 <div>
-                    <span class="text-gray-600">Quarterly Bonus:</span>
+                    <span class="text-gray-600">Quarterly Incentive:</span>
                     <span id="quarterly-${index}" class="font-semibold ml-2"></span>
                 </div>
                 <div>
@@ -1013,6 +1086,13 @@ function showQuickAddPersonModal() {
 
     body.appendChild(mkRow('Name <span style="color:#ef4444">*</span>', mkInp('quick-person-name','text','','e.g., CHONG JIA YING')));
 
+    // Employee Type selector
+    var typeSel = document.createElement('select');
+    typeSel.id = 'quick-person-type';
+    typeSel.style.cssText = IS;
+    typeSel.innerHTML = '<option value="Sales">💼 Sales</option><option value="Supervisor">👔 Supervisor</option><option value="Merchandiser">📦 Merchandiser</option>';
+    body.appendChild(mkRow('Employee Type', typeSel));
+
     var salBox = mkBox('#f0fdf4','#bbf7d0','SALARY','#065f46');
     salBox.appendChild(mkRow('Base Salary (RM) <span style="color:#ef4444">*</span>', mkInp('quick-person-salary','number','1700','1700'), '0'));
     body.appendChild(salBox);
@@ -1093,6 +1173,9 @@ async function quickAddPersonSubmit() {
         if (!window.appState.config.deductionRates)  window.appState.config.deductionRates={};
         window.appState.config.base_salaries[nameUpper] = salary;
         window.appState.config.allowances[nameUpper]    = allowances;
+        // Save employee type
+        var empTypeVal = (document.getElementById('quick-person-type')||{}).value || 'Sales';
+        setEmployeeType(nameUpper, empTypeVal);
         var totalIncome = salary + Object.values(allowances).reduce(function(a,b){return a+b;},0);
         window.appState.config.deductions[nameUpper]     = {EPF:Math.round(totalIncome*(epfRate/100)*100)/100,SOCSO:Math.round(totalIncome*0.005*100)/100,PCB:0,EIS:0};
         window.appState.config.deductionRates[nameUpper] = {EPF_RATE:epfRate};
@@ -1258,6 +1341,7 @@ function renderAllSalespeopleCards() {
             <div id="card-name-display-${index}" style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
                 <span id="card-avatar-${index}" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${person.name ? person.name[0] : '?'}</span>
                 <span id="card-name-text-${index}" style="letter-spacing:0.3px;">${person.name || '—'}</span>
+                <span id="card-type-badge-${index}" style="display:none;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;"></span>
             </div>
             
             <div class="grid grid-cols-2 gap-2">
@@ -1372,28 +1456,28 @@ function renderAllSalespeopleCards() {
             <!-- Preview Section -->
             <div id="preview-${index}" class="mt-1 p-2 bg-blue-50 rounded-lg border border-blue-200">
                 <div class="grid grid-cols-2 gap-1 text-xs">
-                    <div>
+                    <div id="wrap-achievement-${index}">
                         <span class="text-gray-600">Achievement:</span>
                         <span id="achievement-${index}" class="font-semibold ml-2"></span>
                     </div>
-                    <div>
-                        <span class="text-gray-600">Commission:</span>
+                    <div id="wrap-commission-${index}">
+                        <span class="text-gray-600" id="lbl-commission-${index}">Commission:</span>
                         <span id="commission-${index}" class="font-semibold ml-2"></span>
                     </div>
-                    <div>
-                        <span class="text-gray-600">Collection Bonus:</span>
+                    <div id="wrap-collection-bonus-${index}">
+                        <span class="text-gray-600" id="lbl-collection-bonus-${index}">Collection Incentive:</span>
                         <span id="collection-bonus-${index}" class="font-semibold ml-2"></span>
                     </div>
-                    <div>
-                        <span class="text-gray-600">Call Bonus:</span>
+                    <div id="wrap-call-bonus-${index}">
+                        <span class="text-gray-600" id="lbl-call-bonus-${index}">Call Incentive:</span>
                         <span id="call-bonus-${index}" class="font-semibold ml-2"></span>
                     </div>
-                    <div>
-                        <span class="text-gray-600">Quarterly Bonus:</span>
+                    <div id="wrap-quarterly-${index}">
+                        <span class="text-gray-600" id="lbl-quarterly-${index}">Quarterly Incentive:</span>
                         <span id="quarterly-${index}" class="font-semibold ml-2"></span>
                     </div>
-                    <div>
-                        <span class="text-gray-600">Total Commission:</span>
+                    <div id="wrap-total-commission-${index}">
+                        <span class="text-gray-600" id="lbl-total-commission-${index}">Total Commission:</span>
                         <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                     </div>
                 </div>
@@ -1517,28 +1601,99 @@ function updateSalespersonData(index) {
     person.callActual = parseFloat(document.getElementById(`call-actual-${index}`).value) || 0;
     
     // Check if there's enough data to show preview
-    const hasData = person.name && person.target > 0 && person.sales > 0;
+    var _empTypeHd = person.name ? getEmployeeType(person.name) : 'Sales';
+    const hasData = person.name && (
+        _empTypeHd === 'Sales' ? (person.target > 0 && person.sales > 0)
+        : _empTypeHd === 'Supervisor' ? true
+        : _empTypeHd === 'Merchandiser' ? (person.collectionAmount > 0)
+        : false
+    );
     const previewElement = document.getElementById(`preview-${index}`);
     
     if (hasData) {
-        // Calculate
-        const achievement = person.target > 0 ? (person.sales / person.target) * 100 : 0;
-        const quarterlyAchievement = person.quarterlyTarget > 0 ? (person.quarterlySales / person.quarterlyTarget) * 100 : 0;
-        const collectionAchievement = person.collectionTarget > 0 ? (person.collectionAmount / person.collectionTarget) * 100 : 0;
-        const callAchievement = person.callTarget > 0 ? (person.callActual / person.callTarget) * 100 : 0;
-        
-        // Commission calculation
-        const commission = calculateCommission(person.sales, person.target, person.name);
-        const collectionBonus = calculateIncentive(collectionAchievement, window.appState.config.collection_incentive);
-        const callBonus = calculateIncentive(callAchievement, window.appState.config.active_call_incentive);
-        // Quarterly bonus only in quarter-end months MAR/JUN/SEP/DEC
-        const _qMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
-        const _isQuarterEnd = ['MAR','JUN','SEP','DEC'].includes(_qMonth);
-        const quarterlyBonus = _isQuarterEnd
-            ? calculateIncentive(quarterlyAchievement, window.appState.config.quarterly_incentive)
-            : 0;
-        const totalCommission = commission + collectionBonus + callBonus + quarterlyBonus;
-        
+        var empType = getEmployeeType(person.name);
+        var commission = 0, collectionBonus = 0, callBonus = 0, quarterlyBonus = 0;
+        var achievement = person.target > 0 ? (person.sales / person.target) * 100 : 0;
+        var quarterlyAchievement = person.quarterlyTarget > 0 ? (person.quarterlySales / person.quarterlyTarget) * 100 : 0;
+        var collectionAchievement = person.collectionTarget > 0 ? (person.collectionAmount / person.collectionTarget) * 100 : 0;
+        var callAchievement = person.callTarget > 0 ? (person.callActual / person.callTarget) * 100 : 0;
+
+        if (empType === 'Supervisor') {
+            // Supervisor earns based on TEAM totals — read from reportHistory for current month
+            var curMonth = (document.getElementById('report-month')||{}).value || '';
+            curMonth = curMonth.toUpperCase();
+            var teamSales = 0, teamTarget = 0, teamColl = 0, teamCollTarget = 0, teamCall = 0, teamCallTarget = 0;
+            var _hist = (window.appState.config.reportHistory || []);
+            var _hEntry = _hist.find(function(r){return (r.month||'').toUpperCase()===curMonth;});
+            if (_hEntry && _hEntry.data) {
+                _hEntry.data.forEach(function(p) {
+                    var t = getEmployeeType(p.name);
+                    if (t !== 'Sales') return; // Only count Sales people for team totals
+                    teamSales += parseFloat(p.sales) || 0;
+                    teamTarget += parseFloat(p.target) || 0;
+                    teamColl += parseFloat(p.collectionAmount) || 0;
+                    teamCollTarget += parseFloat(p.collectionTarget) || 0;
+                    teamCall += parseFloat(p.callActual) || 0;
+                    teamCallTarget += parseFloat(p.callTarget) || 0;
+                });
+            }
+            // Also include anyone currently open in Calculation page (not yet saved)
+            (window.appState.salespeople || []).forEach(function(p) {
+                if (!p.name) return;
+                var t = getEmployeeType(p.name);
+                if (t !== 'Sales') return;
+                // Skip if already counted from history
+                var alreadyInHistory = _hEntry && _hEntry.data && _hEntry.data.some(function(hp){return (hp.name||'').toUpperCase()===(p.name||'').toUpperCase();});
+                if (alreadyInHistory) return;
+                teamSales += parseFloat(p.sales) || 0;
+                teamTarget += parseFloat(p.target) || 0;
+                teamColl += parseFloat(p.collectionAmount) || 0;
+                teamCollTarget += parseFloat(p.collectionTarget) || 0;
+                teamCall += parseFloat(p.callActual) || 0;
+                teamCallTarget += parseFloat(p.callTarget) || 0;
+            });
+            var teamAch = teamTarget > 0 ? (teamSales / teamTarget * 100) : 0;
+            var teamCollAch = teamCollTarget > 0 ? (teamColl / teamCollTarget * 100) : 0;
+            var teamCallAch = teamCallTarget > 0 ? (teamCall / teamCallTarget * 100) : 0;
+            var _supCfg = window.appState.config;
+            var _saleT = (_supCfg.person_supervisor_sale_tiers && _supCfg.person_supervisor_sale_tiers[person.name]) || _supCfg.supervisor_sale_tiers || [];
+            var _collT = (_supCfg.person_supervisor_coll_tiers && _supCfg.person_supervisor_coll_tiers[person.name]) || _supCfg.supervisor_coll_tiers || [];
+            var _callT = (_supCfg.person_supervisor_call_tiers && _supCfg.person_supervisor_call_tiers[person.name]) || _supCfg.supervisor_call_tiers || [];
+            var _qtrT  = (_supCfg.person_supervisor_qtr_tiers  && _supCfg.person_supervisor_qtr_tiers[person.name])  || _supCfg.supervisor_qtr_tiers  || [];
+            commission = getTierAmt(_saleT, teamAch);
+            collectionBonus = getTierAmt(_collT, teamCollAch);
+            callBonus = getTierAmt(_callT, teamCallAch);
+            // Quarterly: only in quarter-end months
+            var _qMonth = (document.getElementById('report-month')||{}).value || '';
+            _qMonth = _qMonth.toUpperCase();
+            if (['MAR','JUN','SEP','DEC'].indexOf(_qMonth) !== -1) {
+                quarterlyBonus = getTierAmt(_qtrT, teamAch);
+            }
+            achievement = teamAch;
+            collectionAchievement = teamCollAch;
+            callAchievement = teamCallAch;
+        } else if (empType === 'Merchandiser') {
+            // Merchandiser earns based on blocks (stored in collectionAmount field)
+            var blocks = parseFloat(person.collectionAmount) || 0;
+            var _merchRates = window.appState.config.person_merchandiser_rates || {};
+            var rate = _merchRates[person.name] != null ? parseFloat(_merchRates[person.name]) : (parseFloat(window.appState.config.merchandiser_block_rate) || 10);
+            collectionBonus = blocks * rate;
+            commission = 0;
+            callBonus = 0;
+            quarterlyBonus = 0;
+        } else {
+            // Sales (default)
+            commission = calculateCommission(person.sales, person.target, person.name);
+            collectionBonus = calculateIncentive(collectionAchievement, window.appState.config.collection_incentive);
+            callBonus = calculateIncentive(callAchievement, window.appState.config.active_call_incentive);
+            var _qMonth = (document.getElementById('report-month')||{}).value || '';
+            _qMonth = _qMonth.toUpperCase();
+            var _isQuarterEnd = ['MAR','JUN','SEP','DEC'].indexOf(_qMonth) !== -1;
+            quarterlyBonus = _isQuarterEnd ? calculateIncentive(quarterlyAchievement, window.appState.config.quarterly_incentive) : 0;
+        }
+
+        var totalCommission = commission + collectionBonus + callBonus + quarterlyBonus;
+
         // Store results
         person.achievement = achievement;
         person.quarterlyAchievement = quarterlyAchievement;
@@ -1547,29 +1702,29 @@ function updateSalespersonData(index) {
         person.activeCallIncentive = callBonus;
         person.quarterlyBonus = quarterlyBonus;
         person.totalCommission = totalCommission;
-        
+
         // Show preview
         if (previewElement) {
             previewElement.classList.remove('hidden');
         }
-        
+
         // Update preview content
-        const achievementEl = document.getElementById(`achievement-${index}`);
-        const commissionEl = document.getElementById(`commission-${index}`);
-        const collectionBonusEl = document.getElementById(`collection-bonus-${index}`);
-        const callBonusEl = document.getElementById(`call-bonus-${index}`);
-        const quarterlyEl = document.getElementById(`quarterly-${index}`);
-        const totalEl = document.getElementById(`total-commission-${index}`);
-        
+        var achievementEl = document.getElementById('achievement-' + index);
+        var commissionEl = document.getElementById('commission-' + index);
+        var collectionBonusEl = document.getElementById('collection-bonus-' + index);
+        var callBonusEl = document.getElementById('call-bonus-' + index);
+        var quarterlyEl = document.getElementById('quarterly-' + index);
+        var totalEl = document.getElementById('total-commission-' + index);
+
         if (achievementEl) {
             achievementEl.textContent = achievement.toFixed(2) + '%';
-            achievementEl.className = `font-semibold ml-2 ${getAchievementColor(achievement)}`;
+            achievementEl.className = 'font-semibold ml-2 ' + getAchievementColor(achievement);
         }
         if (commissionEl) commissionEl.textContent = formatCurrency(commission);
         if (collectionBonusEl) collectionBonusEl.textContent = formatCurrency(collectionBonus);
         if (callBonusEl) callBonusEl.textContent = formatCurrency(callBonus);
-        if (quarterlyEl) quarterlyEl.textContent = person.quarterlyTarget > 0 
-            ? `${formatCurrency(quarterlyBonus)} (${quarterlyAchievement.toFixed(2)}%)`
+        if (quarterlyEl) quarterlyEl.textContent = person.quarterlyTarget > 0
+            ? (formatCurrency(quarterlyBonus) + ' (' + quarterlyAchievement.toFixed(2) + '%)')
             : formatCurrency(quarterlyBonus);
         if (totalEl) totalEl.textContent = formatCurrency(totalCommission);
     } else {
@@ -2266,7 +2421,7 @@ function renderSalaryConfigs(selectedName) {
 }
 
 // Add new salesperson
-function addNewPerson(nameOverride) {
+function addNewPerson(nameOverride, typeOverride) {
     var nameVal = nameOverride;
     if (!nameVal) {
         var ni = document.getElementById('new-person-name');
@@ -2285,6 +2440,8 @@ function addNewPerson(nameOverride) {
     window.appState.config.allowances[nameUpper]      = { HP:0, CAR:0, 'LOCAL FUEL':0, 'OUTSTATION FUEL':0, HOUSING:0, FOOD:0, OTHERS:0 };
     window.appState.config.deductions[nameUpper]      = { EPF:187, SOCSO:8.5, PCB:0, EIS:0 };
     window.appState.config.deductionRates[nameUpper]  = { EPF_RATE:11 };
+    // Save employee type
+    if (typeOverride) setEmployeeType(nameUpper, typeOverride);
     saveConfig();
     renderPeopleList();
     // Clear search input so it's ready for next use
@@ -3790,6 +3947,7 @@ function viewHistoryReport(index) {
 
     var cards = people.map(function(p, pIdx) {
         var nu       = (p.name || '').toUpperCase();
+        var empType  = (typeof getEmployeeType === 'function') ? getEmployeeType(p.name) : 'Sales';
         var salary   = (cfg.base_salaries && cfg.base_salaries[nu]) || 0;
         var allow    = (cfg.allowances    && cfg.allowances[nu])    || {};
         var epfRate  = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11;
@@ -3806,34 +3964,88 @@ function viewHistoryReport(index) {
         var collPct = collTgt > 0 ? (collAmt / collTgt * 100) : 0;
         var callPct = callTgt > 0 ? (callAct / callTgt * 100) : 0;
 
-        var comm    = calculateCommission(sales, target, p.name);
-        var collBon = calculateIncentive(collPct, cfg.collection_incentive);
-        var callBon = calculateIncentive(callPct, cfg.active_call_incentive);
-        var qtrBon  = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive) : 0;
-        var totalComm = comm + collBon + callBon + qtrBon;
+        var comm = 0, collBon = 0, callBon = 0, qtrBon = 0, totalComm = 0;
+        var detailRows = '';
+        var achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
+        var typeTag = '';
+
+        if (empType === 'Sales') {
+            comm    = calculateCommission(sales, target, p.name);
+            collBon = calculateIncentive(collPct, cfg.collection_incentive);
+            callBon = calculateIncentive(callPct, cfg.active_call_incentive);
+            qtrBon  = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive) : 0;
+            totalComm = comm + collBon + callBon + qtrBon;
+
+            detailRows = ''
+                + '<div style="color:#6b7280;">Monthly Target</div><div style="text-align:right;">' + formatCurrency(target) + '</div>'
+                + '<div style="color:#6b7280;">Monthly Sales</div><div style="text-align:right;">' + formatCurrency(sales) + '</div>'
+                + '<div style="color:#6b7280;">Achievement</div><div style="text-align:right;font-weight:600;color:' + achColor + ';">' + ach.toFixed(2) + '%</div>'
+                + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+                + '<div style="color:#6b7280;">Commission</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(comm) + '</div>'
+                + '<div style="color:#6b7280;">Collection Incentive</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(collBon) + '</div>'
+                + '<div style="color:#6b7280;">Call Incentive</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(callBon) + '</div>'
+                + (isQtr ? '<div style="color:#6b7280;">Quarterly Incentive</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(qtrBon) + '</div>' : '')
+                + '<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>';
+        } else if (empType === 'Supervisor') {
+            typeTag = ' <span style="background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">👔 Supervisor</span>';
+            // Compute team totals for the month
+            var teamS=0, teamT=0, teamCo=0, teamCoT=0, teamCa=0, teamCaT=0;
+            people.forEach(function(tp) {
+                if ((typeof getEmployeeType === 'function' ? getEmployeeType(tp.name) : 'Sales') !== 'Sales') return;
+                teamS += parseFloat(tp.sales)||0; teamT += parseFloat(tp.target)||0;
+                teamCo += parseFloat(tp.collectionAmount)||0; teamCoT += parseFloat(tp.collectionTarget)||0;
+                teamCa += parseFloat(tp.callActual)||0; teamCaT += parseFloat(tp.callTarget)||0;
+            });
+            var teamAch = teamT>0?(teamS/teamT*100):0;
+            var teamCollAch = teamCoT>0?(teamCo/teamCoT*100):0;
+            var teamCallAch = teamCaT>0?(teamCa/teamCaT*100):0;
+            var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
+            var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
+            var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
+            var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
+            comm = getTierAmt(saleT, teamAch);
+            collBon = getTierAmt(collT, teamCollAch);
+            callBon = getTierAmt(callT, teamCallAch);
+            qtrBon = isQtr ? getTierAmt(qtrT, teamAch) : 0;
+            totalComm = comm + collBon + callBon + qtrBon;
+            ach = teamAch;
+            achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
+
+            detailRows = ''
+                + '<div style="color:#6b7280;">Team Achievement</div><div style="text-align:right;font-weight:600;color:' + achColor + ';">' + ach.toFixed(2) + '%</div>'
+                + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+                + '<div style="color:#6b7280;">Sale Incentive</div><div style="text-align:right;color:#7c3aed;">' + formatCurrency(comm) + '</div>'
+                + '<div style="color:#6b7280;">Collection Incentive</div><div style="text-align:right;color:#7c3aed;">' + formatCurrency(collBon) + '</div>'
+                + '<div style="color:#6b7280;">Call Incentive</div><div style="text-align:right;color:#7c3aed;">' + formatCurrency(callBon) + '</div>'
+                + (isQtr ? '<div style="color:#6b7280;">Quarterly Incentive</div><div style="text-align:right;color:#7c3aed;">' + formatCurrency(qtrBon) + '</div>' : '')
+                + '<div style="color:#6b7280;font-weight:600;">Total Incentive</div><div style="text-align:right;font-weight:700;color:#7c3aed;">' + formatCurrency(totalComm) + '</div>';
+        } else if (empType === 'Merchandiser') {
+            typeTag = ' <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">📦 Merchandiser</span>';
+            var blocks = parseFloat(p.collectionAmount)||0;
+            var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
+                ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                : (parseFloat(cfg.merchandiser_block_rate)||10);
+            totalComm = blocks * rate;
+
+            detailRows = ''
+                + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
+                + '<div style="color:#6b7280;">Blocks</div><div style="text-align:right;">' + blocks + '</div>'
+                + '<div style="color:#6b7280;">Block Incentive</div><div style="text-align:right;color:#d97706;">' + formatCurrency(totalComm) + '</div>'
+                + '<div style="color:#6b7280;font-weight:600;">Total Incentive</div><div style="text-align:right;font-weight:700;color:#d97706;">' + formatCurrency(totalComm) + '</div>';
+        }
 
         var totalFixed  = salary + totalAllow;
         var totalIncome = totalFixed + totalComm;
         var epfAmt      = Math.round(totalIncome * (epfRate/100) * 100) / 100;
         var grandTotal  = totalIncome - epfAmt;
 
-        var achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
-
         return '<div id="hv-person-'+pIdx+'" style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
             + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
             + '<span style="font-size:20px;">&#128100;</span>'
-            + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + '</h3></div>'
+            + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + typeTag + '</h3></div>'
             + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">'
-            + '<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">'       + formatCurrency(salary)    + '</div>'
-            + '<div style="color:#6b7280;">Monthly Target</div><div style="text-align:right;">'    + formatCurrency(target)    + '</div>'
-            + '<div style="color:#6b7280;">Monthly Sales</div><div style="text-align:right;">'     + formatCurrency(sales)     + '</div>'
-            + '<div style="color:#6b7280;">Achievement</div><div style="text-align:right;font-weight:600;color:' + achColor + ';">' + ach.toFixed(2) + '%</div>'
-            + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
-            + '<div style="color:#6b7280;">Commission</div><div style="text-align:right;color:#2563eb;">'       + formatCurrency(comm)    + '</div>'
-            + '<div style="color:#6b7280;">Collection Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(collBon) + '</div>'
-            + '<div style="color:#6b7280;">Call Bonus</div><div style="text-align:right;color:#2563eb;">'       + formatCurrency(callBon) + '</div>'
-            + (isQtr ? '<div style="color:#6b7280;">Quarterly Bonus</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(qtrBon) + '</div>' : '')
-            + '<div style="color:#6b7280;font-weight:600;">Total Commission Paid</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>'
+            + '<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">' + formatCurrency(salary) + '</div>'
+            + detailRows
             + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
             + '<div style="color:#6b7280;">EPF (' + epfRate + '%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(epfAmt) + '</div>'
             + '<div style="font-weight:700;color:#111;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">' + formatCurrency(grandTotal) + '</div>'
@@ -3982,7 +4194,7 @@ function loadQuickCalculateHistory() {
         return '<div style="background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(8,15,26,.08);border:1px solid #e2e8f0;margin-bottom:16px;overflow:hidden;">'
             + '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;">'
             + '<div><div style="font-size:18px;font-weight:800;color:#fff;">' + month + '</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">' + new Date().getFullYear() + '</div></div>'
-            + '<div style="text-align:right;"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px;">Total Commission Paid</div><div style="font-size:18px;font-weight:800;color:#10b981;">' + formatCurrency(totalComm) + '</div></div>'
+            + '<div style="text-align:right;"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px;">TOTAL COMM/INC PAID</div><div style="font-size:18px;font-weight:800;color:#10b981;">' + formatCurrency(totalComm) + '</div></div>'
             + '</div>'
             + '<div style="padding:16px 20px;">'
             + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">' + peopleCards + '</div>'
@@ -4139,6 +4351,17 @@ function promptAddPerson() {
     });
     body.appendChild(inp);
 
+    // Employee Type selector
+    var typeLbl = document.createElement('label');
+    typeLbl.style.cssText = 'display:block;font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:14px;';
+    typeLbl.textContent = 'Employee Type';
+    body.appendChild(typeLbl);
+    var typeSel = document.createElement('select');
+    typeSel.id = 'add-person-type';
+    typeSel.style.cssText = 'display:block;width:100%;padding:10px 14px;border:2px solid #d1d5db;border-radius:8px;font-size:15px;outline:none;box-sizing:border-box;color:#111;background:#fff;cursor:pointer;';
+    typeSel.innerHTML = '<option value="Sales">💼 Sales</option><option value="Supervisor">👔 Supervisor</option><option value="Merchandiser">📦 Merchandiser</option>';
+    body.appendChild(typeSel);
+
     var errEl = document.createElement('div');
     errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:6px;display:none;';
     errEl.textContent = 'Name already exists';
@@ -4172,8 +4395,9 @@ function promptAddPerson() {
             inp.focus();
             return;
         }
+        var selectedType = typeSel.value || 'Sales';
         overlay.remove();
-        addNewPerson(name);
+        addNewPerson(name, selectedType);
     }
 
     function close() { overlay.remove(); }
@@ -4209,36 +4433,88 @@ function openHistoryExcel(index) {
         var cfg = window.appState.config;
         var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
         var rates = (cfg.monthly_commission_rates&&cfg.monthly_commission_rates.length>0)?cfg.monthly_commission_rates:defRates;
-        var isQtr = ['MAR','JUN','SEP','DEC'].indexOf((report.month||'').toUpperCase()) !== -1;
+        var monthUpper = (report.month||'').toUpperCase();
+        var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(monthUpper) !== -1;
         function calcInc(pct,tiers){if(!tiers||!tiers.length)return 0;var s=tiers.slice().sort(function(a,b){return b.min-a.min;});for(var i=0;i<s.length;i++)if(pct>=s[i].min)return s[i].incentive||0;return 0;}
+
+        // Compute team totals for the month (Sales only) for Supervisor incentives
+        var teamSales = 0, teamTarget = 0, teamColl = 0, teamCollTgt = 0, teamCall = 0, teamCallTgt = 0;
+        (report.data||[]).forEach(function(p){
+            if (getEmployeeType(p.name) !== 'Sales') return;
+            teamSales += parseFloat(p.sales)||0;
+            teamTarget += parseFloat(p.target)||0;
+            teamColl += parseFloat(p.collectionAmount)||0;
+            teamCollTgt += parseFloat(p.collectionTarget)||0;
+            teamCall += parseFloat(p.callActual)||0;
+            teamCallTgt += parseFloat(p.callTarget)||0;
+        });
+        var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
+        var teamCollAch = teamCollTgt>0?(teamColl/teamCollTgt*100):0;
+        var teamCallAch = teamCallTgt>0?(teamCall/teamCallTgt*100):0;
+
         // Filter out people who have been deleted from config
         var activePeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
         var reportData = (report.data||[]).filter(function(p){
             return activePeople.indexOf((p.name||'').toUpperCase()) !== -1;
         });
-        var salesData=reportData.map(function(p){
+
+        // Separate by type
+        var salesData = [], supervisorData = [], merchandiserData = [];
+        reportData.forEach(function(p){
             var nu=(p.name||'').toUpperCase();
-            // Use salary that was effective for that month
+            var empType = getEmployeeType(p.name);
             var salRec = getSalaryForMonth(p.name, report.month);
             var salary    = salRec.salary;
             var allowances= salRec.allowances;
             var epfRate   = salRec.epfRate;
-            var target=parseFloat(p.target)||0,sales=parseFloat(p.sales)||0;
-            var collTgt=parseFloat(p.collectionTarget)||0,collAmt=parseFloat(p.collectionAmount)||0;
-            var callTgt=parseFloat(p.callTarget)||0,callAct=parseFloat(p.callActual)||0;
-            var ach=target>0?(sales/target*100):0;
-            var pRates=(cfg.person_commission_rates&&cfg.person_commission_rates[nu])||rates;
-            var commission=0;
-            if(target>0&&sales>0)for(var i=0;i<pRates.length;i++)if(ach>=pRates[i].min&&ach<=pRates[i].max){commission=sales*(pRates[i].rate||0);break;}
-            var collI=calcInc(collTgt>0?collAmt/collTgt*100:0,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
-            var callI=calcInc(callTgt>0?callAct/callTgt*100:0,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
-            var qtrI=isQtr?calcInc(ach,(cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[nu])||cfg.quarterly_incentive||[]):0;
-            return {name:p.name,salary:salary,allowances:allowances,epfRate:epfRate,sales:sales,target:target,achievement:ach,
-                commission:commission,collectionIncentive:collI,activeCallIncentive:callI,quarterlyBonus:qtrI,
-                totalCommission:commission+collI+callI+qtrI,collectionTarget:collTgt,collectionAmount:collAmt,
-                callTarget:callTgt,callActual:callAct,quarterlySales:0,quarterlyTarget:0};
+
+            if (empType === 'Sales') {
+                var target=parseFloat(p.target)||0,sales=parseFloat(p.sales)||0;
+                var collTgt=parseFloat(p.collectionTarget)||0,collAmt=parseFloat(p.collectionAmount)||0;
+                var callTgt=parseFloat(p.callTarget)||0,callAct=parseFloat(p.callActual)||0;
+                var ach=target>0?(sales/target*100):0;
+                var pRates=(cfg.person_commission_rates&&cfg.person_commission_rates[nu])||rates;
+                var commission=0;
+                if(target>0&&sales>0)for(var i=0;i<pRates.length;i++)if(ach>=pRates[i].min&&ach<=pRates[i].max){commission=sales*(pRates[i].rate||0);break;}
+                var collI=calcInc(collTgt>0?collAmt/collTgt*100:0,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
+                var callI=calcInc(callTgt>0?callAct/callTgt*100:0,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
+                var qtrI=isQtr?calcInc(ach,(cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[nu])||cfg.quarterly_incentive||[]):0;
+                salesData.push({name:p.name,type:'Sales',salary:salary,allowances:allowances,epfRate:epfRate,sales:sales,target:target,achievement:ach,
+                    commission:commission,collectionIncentive:collI,activeCallIncentive:callI,quarterlyBonus:qtrI,
+                    totalCommission:commission+collI+callI+qtrI,collectionTarget:collTgt,collectionAmount:collAmt,
+                    callTarget:callTgt,callActual:callAct,quarterlySales:0,quarterlyTarget:0});
+            } else if (empType === 'Supervisor') {
+                // Use team totals and tier config
+                var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
+                var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
+                var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
+                var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
+                var saleInc = getTierAmt(saleT, teamAch);
+                var collInc = getTierAmt(collT, teamCollAch);
+                var callInc = getTierAmt(callT, teamCallAch);
+                var qtrInc  = isQtr ? getTierAmt(qtrT, teamAch) : 0;
+                // Shape like Sales but using team values
+                supervisorData.push({name:p.name,type:'Supervisor',salary:salary,allowances:allowances,epfRate:epfRate,
+                    sales:teamSales,target:teamTarget,achievement:teamAch,
+                    commission:saleInc,collectionIncentive:collInc,activeCallIncentive:callInc,quarterlyBonus:qtrInc,
+                    totalCommission:saleInc+collInc+callInc+qtrInc,
+                    collectionTarget:teamCollTgt,collectionAmount:teamColl,callTarget:teamCallTgt,callActual:teamCall,
+                    quarterlySales:0,quarterlyTarget:0});
+            } else if (empType === 'Merchandiser') {
+                var blocks = parseFloat(p.collectionAmount)||0;
+                var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
+                    ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                    : (parseFloat(cfg.merchandiser_block_rate)||10);
+                var blockIncentive = blocks * rate;
+                merchandiserData.push({name:p.name,type:'Merchandiser',salary:salary,allowances:allowances,epfRate:epfRate,
+                    blocks:blocks,blockRate:rate,blockIncentive:blockIncentive,totalCommission:blockIncentive});
+            }
         });
-        window.electronAPI.openExcelPreview({salespeople:salesData, config:cfg, month:report.month})
+
+        // Combine: Sales first, then Supervisors (same table structure), then Merchandisers
+        var combinedData = salesData.concat(supervisorData).concat(merchandiserData);
+
+        window.electronAPI.openExcelPreview({salespeople:combinedData, config:cfg, month:report.month})
             .then(function(result){
                 if(result.success) showToast('✅', 'Excel opened!');
                 else showToast('❌', 'Failed: '+(result.error||''));
@@ -4622,7 +4898,153 @@ function applyPersonTarget(cardIndex) {
             window.appState.salespeople[cardIndex].callTarget = parseFloat(callVal) || 0;
         }
     }
+
+    // Update type badge and show/hide sections based on employee type
+    updateCardForEmployeeType(cardIndex);
+
+    // Trigger calculation for Supervisor (uses team data, no input needed)
+    var _empT = person.name ? getEmployeeType(person.name) : 'Sales';
+    if (_empT === 'Supervisor' || _empT === 'Merchandiser') {
+        setTimeout(function(){ updateSalespersonData(cardIndex); }, 50);
+    }
 }
+
+function updateCardForEmployeeType(cardIndex) {
+    var person = window.appState.salespeople[cardIndex];
+    if (!person || !person.name) return;
+    var empType = getEmployeeType(person.name);
+    var badge = document.getElementById('card-type-badge-' + cardIndex);
+    if (badge) {
+        var typeColors = { Sales:{bg:'#dbeafe',c:'#1e40af',icon:'💼'}, Supervisor:{bg:'#f3e8ff',c:'#7c3aed',icon:'👔'}, Merchandiser:{bg:'#fef3c7',c:'#92400e',icon:'📦'} };
+        var tc = typeColors[empType] || typeColors.Sales;
+        badge.style.display = 'inline-block';
+        badge.style.background = tc.bg;
+        badge.style.color = tc.c;
+        badge.textContent = tc.icon + ' ' + empType;
+    }
+    var card = badge ? badge.closest('.card') : null;
+    if (!card) return;
+
+    // Remove existing notice
+    var notice = card.querySelector('.emp-type-notice');
+    if (notice) notice.remove();
+
+    // Reset: restore all fields, headers, and dividers visible
+    var allInputs = ['target-','sales-','quarterly-target-','quarterly-sales-','collection-target-','collection-amount-','call-target-','call-actual-'];
+    allInputs.forEach(function(prefix) {
+        var el = document.getElementById(prefix + cardIndex);
+        if (el) {
+            var p = el.closest('div:not(.grid)');
+            if (p) p.style.display = '';
+            // Also restore original label
+            if (p && prefix === 'collection-amount-') {
+                var lbl = p.querySelector('label');
+                if (lbl) lbl.textContent = 'Collected Outlets';
+            }
+        }
+    });
+    var allH5 = card.querySelectorAll('h5');
+    allH5.forEach(function(h){ h.style.display = ''; });
+    var allHr = card.querySelectorAll('.h-px');
+    allHr.forEach(function(h){ h.style.display = ''; });
+
+    // Hide irrelevant fields and add notice for non-Sales types
+    if (empType !== 'Sales') {
+        var n = document.createElement('div');
+        n.className = 'emp-type-notice';
+        var _pmCfg = window.appState.config;
+        var _pmRates = _pmCfg.person_merchandiser_rates || {};
+        var rate = (_pmRates[person.name] != null ? Number(_pmRates[person.name]) : Number(_pmCfg.merchandiser_block_rate)) || 10;
+        n.style.cssText = 'background:'+(empType==='Supervisor'?'#f3e8ff':'#fef3c7')+';border:1px solid '+(empType==='Supervisor'?'#ddd6fe':'#fde68a')+';border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:'+(empType==='Supervisor'?'#6b21a8':'#92400e')+';';
+        if (empType === 'Supervisor') {
+            n.innerHTML = '<strong>👔 Supervisor</strong> — Earns from team performance. Sale/Collection/Call Incentives are calculated automatically from team totals on save. No individual target input needed.';
+        } else {
+            n.innerHTML = '<strong>📦 Merchandiser</strong> — Earns from blocks display. Enter number of blocks displayed in "Collected Outlets" field (each block = RM ' + rate.toFixed(2) + '). Other fields not applicable.';
+        }
+        var nameDiv = card.querySelector('#card-name-display-' + cardIndex);
+        if (nameDiv && nameDiv.parentNode) nameDiv.parentNode.insertBefore(n, nameDiv.nextSibling);
+
+        // Hide the main grid fields that don't apply
+        var targetInput = document.getElementById('target-' + cardIndex);
+        var salesInput  = document.getElementById('sales-' + cardIndex);
+        var qTInput     = document.getElementById('quarterly-target-' + cardIndex);
+        var qSInput     = document.getElementById('quarterly-sales-' + cardIndex);
+        var collTInput  = document.getElementById('collection-target-' + cardIndex);
+        var collAInput  = document.getElementById('collection-amount-' + cardIndex);
+        var callTInput  = document.getElementById('call-target-' + cardIndex);
+        var callAInput  = document.getElementById('call-actual-' + cardIndex);
+
+        function hideParent(el) {
+            if (!el) return;
+            var p = el.closest('div:not(.grid)');
+            if (p) p.style.display = 'none';
+        }
+        function showParent(el) {
+            if (!el) return;
+            var p = el.closest('div:not(.grid)');
+            if (p) p.style.display = '';
+        }
+        function setLabel(el, txt) {
+            if (!el) return;
+            var p = el.closest('div:not(.grid)');
+            if (!p) return;
+            var lbl = p.querySelector('label');
+            if (lbl) lbl.textContent = txt;
+        }
+
+        // Hide all by default
+        hideParent(targetInput); hideParent(salesInput);
+        hideParent(qTInput); hideParent(qSInput);
+        hideParent(collTInput); hideParent(collAInput);
+        hideParent(callTInput); hideParent(callAInput);
+        // Hide the Quarterly Data and Other Targets headers
+        var hd = card.querySelectorAll('h5');
+        hd.forEach(function(h){ h.style.display = 'none'; });
+        var hr = card.querySelectorAll('.h-px');
+        hr.forEach(function(h){ h.style.display = 'none'; });
+
+        if (empType === 'Merchandiser') {
+            // Show only "Collected Outlets" (as block count)
+            showParent(collAInput);
+            setLabel(collAInput, 'Blocks Display (count)');
+            if (collAInput) collAInput.placeholder = 'Enter number of blocks';
+        }
+        // Supervisor: all hidden. Just the notice + auto-calculated preview.
+    }
+
+    // Update preview labels based on type
+    var lblC  = document.getElementById('lbl-commission-' + cardIndex);
+    var lblCB = document.getElementById('lbl-collection-bonus-' + cardIndex);
+    var lblKB = document.getElementById('lbl-call-bonus-' + cardIndex);
+    var lblQB = document.getElementById('lbl-quarterly-' + cardIndex);
+    var lblT  = document.getElementById('lbl-total-commission-' + cardIndex);
+
+    // Preview row wrappers — show all first
+    var wrapIds = ['wrap-achievement-','wrap-commission-','wrap-collection-bonus-','wrap-call-bonus-','wrap-quarterly-','wrap-total-commission-'];
+    wrapIds.forEach(function(id){ var el = document.getElementById(id + cardIndex); if (el) el.style.display = ''; });
+
+    if (empType === 'Supervisor') {
+        if (lblC)  lblC.textContent  = 'Sale Incentive:';
+        if (lblCB) lblCB.textContent = 'Collection Incentive:';
+        if (lblKB) lblKB.textContent = 'Call Incentive:';
+        if (lblQB) lblQB.textContent = 'Quarterly Incentive:';
+        if (lblT)  lblT.textContent  = 'Total Incentive:';
+    } else if (empType === 'Merchandiser') {
+        if (lblCB) lblCB.textContent = 'Blocks Incentive:';
+        if (lblT)  lblT.textContent  = 'Total Incentive:';
+        // Hide: Achievement, Commission, Call, Quarterly
+        ['wrap-achievement-','wrap-commission-','wrap-call-bonus-','wrap-quarterly-'].forEach(function(id){
+            var el = document.getElementById(id + cardIndex); if (el) el.style.display = 'none';
+        });
+    } else {
+        if (lblC)  lblC.textContent  = 'Commission:';
+        if (lblCB) lblCB.textContent = 'Collection Incentive:';
+        if (lblKB) lblKB.textContent = 'Call Incentive:';
+        if (lblQB) lblQB.textContent = 'Quarterly Incentive:';
+        if (lblT)  lblT.textContent  = 'Total Commission:';
+    }
+}
+window.updateCardForEmployeeType = updateCardForEmployeeType;
 window.applyPersonTarget = applyPersonTarget;
 window.showTargetModal   = showTargetModal;
 
@@ -4634,10 +5056,12 @@ function renderProjectionReport() {
     var body = document.getElementById('projection-report-body');
     if (!body) return;
 
-    // ── Populate person selector ──
+    // ── Populate person selector (Sales only — projection is sales-based) ──
     var personSelect = document.getElementById('proj-person-select');
     if (personSelect) {
-        var configPeople = Object.keys(cfg.base_salaries || {});
+        var configPeople = Object.keys(cfg.base_salaries || {}).filter(function(n){
+            return getEmployeeType(n) === 'Sales';
+        });
         var existingNames = Array.from(personSelect.options).map(function(o){return o.value;}).filter(function(v){return v;});
         if (existingNames.join(',') !== configPeople.join(',')) {
             var html = '<option value="">— Select —</option>';
@@ -4985,6 +5409,7 @@ function showPayslipPreview(index) {
     var config  = window.appState.config;
     var nameUpper = person.name.toUpperCase();
     var month   = ((document.getElementById('report-month')||{}).value || '').toUpperCase() || 'CURRENT';
+    var empType = getEmployeeType(person.name);
 
     // Salary & allowances
     var salary     = config.base_salaries?.[nameUpper] || 0;
@@ -5023,6 +5448,42 @@ function showPayslipPreview(index) {
     }).join('');
     if (!allowRows) allowRows = '<tr><td colspan="2" style="padding:6px 12px;color:#9ca3af;font-style:italic;">No allowances</td></tr>';
 
+    // Build incentive rows based on type
+    var incentiveRows = '';
+    var sectionTitle = '';
+    var totalLabel = '';
+    if (empType === 'Sales') {
+        sectionTitle = 'COMMISSION & INCENTIVES';
+        totalLabel = 'Total Commission';
+        incentiveRows = '<tr style="background:#f9fafb;">'
+            +'<td style="padding:6px 12px 6px 24px;">Commission ('+(person.achievement?person.achievement.toFixed(2)+'%':'—')+')</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(commission)+'</td></tr>'
+            +'<tr><td style="padding:6px 12px 6px 24px;">Collection Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(collBonus)+'</td></tr>'
+            +'<tr style="background:#f9fafb;"><td style="padding:6px 12px 6px 24px;">Active Call Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(callBonus)+'</td></tr>'
+            +'<tr><td style="padding:6px 12px 6px 24px;">Quarterly Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(qtrBonus)+'</td></tr>';
+    } else if (empType === 'Supervisor') {
+        sectionTitle = 'INCENTIVES';
+        totalLabel = 'Total Incentive';
+        incentiveRows = '<tr style="background:#f9fafb;">'
+            +'<td style="padding:6px 12px 6px 24px;">Sale Incentive ('+(person.achievement?person.achievement.toFixed(2)+'%':'—')+' team)</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(commission)+'</td></tr>'
+            +'<tr><td style="padding:6px 12px 6px 24px;">Collection Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(collBonus)+'</td></tr>'
+            +'<tr style="background:#f9fafb;"><td style="padding:6px 12px 6px 24px;">Active Call Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(callBonus)+'</td></tr>'
+            +'<tr><td style="padding:6px 12px 6px 24px;">Quarterly Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(qtrBonus)+'</td></tr>';
+    } else if (empType === 'Merchandiser') {
+        sectionTitle = 'INCENTIVES';
+        totalLabel = 'Total Incentive';
+        incentiveRows = '<tr style="background:#f9fafb;">'
+            +'<td style="padding:6px 12px 6px 24px;">Block Incentive</td>'
+            +'<td style="padding:6px 24px 6px 12px;text-align:right;">'+fmt(collBonus)+'</td></tr>';
+    }
+
     var existing = document.getElementById('payslip-modal');
     if (existing) existing.remove();
 
@@ -5059,27 +5520,12 @@ function showPayslipPreview(index) {
 
                 <!-- Commission & Incentives -->
                 <div style="padding:16px 24px 0;margin-top:8px;">
-                    <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:8px;">COMMISSION & INCENTIVES</div>
+                    <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;margin-bottom:8px;">${sectionTitle}</div>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                    <tr style="background:#f9fafb;">
-                        <td style="padding:6px 12px 6px 24px;">Commission (${person.achievement?person.achievement.toFixed(2)+'%':'—'})</td>
-                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(commission)}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 12px 6px 24px;">Collection Bonus</td>
-                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(collBonus)}</td>
-                    </tr>
-                    <tr style="background:#f9fafb;">
-                        <td style="padding:6px 12px 6px 24px;">Active Call Bonus</td>
-                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(callBonus)}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 12px 6px 24px;">Quarterly Bonus</td>
-                        <td style="padding:6px 24px 6px 12px;text-align:right;">${fmt(qtrBonus)}</td>
-                    </tr>
+                    ${incentiveRows}
                     <tr style="background:#f0fdf4;border-top:2px solid #bbf7d0;">
-                        <td style="padding:8px 12px 8px 24px;font-weight:700;color:#15803d;">Total Commission</td>
+                        <td style="padding:8px 12px 8px 24px;font-weight:700;color:#15803d;">${totalLabel}</td>
                         <td style="padding:8px 24px 8px 12px;text-align:right;font-weight:700;color:#15803d;">${fmt(totalComm)}</td>
                     </tr>
                 </table>
@@ -5154,39 +5600,101 @@ function printHistoryReport(index) {
     var people = report.data || [];
     var month = (report.month || '').toUpperCase();
     var cfg = window.appState.config;
+    var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(month) !== -1;
+
+    // Compute team totals for Supervisor
+    var teamS=0, teamT=0, teamCo=0, teamCoT=0, teamCa=0, teamCaT=0;
+    people.forEach(function(tp) {
+        if ((typeof getEmployeeType === 'function' ? getEmployeeType(tp.name) : 'Sales') !== 'Sales') return;
+        teamS += parseFloat(tp.sales)||0; teamT += parseFloat(tp.target)||0;
+        teamCo += parseFloat(tp.collectionAmount)||0; teamCoT += parseFloat(tp.collectionTarget)||0;
+        teamCa += parseFloat(tp.callActual)||0; teamCaT += parseFloat(tp.callTarget)||0;
+    });
+    var teamAch = teamT>0?(teamS/teamT*100):0;
+    var teamCollAch = teamCoT>0?(teamCo/teamCoT*100):0;
+    var teamCallAch = teamCaT>0?(teamCa/teamCaT*100):0;
 
     var html = '';
     people.forEach(function(p) {
         var name = (p.name || '').toUpperCase();
-        var sales = parseFloat(p.sales) || 0;
-        var target = parseFloat(p.target) || 0;
-        var ach = target > 0 ? (sales / target * 100) : 0;
-        var comm = calculateCommission(sales, target, name);
-        var collAch = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0) / p.collectionTarget * 100 : 0;
-        var callAch = (p.callTarget||0) > 0 ? (p.callActual||0) / p.callTarget * 100 : 0;
-        var collI = calculateIncentive(collAch, cfg.collection_incentive || []);
-        var callI = calculateIncentive(callAch, cfg.active_call_incentive || []);
-        var totalComm = comm + collI + callI;
+        var empType = (typeof getEmployeeType === 'function') ? getEmployeeType(name) : 'Sales';
         var salary = (cfg.base_salaries && cfg.base_salaries[name]) || 0;
         var allowances = cfg.allowances && cfg.allowances[name] ? Object.values(cfg.allowances[name]).reduce(function(s,v){return s+(parseFloat(v)||0);},0) : 0;
         var totalFixed = salary + allowances;
         var epfRate = (cfg.deductionRates && cfg.deductionRates[name] && cfg.deductionRates[name].EPF_RATE) || 11;
-        var epf = (totalFixed + totalComm) * epfRate / 100;
-        var grandTotal = totalFixed + totalComm - epf;
+
+        var comm = 0, collI = 0, callI = 0, qtrI = 0, totalComm = 0;
+        var detailRows = '';
+        var typeLabel = '';
+
+        if (empType === 'Sales') {
+            var sales = parseFloat(p.sales) || 0;
+            var target = parseFloat(p.target) || 0;
+            var ach = target > 0 ? (sales / target * 100) : 0;
+            comm = calculateCommission(sales, target, name);
+            var collAch = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0) / p.collectionTarget * 100 : 0;
+            var callAch = (p.callTarget||0) > 0 ? (p.callActual||0) / p.callTarget * 100 : 0;
+            collI = calculateIncentive(collAch, cfg.collection_incentive || []);
+            callI = calculateIncentive(callAch, cfg.active_call_incentive || []);
+            qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive || []) : 0;
+            totalComm = comm + collI + callI + qtrI;
+
+            detailRows = '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Target</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(target)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;font-weight:600;">Sales</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(sales)+'</td></tr>'
+                +'<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Achievement</td><td style="padding:6px 10px;text-align:right;color:'+(ach>=100?'#059669':'#d97706')+';">'+ach.toFixed(2)+'%</td></tr>'
+                +'<tr><td style="padding:6px 10px;">Salary</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(salary)+'</td></tr>'
+                +'<tr style="background:#f1f5f9;"><td style="padding:6px 10px;">Allowances</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(allowances)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;font-weight:600;">Total Fixed Income</td><td style="padding:6px 10px;text-align:right;font-weight:600;">'+formatCurrency(totalFixed)+'</td></tr>'
+                +'<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Commission</td><td style="padding:6px 10px;text-align:right;color:#2563eb;">'+formatCurrency(comm)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;">Collection Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(collI)+'</td></tr>'
+                +'<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Active Call Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(callI)+'</td></tr>'
+                +(isQtr?'<tr><td style="padding:6px 10px;">Quarterly Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(qtrI)+'</td></tr>':'')
+                +'<tr style="background:#dcfce7;"><td style="padding:6px 10px;font-weight:700;">Total Commission</td><td style="padding:6px 10px;text-align:right;font-weight:700;color:#059669;">'+formatCurrency(totalComm)+'</td></tr>';
+        } else if (empType === 'Supervisor') {
+            typeLabel = ' 👔 Supervisor';
+            var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
+            var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
+            var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
+            var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
+            comm = getTierAmt(saleT, teamAch);
+            collI = getTierAmt(collT, teamCollAch);
+            callI = getTierAmt(callT, teamCallAch);
+            qtrI = isQtr ? getTierAmt(qtrT, teamAch) : 0;
+            totalComm = comm + collI + callI + qtrI;
+
+            detailRows = '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Team Achievement</td><td style="padding:6px 10px;text-align:right;color:'+(teamAch>=100?'#059669':'#d97706')+';">'+teamAch.toFixed(2)+'%</td></tr>'
+                +'<tr><td style="padding:6px 10px;">Salary</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(salary)+'</td></tr>'
+                +'<tr style="background:#f1f5f9;"><td style="padding:6px 10px;">Allowances</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(allowances)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;font-weight:600;">Total Fixed Income</td><td style="padding:6px 10px;text-align:right;font-weight:600;">'+formatCurrency(totalFixed)+'</td></tr>'
+                +'<tr style="background:#f3e8ff;"><td style="padding:6px 10px;">Sale Incentive</td><td style="padding:6px 10px;text-align:right;color:#7c3aed;">'+formatCurrency(comm)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;">Collection Incentive</td><td style="padding:6px 10px;text-align:right;color:#7c3aed;">'+formatCurrency(collI)+'</td></tr>'
+                +'<tr style="background:#f3e8ff;"><td style="padding:6px 10px;">Call Incentive</td><td style="padding:6px 10px;text-align:right;color:#7c3aed;">'+formatCurrency(callI)+'</td></tr>'
+                +(isQtr?'<tr><td style="padding:6px 10px;">Quarterly Incentive</td><td style="padding:6px 10px;text-align:right;color:#7c3aed;">'+formatCurrency(qtrI)+'</td></tr>':'')
+                +'<tr style="background:#dcfce7;"><td style="padding:6px 10px;font-weight:700;">Total Incentive</td><td style="padding:6px 10px;text-align:right;font-weight:700;color:#7c3aed;">'+formatCurrency(totalComm)+'</td></tr>';
+        } else if (empType === 'Merchandiser') {
+            typeLabel = ' 📦 Merchandiser';
+            var blocks = parseFloat(p.collectionAmount)||0;
+            var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
+                ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                : (parseFloat(cfg.merchandiser_block_rate)||10);
+            totalComm = blocks * rate;
+
+            detailRows = '<tr><td style="padding:6px 10px;">Salary</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(salary)+'</td></tr>'
+                +'<tr style="background:#f1f5f9;"><td style="padding:6px 10px;">Allowances</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(allowances)+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;font-weight:600;">Total Fixed Income</td><td style="padding:6px 10px;text-align:right;font-weight:600;">'+formatCurrency(totalFixed)+'</td></tr>'
+                +'<tr style="background:#fef3c7;"><td style="padding:6px 10px;">Blocks</td><td style="padding:6px 10px;text-align:right;">'+blocks+'</td></tr>'
+                +'<tr><td style="padding:6px 10px;">Block Incentive</td><td style="padding:6px 10px;text-align:right;color:#d97706;">'+formatCurrency(totalComm)+'</td></tr>'
+                +'<tr style="background:#dcfce7;"><td style="padding:6px 10px;font-weight:700;">Total Incentive</td><td style="padding:6px 10px;text-align:right;font-weight:700;color:#d97706;">'+formatCurrency(totalComm)+'</td></tr>';
+        }
+
+        var totalIncome = totalFixed + totalComm;
+        var epf = totalIncome * epfRate / 100;
+        var grandTotal = totalIncome - epf;
 
         html += '<div style="page-break-inside:avoid;border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:16px;">';
-        html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+' — '+month+' 2026</h3>';
+        html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+typeLabel+' — '+month+' 2026</h3>';
         html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
-        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Target</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(target)+'</td></tr>';
-        html += '<tr><td style="padding:6px 10px;font-weight:600;">Sales</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(sales)+'</td></tr>';
-        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Achievement</td><td style="padding:6px 10px;text-align:right;color:'+(ach>=100?'#059669':'#d97706')+';">'+ach.toFixed(2)+'%</td></tr>';
-        html += '<tr><td style="padding:6px 10px;">Salary</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(salary)+'</td></tr>';
-        html += '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;">Allowances</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(allowances)+'</td></tr>';
-        html += '<tr><td style="padding:6px 10px;font-weight:600;">Total Fixed Income</td><td style="padding:6px 10px;text-align:right;font-weight:600;">'+formatCurrency(totalFixed)+'</td></tr>';
-        html += '<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Commission</td><td style="padding:6px 10px;text-align:right;color:#2563eb;">'+formatCurrency(comm)+'</td></tr>';
-        html += '<tr><td style="padding:6px 10px;">Collection Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(collI)+'</td></tr>';
-        html += '<tr style="background:#eff6ff;"><td style="padding:6px 10px;">Active Call Incentive</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(callI)+'</td></tr>';
-        html += '<tr style="background:#dcfce7;"><td style="padding:6px 10px;font-weight:700;">Total Commission Paid</td><td style="padding:6px 10px;text-align:right;font-weight:700;color:#059669;">'+formatCurrency(totalComm)+'</td></tr>';
+        html += detailRows;
         html += '<tr><td style="padding:6px 10px;color:#dc2626;">EPF '+epfRate+'%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(epf)+'</td></tr>';
         html += '<tr style="background:#0f172a;color:#fff;"><td style="padding:8px 10px;font-weight:700;">Grand Total Payable</td><td style="padding:8px 10px;text-align:right;font-weight:800;font-size:14px;color:#fbbf24;">'+formatCurrency(grandTotal)+'</td></tr>';
         html += '</table></div>';
@@ -5290,12 +5798,18 @@ function renderPeopleList() {
         var totalAllow = Object.values(allow).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
         var hasPersonal = window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[name];
         var col = (colors[i%colors.length]||'#f1f5f9:#64748b').split(':');
+        var empType = getEmployeeType(name);
+        var typeColors = { Sales:{bg:'#dbeafe',c:'#1e40af',icon:'💼'}, Supervisor:{bg:'#f3e8ff',c:'#7c3aed',icon:'👔'}, Merchandiser:{bg:'#fef3c7',c:'#92400e',icon:'📦'} };
+        var tc = typeColors[empType] || typeColors.Sales;
         var item = document.createElement('div');
         item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s;margin-bottom:8px;';
         item.innerHTML =
             '<div style="width:38px;height:38px;border-radius:50%;background:'+col[0]+';color:'+col[1]+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
             + '<div style="flex:1;">'
-            + '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:3px;">'+name+'</div>'
+            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'
+            + '<div style="font-size:14px;font-weight:700;color:var(--ink);">'+name+'</div>'
+            + '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">'+tc.icon+' '+empType+'</span>'
+            + '</div>'
             + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
             + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()
             + (cfg.salary_history&&cfg.salary_history[name]&&cfg.salary_history[name].length>1
@@ -5306,26 +5820,60 @@ function renderPeopleList() {
                 ? '<span style="background:var(--vi-l);color:var(--vi);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;">✦ Personal</span>'
                 : '<span style="background:var(--sheet);color:var(--ink4);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--line);">Company Rate</span>')
             + '</div></div>'
-            + '<div style="display:flex;gap:6px;" id="pi-btns-'+i+'"></div>';
+            + '<select id="type-select-'+i+'" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--line);font-size:11px;font-weight:600;cursor:pointer;background:#fff;font-family:Sora,sans-serif;">'
+            + '<option value="Sales"'+(empType==='Sales'?' selected':'')+'>💼 Sales</option>'
+            + '<option value="Supervisor"'+(empType==='Supervisor'?' selected':'')+'>👔 Supervisor</option>'
+            + '<option value="Merchandiser"'+(empType==='Merchandiser'?' selected':'')+'>📦 Merchandiser</option>'
+            + '</select>'
+            + '<div style="display:flex;gap:6px;justify-content:flex-end;width:420px;" id="pi-btns-'+i+'"></div>';
         container.appendChild(item);
+        var typeSel = item.querySelector('#type-select-'+i);
+        if (typeSel) typeSel.addEventListener('change', (function(n){ return function(e){ setEmployeeType(n, e.target.value); renderPeopleList(); showToast('✅', n+' type changed to '+e.target.value); };})(name));
         var btns = item.querySelector('#pi-btns-'+i);
+
+        // Salary always first
         var bS = document.createElement('button');
-        bS.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bae6fd;background:#e0f2fe;color:#0284c7;';
+        bS.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bae6fd;background:#e0f2fe;color:#0284c7;width:110px;';
         bS.textContent = '💵 Salary';
         bS.addEventListener('click',(function(n){return function(){showSalaryModal(n);};})(name));
-        var bT = document.createElement('button');
-        bT.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bbf7d0;background:#d1fae5;color:#065f46;';
-        bT.textContent = '🎯 Target';
-        bT.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
-        var bC = document.createElement('button');
-        bC.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:var(--vi-l);color:var(--vi);';
-        bC.textContent = '💰 Commission';
-        bC.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
+        btns.appendChild(bS);
+
+        if (empType === 'Sales') {
+            var bC = document.createElement('button');
+            bC.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:var(--vi-l);color:var(--vi);width:140px;';
+            bC.textContent = '💰 Commission';
+            bC.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
+            var bT = document.createElement('button');
+            bT.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bbf7d0;background:#d1fae5;color:#065f46;width:110px;';
+            bT.textContent = '🎯 Target';
+            bT.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
+            btns.appendChild(bC);
+            btns.appendChild(bT);
+        } else if (empType === 'Supervisor') {
+            var bSI = document.createElement('button');
+            bSI.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:#f3e8ff;color:#7c3aed;width:140px;';
+            bSI.textContent = '👔 Incentive Tiers';
+            bSI.addEventListener('click',(function(n){return function(){showSupervisorIncentiveModal(n);};})(name));
+            var spacer = document.createElement('div');
+            spacer.style.cssText = 'width:110px;';
+            btns.appendChild(bSI);
+            btns.appendChild(spacer);
+        } else if (empType === 'Merchandiser') {
+            var bMR = document.createElement('button');
+            bMR.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #fde68a;background:#fef3c7;color:#92400e;width:140px;';
+            bMR.textContent = '📦 Block Rate';
+            bMR.addEventListener('click',(function(n){return function(){showMerchandiserRateModal(n);};})(name));
+            var spacer2 = document.createElement('div');
+            spacer2.style.cssText = 'width:110px;';
+            btns.appendChild(bMR);
+            btns.appendChild(spacer2);
+        }
+
         var bD = document.createElement('button');
         bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
         bD.textContent = '🗑️';
         bD.addEventListener('click',(function(n){return function(){deleteSalespersonConfig(n);};})(name));
-        btns.appendChild(bS); btns.appendChild(bC); btns.appendChild(bT); btns.appendChild(bD);
+        btns.appendChild(bD);
     });
 }
 
@@ -5470,7 +6018,16 @@ function saveSalaryModal(personName) {
     var m=document.getElementById('salary-setup-modal'); if(m) m.remove();
     renderPeopleList();
     showToast('✅', personName+' salary saved (effective '+effective+')!');
-    setTimeout(function(){ showCommissionModal(personName); }, 300);
+    var _empType = getEmployeeType(personName);
+    setTimeout(function(){
+        if (_empType === 'Supervisor') {
+            showSupervisorIncentiveModal(personName);
+        } else if (_empType === 'Merchandiser') {
+            showMerchandiserRateModal(personName);
+        } else {
+            showCommissionModal(personName);
+        }
+    }, 300);
 }
 
 function showCommissionModal(personName) {
@@ -5809,32 +6366,87 @@ function renderDashboard() {
     var curYear = new Date().getFullYear();
     var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+    // Helper: calc team totals for a month (Sales only)
+    function teamTotalsForMonth(m) {
+        var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+        if (!hEntry || !hEntry.data) return {sales:0, target:0, collAch:0, callAch:0};
+        var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
+        hEntry.data.forEach(function(pd) {
+            var t = getEmployeeType(pd.name);
+            if (t !== 'Sales') return;
+            tS += parseFloat(pd.sales)||0;
+            tT += parseFloat(pd.target)||0;
+            tCo += parseFloat(pd.collectionAmount)||0;
+            tCoT += parseFloat(pd.collectionTarget)||0;
+            tCa += parseFloat(pd.callActual)||0;
+            tCaT += parseFloat(pd.callTarget)||0;
+        });
+        return {sales:tS, target:tT, collAch: tCoT>0?(tCo/tCoT*100):0, callAch: tCaT>0?(tCa/tCaT*100):0};
+    }
+
     var peopleStats = configPeople.map(function(name) {
+        var empType = getEmployeeType(name);
         var totalSales=0, totalTarget=0, totalComm=0, monthCount=0;
+        var totalBlocks = 0;
         var salesByMonth = MONTHS.map(function(m) {
             var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
             var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){return (p.name||'').toUpperCase()===name;}) : null;
-            if (pd && (pd.sales>0 || pd.target>0)) {
-                totalSales += parseFloat(pd.sales)||0;
-                totalTarget += parseFloat(pd.target)||0;
-                totalComm += calculateCommission(pd.sales||0, pd.target||0, name);
-                var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
-                var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-                totalComm += calculateIncentive(collPct, cfg.collection_incentive||[]);
-                totalComm += calculateIncentive(callPct, cfg.active_call_incentive||[]);
-                monthCount++;
-                return parseFloat(pd.sales)||0;
+            if (empType === 'Sales') {
+                if (pd && (pd.sales>0 || pd.target>0)) {
+                    totalSales += parseFloat(pd.sales)||0;
+                    totalTarget += parseFloat(pd.target)||0;
+                    totalComm += calculateCommission(pd.sales||0, pd.target||0, name);
+                    var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+                    var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+                    totalComm += calculateIncentive(collPct, cfg.collection_incentive||[]);
+                    totalComm += calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                    monthCount++;
+                    return parseFloat(pd.sales)||0;
+                }
+                return 0;
+            } else if (empType === 'Supervisor') {
+                // Supervisor earns from team performance
+                var team = teamTotalsForMonth(m);
+                var teamAchM = team.target>0?(team.sales/team.target*100):0;
+                if (team.target>0) {
+                    var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[name])||cfg.supervisor_sale_tiers||[];
+                    var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[name])||cfg.supervisor_coll_tiers||[];
+                    var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[name])||cfg.supervisor_call_tiers||[];
+                    var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[name])||cfg.supervisor_qtr_tiers||[];
+                    totalComm += getTierAmt(saleT, teamAchM) + getTierAmt(collT, team.collAch) + getTierAmt(callT, team.callAch);
+                    if (['MAR','JUN','SEP','DEC'].indexOf(m)!==-1) totalComm += getTierAmt(qtrT, teamAchM);
+                    monthCount++;
+                }
+                return 0;
+            } else if (empType === 'Merchandiser') {
+                if (pd && (pd.collectionAmount||0)>0) {
+                    var blocks = parseFloat(pd.collectionAmount)||0;
+                    var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[name]!=null)
+                        ? parseFloat(cfg.person_merchandiser_rates[name])
+                        : (parseFloat(cfg.merchandiser_block_rate)||10);
+                    totalComm += blocks * rate;
+                    totalBlocks += blocks;
+                    monthCount++;
+                }
+                return 0;
             }
             return 0;
         });
-        return {name:name, totalSales:totalSales, totalTarget:totalTarget, totalComm:totalComm, ach:totalTarget>0?(totalSales/totalTarget*100):0, monthCount:monthCount, salesByMonth:salesByMonth};
+        return {name:name, type:empType, totalSales:totalSales, totalTarget:totalTarget, totalComm:totalComm, totalBlocks:totalBlocks, ach:totalTarget>0?(totalSales/totalTarget*100):0, monthCount:monthCount, salesByMonth:salesByMonth};
     });
-    var teamSales = peopleStats.reduce(function(s,p){return s+p.totalSales;},0);
-    var teamTarget = peopleStats.reduce(function(s,p){return s+p.totalTarget;},0);
-    var teamComm = peopleStats.reduce(function(s,p){return s+p.totalComm;},0);
+
+    // Team totals: Sales people only
+    var salesPeople = peopleStats.filter(function(p){return p.type==='Sales';});
+    var teamSales = salesPeople.reduce(function(s,p){return s+p.totalSales;},0);
+    var teamTarget = salesPeople.reduce(function(s,p){return s+p.totalTarget;},0);
+    var teamComm = peopleStats.reduce(function(s,p){return s+p.totalComm;},0);  // All types for total commission
     var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
-    var ranked = peopleStats.slice().sort(function(a,b){return b.totalSales-a.totalSales;});
-    var topPerson = ranked.length>0 ? ranked[0].name : '—';
+    // Top performer: only Sales
+    var rankedSales = salesPeople.slice().sort(function(a,b){return b.totalSales-a.totalSales;});
+    var topPerson = rankedSales.length>0 ? rankedSales[0].name : '—';
+    // All ranking: sort by commission
+    var ranked = peopleStats.slice().sort(function(a,b){return b.totalComm-a.totalComm;});
     var colors = ['#1e40af','#be185d','#15803d','#a16207','#6d28d9','#be123c'];
     var bgColors = ['#dbeafe','#fce7f3','#dcfce7','#fef9c3','#ede9fe','#fff1f2'];
     var medals = ['🥇','🥈','🥉'];
@@ -5846,30 +6458,45 @@ function renderDashboard() {
     html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
     var achColor = teamAch>=100?'#059669':'#d97706';
     html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:16px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+teamAch.toFixed(2)+'%</div></div>';
-    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Total Commission Paid</div><div style="font-size:16px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamComm)+'</div></div>';
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">TOTAL COMM/INC PAID</div><div style="font-size:16px;font-weight:800;color:#059669;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamComm)+'</div></div>';
     html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:16px;font-weight:800;color:#7c3aed;margin-top:4px;white-space:nowrap;">🏆 '+topPerson+'</div></div>';
     html += '</div>';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
     ranked.forEach(function(p, i) {
         var c = colors[i%colors.length]; var bg = bgColors[i%bgColors.length];
         var achC = p.ach>=100?'#059669':p.ach>=90?'#d97706':'#dc2626';
+        var typeIcon = p.type==='Supervisor'?'👔':p.type==='Merchandiser'?'📦':'';
+        var typeLabel = p.type!=='Sales' ? ' <span style="background:'+(p.type==='Supervisor'?'#f3e8ff':'#fef3c7')+';color:'+(p.type==='Supervisor'?'#7c3aed':'#92400e')+';padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:4px;">'+typeIcon+' '+p.type+'</span>' : '';
         var maxSale = Math.max.apply(null, p.salesByMonth.concat([1]));
         var bars = p.salesByMonth.map(function(v,mi){
             var h = maxSale>0?Math.max(3,(v/maxSale)*40):3;
             return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;"><div style="width:100%;height:'+h+'px;background:'+(v>0?c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.3)+';"></div><div style="font-size:7px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
         }).join('');
         html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 20px;margin-bottom:8px;display:grid;grid-template-columns:180px 1fr 110px 110px 110px;align-items:center;gap:16px;">';
-        html += '<div style="display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div><div style="font-size:13px;font-weight:700;color:#0f172a;">'+(medals[i]||'')+' '+p.name+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
+        html += '<div style="display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div><div style="font-size:13px;font-weight:700;color:#0f172a;">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
         html += '<div style="display:flex;align-items:end;gap:2px;height:50px;">'+bars+'</div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Commission</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalComm)+'</div></div>';
+        // Column 1: Total Sales or Total Blocks or "—"
+        if (p.type === 'Sales') {
+            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
+        } else if (p.type === 'Merchandiser') {
+            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Blocks</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+p.totalBlocks+'</div></div>';
+        } else {
+            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:#7c3aed;">Team</div></div>';
+        }
+        // Column 2: Achievement or "—"
+        if (p.type === 'Sales') {
+            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
+        } else {
+            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+(p.type==='Supervisor'?'#7c3aed':'#92400e')+';">'+typeIcon+' '+p.type+'</div></div>';
+        }
+        var commLabel = p.type==='Supervisor'?'Sale Incentive':p.type==='Merchandiser'?'Block Incentive':'Commission';
+        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalComm)+'</div></div>';
         html += '</div>';
     });
     html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-top:12px;">';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:16px;">📈 Monthly Sales Trend</div>';
     html += '<div style="display:flex;align-items:end;gap:6px;height:180px;padding:0 10px;">';
-    var monthTotals = MONTHS.map(function(m){return peopleStats.reduce(function(s,p){var mi=MONTHS.indexOf(m);return s+p.salesByMonth[mi];},0);});
+    var monthTotals = MONTHS.map(function(m){return salesPeople.reduce(function(s,p){var mi=MONTHS.indexOf(m);return s+p.salesByMonth[mi];},0);});
     var maxMonth = Math.max.apply(null, monthTotals.concat([1]));
     MONTHS.forEach(function(m,mi){
         var total = monthTotals[mi]; var h = maxMonth>0?Math.max(8,(total/maxMonth)*160):8; var hasData = total>0;
@@ -5910,97 +6537,218 @@ function renderAnnualReport() {
     if (subEl) subEl.textContent = selectedYear + ' · ' + (selectedPerson === 'ALL' ? configPeople.length + ' salespeople' : selectedPerson);
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
+
+    // Helper: calc team totals for a month (Sales only)
+    function _teamTotalsForMonth(m) {
+        var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+        if (!hEntry || !hEntry.data) return {sales:0, target:0, collAch:0, callAch:0};
+        var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
+        hEntry.data.forEach(function(pd) {
+            var t = getEmployeeType(pd.name);
+            if (t !== 'Sales') return;
+            tS += parseFloat(pd.sales)||0;
+            tT += parseFloat(pd.target)||0;
+            tCo += parseFloat(pd.collectionAmount)||0;
+            tCoT += parseFloat(pd.collectionTarget)||0;
+            tCa += parseFloat(pd.callActual)||0;
+            tCaT += parseFloat(pd.callTarget)||0;
+        });
+        return {sales:tS, target:tT, collAch: tCoT>0?(tCo/tCoT*100):0, callAch: tCaT>0?(tCa/tCaT*100):0};
+    }
+
     MONTHS.forEach(function(m) {
         var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
-        if (!hEntry || !hEntry.data) return;
-        hEntry.data.forEach(function(pd) {
-            var nu = (pd.name||'').toUpperCase();
-            if (peopleData[nu]) {
-                var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
-                var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
-                var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-                var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
-                var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
-                var ach = (pd.target||0)>0?((pd.sales||0)/(pd.target)*100):0;
-                var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
-                var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
-                peopleData[nu][m] = { target: parseFloat(pd.target)||0, sales: parseFloat(pd.sales)||0, ach: ach, commission: comm, collInc: collI, callInc: callI, qtrBonus: qtrI };
-            }
+        // For Sales: use saved data
+        if (hEntry && hEntry.data) {
+            hEntry.data.forEach(function(pd) {
+                var nu = (pd.name||'').toUpperCase();
+                if (!peopleData[nu]) return;
+                var empType = getEmployeeType(nu);
+                if (empType === 'Sales') {
+                    var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
+                    var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+                    var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+                    var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
+                    var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                    var ach = (pd.target||0)>0?((pd.sales||0)/(pd.target)*100):0;
+                    var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
+                    var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+                    peopleData[nu][m] = { type:'Sales', target: parseFloat(pd.target)||0, sales: parseFloat(pd.sales)||0, ach: ach, commission: comm, collInc: collI, callInc: callI, qtrBonus: qtrI };
+                } else if (empType === 'Merchandiser') {
+                    var blocks = parseFloat(pd.collectionAmount)||0;
+                    var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[nu]!=null)
+                        ? parseFloat(cfg.person_merchandiser_rates[nu])
+                        : (parseFloat(cfg.merchandiser_block_rate)||10);
+                    peopleData[nu][m] = { type:'Merchandiser', blocks: blocks, rate: rate, incentive: blocks*rate };
+                }
+            });
+        }
+        // For Supervisors: compute from team (regardless of whether they're in history)
+        configPeople.forEach(function(name) {
+            var empType = getEmployeeType(name);
+            if (empType !== 'Supervisor') return;
+            var team = _teamTotalsForMonth(m);
+            if (team.target === 0) return; // No team data this month
+            var teamAchM = team.target>0?(team.sales/team.target*100):0;
+            var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[name])||cfg.supervisor_sale_tiers||[];
+            var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[name])||cfg.supervisor_coll_tiers||[];
+            var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[name])||cfg.supervisor_call_tiers||[];
+            var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[name])||cfg.supervisor_qtr_tiers||[];
+            var saleInc = getTierAmt(saleT, teamAchM);
+            var collInc = getTierAmt(collT, team.collAch);
+            var callInc = getTierAmt(callT, team.callAch);
+            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
+            var qtrInc = isQtr ? getTierAmt(qtrT, teamAchM) : 0;
+            peopleData[name][m] = { type:'Supervisor', teamAch: teamAchM, saleInc:saleInc, collInc:collInc, callInc:callInc, qtrInc:qtrInc, total: saleInc+collInc+callInc+qtrInc };
         });
     });
     var teamSales=0, teamTarget=0, teamComm=0;
-    configPeople.forEach(function(name) { MONTHS.forEach(function(m) { var d = peopleData[name][m]; if (d) { teamSales+=d.sales; teamTarget+=d.target; teamComm+=d.commission+d.collInc+d.callInc+d.qtrBonus; } }); });
+    configPeople.forEach(function(name) {
+        var empType = getEmployeeType(name);
+        MONTHS.forEach(function(m) {
+            var d = peopleData[name][m]; if (!d) return;
+            if (empType === 'Sales') {
+                teamSales+=d.sales; teamTarget+=d.target; teamComm+=d.commission+d.collInc+d.callInc+d.qtrBonus;
+            } else if (empType === 'Supervisor') {
+                teamComm += d.total;
+            } else if (empType === 'Merchandiser') {
+                teamComm += d.incentive;
+            }
+        });
+    });
     var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
     var html = '';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
     html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Team Sales</div><div style="font-size:20px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
     html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Target</div><div style="font-size:20px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
     html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Overall Achievement</div><div style="font-size:20px;font-weight:800;color:'+(teamAch>=100?'#059669':'#d97706')+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(2)+'%</div></div>';
-    html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Commission Paid</div><div style="font-size:20px;font-weight:800;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">TOTAL COMM/INC PAID</div><div style="font-size:20px;font-weight:800;color:#059669;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
     html += '</div>';
     // Monthly breakdown
-    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-    html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📊 Monthly Breakdown — '+selectedYear+'</div>';
-    html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
-    html += '<thead><tr style="background:#f1f5f9;"><th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Month</th>';
-    displayPeople.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
-    html += '</tr><tr style="background:#f8fafc;"><th style="padding:6px 14px;"></th>';
-    displayPeople.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
-    html += '</tr></thead><tbody>';
-    MONTHS.forEach(function(m) {
-        var hasData = displayPeople.some(function(p){return peopleData[p][m];});
-        if (!hasData) return;
-        html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
-        displayPeople.forEach(function(p) {
-            var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmt(d.target):'—')+'</td>';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
-            html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
+    // Filter people by type for different sections
+    var salesDisplay = displayPeople.filter(function(p){return getEmployeeType(p)==='Sales';});
+    var supervisorDisplay = displayPeople.filter(function(p){return getEmployeeType(p)==='Supervisor';});
+    var merchandiserDisplay = displayPeople.filter(function(p){return getEmployeeType(p)==='Merchandiser';});
+
+    // ── Monthly Breakdown (Sales only) ──
+    if (salesDisplay.length > 0) {
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+        html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📊 Monthly Breakdown — '+selectedYear+' (Sales)</div>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#f1f5f9;"><th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Month</th>';
+        salesDisplay.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
+        html += '</tr><tr style="background:#f8fafc;"><th style="padding:6px 14px;"></th>';
+        salesDisplay.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
+        html += '</tr></thead><tbody>';
+        MONTHS.forEach(function(m) {
+            var hasData = salesDisplay.some(function(p){return peopleData[p][m];});
+            if (!hasData) return;
+            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
+            salesDisplay.forEach(function(p) {
+                var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
+                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmt(d.target):'—')+'</td>';
+                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
+                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
+            });
+            html += '</tr>';
         });
-        html += '</tr>';
-    });
-    html += '<tr style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-top:2px solid #93c5fd;"><td style="padding:12px 14px;font-weight:800;color:#1e40af;">TOTAL</td>';
-    displayPeople.forEach(function(p) {
-        var tT=0, tS=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
-        var tA = tT>0?(tS/tT*100):0;
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmt(tT)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmt(tS)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(2)+'%</td>';
-    });
-    html += '</tr></tbody></table></div></div>';
-    // Commission summary
-    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-    html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">💰 Commission & Incentive Summary</div>';
-    html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f0fdf4;">';
-    html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#166534;">Person</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Commission</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Collection</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Call Bonus</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#166534;">TOTAL</th></tr></thead><tbody>';
-    displayPeople.forEach(function(p) {
-        var comm=0,coll=0,call=0,qtr=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;}});
-        html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">'+p+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(comm)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(coll)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(call)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qtr)+'</td>';
-        html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#059669;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
-    });
-    html += '</tbody></table></div>';
-    // Individual cards
+        html += '<tr style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-top:2px solid #93c5fd;"><td style="padding:12px 14px;font-weight:800;color:#1e40af;">TOTAL</td>';
+        salesDisplay.forEach(function(p) {
+            var tT=0, tS=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
+            var tA = tT>0?(tS/tT*100):0;
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmt(tT)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmt(tS)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(2)+'%</td>';
+        });
+        html += '</tr></tbody></table></div></div>';
+    }
+
+    // ── Commission Summary (Sales) ──
+    if (salesDisplay.length > 0) {
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">💰 Commission & Incentive Summary (Sales)</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f0fdf4;">';
+        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#166534;">Person</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Commission</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Collection</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Call Bonus</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#166534;">TOTAL</th></tr></thead><tbody>';
+        salesDisplay.forEach(function(p) {
+            var comm=0,coll=0,call=0,qtr=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}});
+            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">'+p+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(comm)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(coll)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(call)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qtr)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#059669;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // ── Supervisor Summary ──
+    if (supervisorDisplay.length > 0) {
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">👔 Supervisor Incentive Summary</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f3e8ff;">';
+        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#6b21a8;">Supervisor</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Sale Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Collection Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Call Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#6b21a8;">TOTAL</th></tr></thead><tbody>';
+        supervisorDisplay.forEach(function(p) {
+            var sI=0,cI=0,caI=0,qI=0; MONTHS.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}});
+            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">👔 '+p+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(sI)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(cI)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(caI)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qI)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#7c3aed;">'+fmt(sI+cI+caI+qI)+'</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // ── Merchandiser Summary ──
+    if (merchandiserDisplay.length > 0) {
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
+        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📦 Merchandiser Incentive Summary</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#fef3c7;">';
+        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#92400e;">Merchandiser</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Total Blocks</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Rate/Block</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Months Active</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#92400e;">TOTAL INCENTIVE</th></tr></thead><tbody>';
+        merchandiserDisplay.forEach(function(p) {
+            var totBlocks=0, totInc=0, mc=0, rate=0;
+            MONTHS.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Merchandiser'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}});
+            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">📦 '+p+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#92400e;font-weight:700;">'+totBlocks+' blocks</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#475569;">'+fmt(rate)+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#475569;">'+mc+'</td>';
+            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#d97706;">'+fmt(totInc)+'</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // ── Individual Annual Summary cards ──
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">👤 Individual Annual Summary</div>';
     html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(displayPeople.length,3)+',1fr);gap:14px;">';
     displayPeople.forEach(function(p) {
-        var tS=0,tT=0,comm=0,coll=0,call=0,qtr=0,mc=0;
-        MONTHS.forEach(function(m){var d=peopleData[p][m];if(d){tS+=d.sales;tT+=d.target;comm+=d.commission;coll+=d.collInc;call+=d.callInc;qtr+=d.qtrBonus;mc++;}});
-        var tComm=comm+coll+call+qtr; var tAch=tT>0?(tS/tT*100):0;
+        var empType = getEmployeeType(p);
+        var tS=0,tT=0,tComm=0,mc=0,totBlocks=0;
+        MONTHS.forEach(function(m){
+            var d = peopleData[p][m]; if (!d) return;
+            if (empType === 'Sales') { tS+=d.sales||0; tT+=d.target||0; tComm+=(d.commission||0)+(d.collInc||0)+(d.callInc||0)+(d.qtrBonus||0); mc++; }
+            else if (empType === 'Supervisor') { tComm += d.total||0; mc++; }
+            else if (empType === 'Merchandiser') { totBlocks += d.blocks||0; tComm += d.incentive||0; mc++; }
+        });
+        var tAch = tT>0?(tS/tT*100):0;
         var sal = ((cfg.base_salaries&&cfg.base_salaries[p])||1700)*mc;
         var allow = cfg.allowances&&cfg.allowances[p] ? Object.values(cfg.allowances[p]).reduce(function(s,v){return s+(parseFloat(v)||0);},0)*mc : 0;
+        var typeIcons = { Sales:'', Supervisor:'👔 ', Merchandiser:'📦 ' };
+        var hdrColor = empType==='Supervisor'?'#7c3aed':empType==='Merchandiser'?'#d97706':'#2563eb';
         html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">';
-        html += '<div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:16px 18px;color:#fff;"><div style="font-size:16px;font-weight:800;">'+p+'</div><div style="font-size:12px;opacity:.7;margin-top:2px;">'+mc+' months active</div></div>';
+        html += '<div style="background:linear-gradient(135deg,#1e3a5f,'+hdrColor+');padding:16px 18px;color:#fff;"><div style="font-size:16px;font-weight:800;">'+(typeIcons[empType]||'')+p+'</div><div style="font-size:12px;opacity:.7;margin-top:2px;">'+mc+' months · '+empType+'</div></div>';
         html += '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:8px;font-size:13px;">';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Sales</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tS)+'</span></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(2)+'%</span></div>';
+        if (empType === 'Sales') {
+            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Sales</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tS)+'</span></div>';
+            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(2)+'%</span></div>';
+        } else if (empType === 'Merchandiser') {
+            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Blocks</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+totBlocks+'</span></div>';
+        } else {
+            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Earns From</span><span style="font-weight:700;color:#7c3aed;">Team Performance</span></div>';
+        }
         html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
         html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Salary</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal)+'</span></div>';
         html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Allowances</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(allow)+'</span></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#2563eb;">Total Commission</span><span style="font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tComm)+'</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;"><span style="color:'+hdrColor+';">Total Incentive</span><span style="font-weight:700;color:'+hdrColor+';font-family:\'IBM Plex Mono\',monospace;">'+fmt(tComm)+'</span></div>';
         html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
         html += '<div style="display:flex;justify-content:space-between;"><span style="font-weight:700;">Total Paid</span><span style="font-weight:800;color:#059669;font-size:15px;font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal+allow+tComm)+'</span></div>';
         html += '</div></div>';
@@ -6144,6 +6892,19 @@ function initEmployerCostSelectors() {
     // Month selector
     var mSel = document.getElementById('ec-month-select');
     if (mSel && mSel.options.length <= 1) {
+        // Quarters
+        var quarters = [
+            {val:'Q1', label:'Q1 (JAN-MAR)'},
+            {val:'Q2', label:'Q2 (APR-JUN)'},
+            {val:'Q3', label:'Q3 (JUL-SEP)'},
+            {val:'Q4', label:'Q4 (OCT-DEC)'}
+        ];
+        quarters.forEach(function(q) {
+            var opt = document.createElement('option');
+            opt.value = q.val; opt.textContent = q.label;
+            mSel.appendChild(opt);
+        });
+        // Individual months
         MONTHS.forEach(function(m) {
             var opt = document.createElement('option');
             opt.value = m; opt.textContent = m;
@@ -6176,12 +6937,51 @@ function renderEmployerCostReport() {
     var selectedMonth = monthSelect ? monthSelect.value : 'ALL';
     var personSelect = document.getElementById('ec-person-select');
     var selectedPerson = personSelect ? personSelect.value : 'ALL';
+
+    // Map quarter values to month arrays
+    var quarterMap = {
+        Q1: ['JAN','FEB','MAR'],
+        Q2: ['APR','MAY','JUN'],
+        Q3: ['JUL','AUG','SEP'],
+        Q4: ['OCT','NOV','DEC']
+    };
+    var filterMonths = null; // null = all months
+    if (selectedMonth !== 'ALL') {
+        if (quarterMap[selectedMonth]) {
+            filterMonths = quarterMap[selectedMonth];
+        } else {
+            filterMonths = [selectedMonth];
+        }
+    }
+
+    function isMonthIncluded(m) {
+        if (!filterMonths) return true;
+        return filterMonths.indexOf(m) !== -1;
+    }
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function pct(v, t) { return t > 0 ? ((v/t)*100).toFixed(3)+'%' : '0.000%'; }
+
+    // Helper: team totals for a given month (Sales only)
+    function _teamTotalsForMonth(m) {
+        var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
+        if (!hEntry || !hEntry.data) return {sales:0, target:0, collAch:0, callAch:0};
+        var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
+        hEntry.data.forEach(function(pd) {
+            if (getEmployeeType(pd.name) !== 'Sales') return;
+            tS += parseFloat(pd.sales)||0;
+            tT += parseFloat(pd.target)||0;
+            tCo += parseFloat(pd.collectionAmount)||0;
+            tCoT += parseFloat(pd.collectionTarget)||0;
+            tCa += parseFloat(pd.callActual)||0;
+            tCaT += parseFloat(pd.callTarget)||0;
+        });
+        return {sales:tS, target:tT, collAch: tCoT>0?(tCo/tCoT*100):0, callAch: tCaT>0?(tCa/tCaT*100):0};
+    }
 
     // Gather data per person
     var allPeopleData = {};
     configPeople.forEach(function(name) {
+        var empType = getEmployeeType(name);
         var salary = (cfg.base_salaries && cfg.base_salaries[name]) || 0;
         var allowances = cfg.allowances && cfg.allowances[name] ? Object.values(cfg.allowances[name]).reduce(function(s,v){return s+(parseFloat(v)||0);},0) : 0;
         var employerEpfRate = (cfg.employer_epf_rates && cfg.employer_epf_rates[name]) || 13;
@@ -6189,25 +6989,54 @@ function renderEmployerCostReport() {
         var totalComm = 0, totalCollInc = 0, totalCallInc = 0, totalQtrBonus = 0;
 
         MONTHS.forEach(function(m) {
-            if (selectedMonth !== 'ALL' && m !== selectedMonth) return;
+            if (!isMonthIncluded(m)) return;
             var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===m;});
             if (!hEntry || !hEntry.data) return;
-            var pd = hEntry.data.find(function(d){return (d.name||'').toUpperCase()===name;});
-            if (!pd) return;
-            months++;
-            var sales = parseFloat(pd.sales)||0;
-            var target = parseFloat(pd.target)||0;
-            totalSales += sales; totalTarget += target;
-            totalSalary += salary; totalAllow += allowances;
-            var comm = calculateCommission(sales, target, name);
-            var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
-            var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-            var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
-            var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
-            var ach = target>0?(sales/target*100):0;
-            var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
-            var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
-            totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
+
+            if (empType === 'Sales') {
+                var pd = hEntry.data.find(function(d){return (d.name||'').toUpperCase()===name;});
+                if (!pd) return;
+                months++;
+                var sales = parseFloat(pd.sales)||0;
+                var target = parseFloat(pd.target)||0;
+                totalSales += sales; totalTarget += target;
+                totalSalary += salary; totalAllow += allowances;
+                var comm = calculateCommission(sales, target, name);
+                var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
+                var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
+                var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
+                var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                var ach = target>0?(sales/target*100):0;
+                var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
+                var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+                totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
+            } else if (empType === 'Supervisor') {
+                // Supervisor earns from team every month (if team has data)
+                var team = _teamTotalsForMonth(m);
+                if (team.target === 0) return;
+                months++;
+                totalSalary += salary; totalAllow += allowances;
+                var teamAchM = team.target>0?(team.sales/team.target*100):0;
+                var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[name])||cfg.supervisor_sale_tiers||[];
+                var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[name])||cfg.supervisor_coll_tiers||[];
+                var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[name])||cfg.supervisor_call_tiers||[];
+                var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[name])||cfg.supervisor_qtr_tiers||[];
+                totalComm += getTierAmt(saleT, teamAchM);
+                totalCollInc += getTierAmt(collT, team.collAch);
+                totalCallInc += getTierAmt(callT, team.callAch);
+                if (['MAR','JUN','SEP','DEC'].indexOf(m)!==-1) totalQtrBonus += getTierAmt(qtrT, teamAchM);
+            } else if (empType === 'Merchandiser') {
+                var pd = hEntry.data.find(function(d){return (d.name||'').toUpperCase()===name;});
+                if (!pd || !(parseFloat(pd.collectionAmount)||0)) return;
+                months++;
+                totalSalary += salary; totalAllow += allowances;
+                var blocks = parseFloat(pd.collectionAmount)||0;
+                var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[name]!=null)
+                    ? parseFloat(cfg.person_merchandiser_rates[name])
+                    : (parseFloat(cfg.merchandiser_block_rate)||10);
+                // Put merchandiser incentive into totalComm field (reused for display consistency)
+                totalComm += blocks * rate;
+            }
         });
 
         var totalIncentive = totalCollInc + totalCallInc + totalQtrBonus;
@@ -6215,7 +7044,7 @@ function renderEmployerCostReport() {
         var employerEpf = totalPay * employerEpfRate / 100;
         var totalCost = totalPay + employerEpf;
 
-        allPeopleData[name] = { name:name, months:months, totalSales:totalSales, totalTarget:totalTarget, totalSalary:totalSalary, totalAllow:totalAllow, totalComm:totalComm, totalCollInc:totalCollInc, totalCallInc:totalCallInc, totalQtrBonus:totalQtrBonus, totalIncentive:totalIncentive, totalPay:totalPay, employerEpf:employerEpf, totalCost:totalCost, epfRate:employerEpfRate };
+        allPeopleData[name] = { name:name, type:empType, months:months, totalSales:totalSales, totalTarget:totalTarget, totalSalary:totalSalary, totalAllow:totalAllow, totalComm:totalComm, totalCollInc:totalCollInc, totalCallInc:totalCallInc, totalQtrBonus:totalQtrBonus, totalIncentive:totalIncentive, totalPay:totalPay, employerEpf:employerEpf, totalCost:totalCost, epfRate:employerEpfRate };
     });
 
     // Team totals (always all people for TEAM%)
@@ -6237,61 +7066,105 @@ function renderEmployerCostReport() {
 
     // Summary cards
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px;">';
-    var salesLabel = (selectedPerson === 'ALL' && selectedMonth === 'ALL') ? 'Grand Total Sales' : (selectedPerson !== 'ALL' ? 'Individual Sales' : 'Selected Sales');
+    var selectedEmpType = selectedPerson !== 'ALL' ? getEmployeeType(selectedPerson) : null;
+    var salesLabel = (selectedPerson === 'ALL' && selectedMonth === 'ALL') ? 'Grand Total Sales' : (selectedPerson !== 'ALL' && selectedEmpType === 'Sales' ? 'Individual Sales' : 'Selected Sales');
     html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Grand Total Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
-    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+salesLabel+'</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
+    // Hide Individual Sales card for Supervisor/Merchandiser
+    if (selectedEmpType && selectedEmpType !== 'Sales') {
+        html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;opacity:0.5;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">N/A</div><div style="font-size:16px;font-weight:800;color:#94a3b8;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">—</div></div>';
+    } else {
+        html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+salesLabel+'</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
+    }
     html += '<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (RM)</div><div style="font-size:16px;font-weight:800;color:#be123c;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalCost)+'</div></div>';
-    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (%)</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, displayTotalSales)+'</div></div>';
+    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (%)</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, teamSales)+'</div></div>';
     html += '</div>';
 
     // Per person tables
     displayPeople.forEach(function(name) {
         var p = allPeopleData[name];
         if (!p || p.months === 0) return;
+        var empType = p.type || 'Sales';
         var profit = p.totalSales - p.totalCost;
         var profitColor = profit >= 0 ? '#4ade80' : '#fb7185';
 
         html += '<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:16px;">';
         // Header
+        var typeTag = empType==='Supervisor'?' 👔':empType==='Merchandiser'?' 📦':'';
         html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;">';
-        html += '<div><div style="font-size:15px;font-weight:800;color:#fff;">'+name+'</div>';
+        html += '<div><div style="font-size:15px;font-weight:800;color:#fff;">'+name+typeTag+'</div>';
         html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">'+p.months+' months · '+(selectedMonth==='ALL'?'Full Year':selectedMonth)+' '+selectedYear+'</div></div>';
-        html += '<div style="text-align:right;"><div style="font-size:9px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Sales</div>';
-        html += '<div style="font-size:16px;font-weight:800;color:#4ade80;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div></div>';
+        if (empType === 'Sales') {
+            html += '<div style="text-align:right;"><div style="font-size:9px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Sales</div>';
+            html += '<div style="font-size:16px;font-weight:800;color:#4ade80;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
+        }
+        html += '</div>';
 
-        // Table
+        // Table — Supervisor/Merchandiser: no INDV% column
+        var hasIndv = (empType === 'Sales');
         html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
-        html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:40%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:17%;">INDV%</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:18%;">TEAM%</th></tr></thead>';
+        if (hasIndv) {
+            html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:40%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:17%;">INDV%</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:18%;">TEAM%</th></tr></thead>';
+        } else {
+            html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:45%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:30%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">TEAM%</th></tr></thead>';
+        }
         html += '<tbody>';
 
-        // Sales row
-        html += '<tr style="background:#f0fdf4;"><td style="padding:8px 14px;font-weight:700;color:#166534;">📈 Sales Revenue</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#166534;">'+fmt(p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">100.00%</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">'+pct(p.totalSales,teamSales)+'</td></tr>';
+        // Sales Revenue row (only for Sales type)
+        if (empType === 'Sales') {
+            html += '<tr style="background:#f0fdf4;"><td style="padding:8px 14px;font-weight:700;color:#166534;">📈 Sales Revenue</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#166534;">'+fmt(p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">100.000%</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">'+pct(p.totalSales,teamSales)+'</td></tr>';
+        }
 
         // Divider
-        html += '<tr><td colspan="4" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expenses</td></tr>';
+        html += '<tr><td colspan="'+(hasIndv?4:3)+'" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expenses</td></tr>';
 
-        // Cost rows
-        var rows = [
-            {label:'💵 Basic Salary', val:p.totalSalary, bg:'#fff'},
-            {label:'🏠 Allowances', val:p.totalAllow, bg:'#f8fafc'},
-            {label:'💰 Commission', val:p.totalComm, bg:'#fff', color:'#2563eb'},
-            {label:'📦 Collection Incentive', val:p.totalCollInc, bg:'#f8fafc'},
-            {label:'📞 Call Incentive', val:p.totalCallInc, bg:'#fff'},
-            {label:'🏆 Quarterly Bonus', val:p.totalQtrBonus, bg:'#f8fafc'}
-        ];
-        rows.forEach(function(r) {
+        // Cost rows — build based on type
+        var costRows = [];
+        costRows.push({label:'💵 Basic Salary', val:p.totalSalary, bg:'#fff'});
+        costRows.push({label:'🏠 Allowances', val:p.totalAllow, bg:'#f8fafc'});
+
+        if (empType === 'Sales') {
+            costRows.push({label:'💰 Commission', val:p.totalComm, bg:'#fff', color:'#2563eb'});
+            costRows.push({label:'📦 Collection Incentive', val:p.totalCollInc, bg:'#f8fafc'});
+            costRows.push({label:'📞 Call Incentive', val:p.totalCallInc, bg:'#fff'});
+            costRows.push({label:'🏆 Quarterly Incentive', val:p.totalQtrBonus, bg:'#f8fafc'});
+        } else if (empType === 'Supervisor') {
+            costRows.push({label:'💰 Sale Incentive', val:p.totalComm, bg:'#fff', color:'#7c3aed'});
+            costRows.push({label:'📦 Collection Incentive', val:p.totalCollInc, bg:'#f8fafc', color:'#7c3aed'});
+            costRows.push({label:'📞 Call Incentive', val:p.totalCallInc, bg:'#fff', color:'#7c3aed'});
+            costRows.push({label:'🏆 Quarterly Incentive', val:p.totalQtrBonus, bg:'#f8fafc', color:'#7c3aed'});
+        } else if (empType === 'Merchandiser') {
+            costRows.push({label:'📦 Block Incentive', val:p.totalComm, bg:'#fff', color:'#d97706'});
+        }
+
+        costRows.forEach(function(r) {
             var c = r.color || '#475569';
-            html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+            if (hasIndv) {
+                html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+            } else {
+                html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+            }
         });
 
         // Total Pay
-        html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+        if (hasIndv) {
+            html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+        } else {
+            html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+        }
 
         // Employer EPF
-        html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+        if (hasIndv) {
+            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+        } else {
+            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+        }
 
         // Total Cost
-        html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+        if (hasIndv) {
+            html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+        } else {
+            html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+        }
 
         html += '</tbody></table></div>';
     });
@@ -6299,3 +7172,172 @@ function renderEmployerCostReport() {
     body.innerHTML = html;
 }
 window.renderEmployerCostReport = renderEmployerCostReport;
+
+// ==================== SUPERVISOR INCENTIVE MODAL ====================
+function showSupervisorIncentiveModal(personName) {
+    var ex = document.getElementById('supervisor-setup-modal'); if (ex) ex.remove();
+    var cfg = window.appState.config;
+
+    // Load tiers (per-person override or company default)
+    if (!cfg.person_supervisor_sale_tiers) cfg.person_supervisor_sale_tiers = {};
+    if (!cfg.person_supervisor_coll_tiers) cfg.person_supervisor_coll_tiers = {};
+    if (!cfg.person_supervisor_call_tiers) cfg.person_supervisor_call_tiers = {};
+    if (!cfg.person_supervisor_qtr_tiers)  cfg.person_supervisor_qtr_tiers  = {};
+
+    window._tempSupSale = JSON.parse(JSON.stringify(cfg.person_supervisor_sale_tiers[personName] || cfg.supervisor_sale_tiers || []));
+    window._tempSupColl = JSON.parse(JSON.stringify(cfg.person_supervisor_coll_tiers[personName] || cfg.supervisor_coll_tiers || []));
+    window._tempSupCall = JSON.parse(JSON.stringify(cfg.person_supervisor_call_tiers[personName] || cfg.supervisor_call_tiers || []));
+    window._tempSupQtr  = JSON.parse(JSON.stringify(cfg.person_supervisor_qtr_tiers[personName]  || cfg.supervisor_qtr_tiers  || []));
+
+    var modal = document.createElement('div');
+    modal.id = 'supervisor-setup-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;box-sizing:border-box;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:14px;width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);';
+    card.innerHTML = '<div style="padding:18px 24px;background:linear-gradient(135deg,#7c3aed,#6b21a8);color:#fff;">'
+        + '<div style="font-size:12px;font-weight:700;opacity:.85;letter-spacing:1px;text-transform:uppercase;">Step 2 of 2 · Supervisor Setup</div>'
+        + '<div style="font-size:18px;font-weight:800;margin-top:4px;">👔 '+personName+' — Incentive Tiers</div>'
+        + '<div style="font-size:12px;opacity:.8;margin-top:2px;">All incentives are based on team performance (not individual)</div>'
+        + '</div>'
+        + '<div id="sup-body" style="padding:20px 24px;overflow-y:auto;flex:1;">'
+        + renderSupTiersSection('Sale Incentive', 'by Team Sales Ach %', '_tempSupSale', '#7c3aed')
+        + renderSupTiersSection('Collection Incentive', 'by Team Collection Ach %', '_tempSupColl', '#2563eb')
+        + renderSupTiersSection('Active Call Incentive', 'by Team Call Ach %', '_tempSupCall', '#0891b2')
+        + renderSupTiersSection('Quarterly Incentive', 'by Team Quarterly Ach %', '_tempSupQtr', '#d97706')
+        + '</div>'
+        + '<div style="padding:14px 24px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;background:#f8fafc;flex-shrink:0;">'
+        + '<button id="sup-cancel" style="padding:9px 20px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
+        + '<button id="sup-save" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#6b21a8);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save</button>'
+        + '</div>';
+
+    modal.appendChild(card);
+    document.body.appendChild(modal);
+
+    document.getElementById('sup-cancel').addEventListener('click', function(){ modal.remove(); });
+    document.getElementById('sup-save').addEventListener('click', function(){ saveSupervisorIncentiveModal(personName); });
+
+    bindSupTierInputs();
+}
+
+function renderSupTiersSection(title, sub, tempVar, accent) {
+    var tiers = window[tempVar];
+    if (!Array.isArray(tiers)) { tiers = []; window[tempVar] = tiers; }
+    var html = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:12px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<div><div style="font-size:12px;font-weight:700;color:'+accent+';">'+title+'</div><div style="font-size:10px;color:#64748b;">'+sub+'</div></div>';
+    html += '<button onclick="addSupTier(\''+tempVar+'\')" style="padding:5px 12px;border:1px solid '+accent+';color:'+accent+';background:#fff;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">+ Add Tier</button>';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr 30px;gap:6px;font-size:10px;font-weight:700;color:#64748b;margin-bottom:4px;padding:0 6px;">';
+    html += '<div>LBL</div><div>MIN%</div><div>MAX%</div><div>AMOUNT (RM)</div><div></div></div>';
+    html += '<div id="sup-rows-'+tempVar+'">';
+    tiers.forEach(function(t, i) {
+        html += '<div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr 30px;gap:6px;margin-bottom:4px;">'
+            + '<input type="text" data-var="'+tempVar+'" data-idx="'+i+'" data-field="label" value="'+(t.label||'')+'" placeholder="80%+" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:11px;">'
+            + '<input type="number" data-var="'+tempVar+'" data-idx="'+i+'" data-field="min" value="'+(t.min||0)+'" step="0.01" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:11px;">'
+            + '<input type="number" data-var="'+tempVar+'" data-idx="'+i+'" data-field="max" value="'+(t.max||0)+'" step="0.01" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:11px;">'
+            + '<input type="number" data-var="'+tempVar+'" data-idx="'+i+'" data-field="amt" value="'+(t.amt||0)+'" step="0.01" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:11px;">'
+            + '<button onclick="removeSupTier(\''+tempVar+'\','+i+')" style="border:none;background:#fff1f2;color:#e11d48;border-radius:4px;cursor:pointer;font-size:13px;">×</button>'
+            + '</div>';
+    });
+    html += '</div></div>';
+    return html;
+}
+
+function bindSupTierInputs() {
+    document.querySelectorAll('#supervisor-setup-modal input[data-var]').forEach(function(inp) {
+        inp.addEventListener('input', function() {
+            var v = this.dataset.var;
+            var i = parseInt(this.dataset.idx);
+            var f = this.dataset.field;
+            if (!window[v][i]) return;
+            window[v][i][f] = f === 'label' ? this.value : (parseFloat(this.value) || 0);
+        });
+    });
+}
+
+function addSupTier(tempVar) {
+    if (!window[tempVar]) window[tempVar] = [];
+    window[tempVar].push({label:'', min:0, max:0, amt:0});
+    refreshSupModal();
+}
+function removeSupTier(tempVar, idx) {
+    if (!window[tempVar]) return;
+    window[tempVar].splice(idx, 1);
+    refreshSupModal();
+}
+function refreshSupModal() {
+    var body = document.getElementById('sup-body');
+    if (!body) return;
+    body.innerHTML = renderSupTiersSection('Sale Incentive', 'by Team Sales Ach %', '_tempSupSale', '#7c3aed')
+        + renderSupTiersSection('Collection Incentive', 'by Team Collection Ach %', '_tempSupColl', '#2563eb')
+        + renderSupTiersSection('Active Call Incentive', 'by Team Call Ach %', '_tempSupCall', '#0891b2')
+        + renderSupTiersSection('Quarterly Incentive', 'by Team Quarterly Ach %', '_tempSupQtr', '#d97706');
+    bindSupTierInputs();
+}
+
+function saveSupervisorIncentiveModal(personName) {
+    var cfg = window.appState.config;
+    if (!cfg.person_supervisor_sale_tiers) cfg.person_supervisor_sale_tiers = {};
+    if (!cfg.person_supervisor_coll_tiers) cfg.person_supervisor_coll_tiers = {};
+    if (!cfg.person_supervisor_call_tiers) cfg.person_supervisor_call_tiers = {};
+    if (!cfg.person_supervisor_qtr_tiers)  cfg.person_supervisor_qtr_tiers  = {};
+    cfg.person_supervisor_sale_tiers[personName] = JSON.parse(JSON.stringify(window._tempSupSale || []));
+    cfg.person_supervisor_coll_tiers[personName] = JSON.parse(JSON.stringify(window._tempSupColl || []));
+    cfg.person_supervisor_call_tiers[personName] = JSON.parse(JSON.stringify(window._tempSupCall || []));
+    cfg.person_supervisor_qtr_tiers[personName]  = JSON.parse(JSON.stringify(window._tempSupQtr  || []));
+    saveConfig();
+    var m = document.getElementById('supervisor-setup-modal'); if (m) m.remove();
+    renderPeopleList();
+    showToast('✅', personName + ' supervisor setup saved!');
+}
+
+window.showSupervisorIncentiveModal = showSupervisorIncentiveModal;
+window.saveSupervisorIncentiveModal = saveSupervisorIncentiveModal;
+window.addSupTier = addSupTier;
+window.removeSupTier = removeSupTier;
+
+// ==================== MERCHANDISER RATE MODAL ====================
+function showMerchandiserRateModal(personName) {
+    var ex = document.getElementById('merchandiser-setup-modal'); if (ex) ex.remove();
+    var cfg = window.appState.config;
+    if (!cfg.person_merchandiser_rates) cfg.person_merchandiser_rates = {};
+    var curRate = cfg.person_merchandiser_rates[personName] != null ? cfg.person_merchandiser_rates[personName] : (cfg.merchandiser_block_rate || 10);
+
+    var modal = document.createElement('div');
+    modal.id = 'merchandiser-setup-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;box-sizing:border-box;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:14px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);';
+    card.innerHTML = '<div style="padding:18px 24px;background:linear-gradient(135deg,#d97706,#92400e);color:#fff;">'
+        + '<div style="font-size:12px;font-weight:700;opacity:.85;letter-spacing:1px;text-transform:uppercase;">Step 2 of 2 · Merchandiser Setup</div>'
+        + '<div style="font-size:18px;font-weight:800;margin-top:4px;">📦 '+personName+' — Block Rate</div>'
+        + '<div style="font-size:12px;opacity:.8;margin-top:2px;">Amount earned per block displayed</div>'
+        + '</div>'
+        + '<div style="padding:24px;">'
+        + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px;">'
+        + '<div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Rate per Block (RM)</div>'
+        + '<input id="merch-rate" type="number" step="0.01" value="'+curRate+'" style="width:100%;padding:10px 14px;border:1.5px solid #fde68a;border-radius:8px;font-size:18px;font-family:\'IBM Plex Mono\',monospace;font-weight:700;outline:none;box-sizing:border-box;">'
+        + '<div style="font-size:11px;color:#92400e;margin-top:8px;">Example: Rate RM 10 × 30 blocks = RM 300 incentive</div>'
+        + '</div></div>'
+        + '<div style="padding:14px 24px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;background:#f8fafc;">'
+        + '<button id="merch-cancel" style="padding:9px 20px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
+        + '<button id="merch-save" style="padding:9px 24px;border:none;border-radius:8px;background:linear-gradient(135deg,#d97706,#92400e);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">💾 Save</button>'
+        + '</div>';
+    modal.appendChild(card);
+    document.body.appendChild(modal);
+    setTimeout(function(){ var i=document.getElementById('merch-rate'); if(i) i.focus(); }, 100);
+
+    document.getElementById('merch-cancel').addEventListener('click', function(){ modal.remove(); });
+    document.getElementById('merch-save').addEventListener('click', function(){
+        var inp = document.getElementById('merch-rate');
+        var rate = parseFloat(inp.value) || 0;
+        cfg.person_merchandiser_rates[personName] = rate;
+        saveConfig();
+        modal.remove();
+        renderPeopleList();
+        showToast('✅', personName + ' block rate saved (RM ' + rate.toFixed(2) + '/block)!');
+    });
+}
+window.showMerchandiserRateModal = showMerchandiserRateModal;

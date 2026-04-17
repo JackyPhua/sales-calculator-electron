@@ -411,7 +411,7 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
             ['Sale Target', d.target, rmFmt],
             ['Current Sales', d.sales, rmFmt],
             ['Achievement', d.achievement / 100, pctFmt],
-            ['Commission Rate', d.commissionRate / 100, '0.00%'],
+            ['Commission Rate', d.commissionRate / 100, '0.000%'],
             ['Current Commission', d.commission, rmFmt]
         ];
 
@@ -910,7 +910,7 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
 
                 for (let col = 1; col <= 12; col++) {
                     const cell = summarySheet.getCell(row, col);
-                    if (col === 4) cell.numFmt = '0.00%';
+                    if (col === 4) cell.numFmt = '0.000%';
                     else if (col >= 2) cell.numFmt = '#,##0.00';
                     cell.border = dataBorder;
                 }
@@ -942,7 +942,7 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
             for (let col = 1; col <= 12; col++) {
                 const cell = summarySheet.getCell(row, col);
                 Object.assign(cell, totalStyle);
-                if (col === 4) cell.numFmt = '0.00%';
+                if (col === 4) cell.numFmt = '0.000%';
                 else if (col >= 2) cell.numFmt = '#,##0.00';
             }
             row++;
@@ -969,7 +969,7 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
         for (let col = 1; col <= 12; col++) {
             const cell = summarySheet.getCell(row, col);
             Object.assign(cell, grandTotalStyle);
-            if (col === 4) cell.numFmt = '0.00%';
+            if (col === 4) cell.numFmt = '0.000%';
             else if (col >= 2) cell.numFmt = '#,##0.00';
         }
         summarySheet.getRow(row).height = 30;
@@ -1092,7 +1092,7 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
             const commPctOfSales = gSales > 0 ? gTotal / gSales : 0;
             const cellPctSales = personSheet.getCell(pRow, pctStartCol);
             cellPctSales.value = commPctOfSales;
-            cellPctSales.numFmt = '0.00%';
+            cellPctSales.numFmt = '0.000%';
             cellPctSales.border = dataBorder;
             cellPctSales.alignment = { horizontal: 'center' };
 
@@ -1100,7 +1100,7 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
             const commPctOfTeam = teamTotalSales > 0 ? gTotal / teamTotalSales : 0;
             const cellPctTeam = personSheet.getCell(pRow, pctStartCol + 1);
             cellPctTeam.value = commPctOfTeam;
-            cellPctTeam.numFmt = '0.00%';
+            cellPctTeam.numFmt = '0.000%';
             cellPctTeam.border = dataBorder;
             cellPctTeam.alignment = { horizontal: 'center' };
 
@@ -1127,13 +1127,13 @@ ipcMain.handle('generate-batch-summary', async (event, data) => {
         const tPctSales = allGSales > 0 ? allGTotal / allGSales : 0;
         const tCellPctSales = personSheet.getCell(tRow, pctStartCol);
         tCellPctSales.value = tPctSales;
-        tCellPctSales.numFmt = '0.00%';
+        tCellPctSales.numFmt = '0.000%';
         Object.assign(tCellPctSales, grandTotalStyle);
         tCellPctSales.alignment = { horizontal: 'center' };
 
         const tCellPctTeam = personSheet.getCell(tRow, pctStartCol + 1);
         tCellPctTeam.value = allGSales > 0 ? allGTotal / allGSales : 0; // Team total comm / team total sales
-        tCellPctTeam.numFmt = '0.00%';
+        tCellPctTeam.numFmt = '0.000%';
         Object.assign(tCellPctTeam, grandTotalStyle);
         tCellPctTeam.alignment = { horizontal: 'center' };
 
@@ -1523,7 +1523,16 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     const collectionIncentive = parseFloat(person.collectionIncentive) || 0;
     const activeCallIncentive = parseFloat(person.activeCallIncentive) || 0;
     const quarterlyBonus = parseFloat(person.quarterlyBonus) || 0;
-    const totalExtraIncome = totalFixedIncome + commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
+    const blockIncentive = parseFloat(person.blockIncentive) || 0;
+
+    const empType = person.type || 'Sales';
+    const isSupervisor = empType === 'Supervisor';
+    const isMerchandiser = empType === 'Merchandiser';
+
+    // For Merchandiser, totalExtraIncome = fixed + blockIncentive only
+    const totalExtraIncome = isMerchandiser
+        ? totalFixedIncome + blockIncentive
+        : totalFixedIncome + commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
     const epfAmount = totalExtraIncome * epfRate;
     const epfLabel = `EPF ${(epfRate * 100)}%`;
     const grandTotalPayable = totalExtraIncome - epfAmount;
@@ -1576,37 +1585,99 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         console.warn('Merge cells error:', err);
     }
 
-    const rows = [
-        { label: 'INCOME', type: 'header' },
-        { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'INDV%', 'TEAM%'] },
-        { label: 'SALARY', value: salary },
-        
-        { label: 'ALLOWANCES', type: 'header' },
-        { label: 'HP', value: allowanceVals.HP },
-        { label: 'CAR', value: allowanceVals.CAR },
-        { label: 'LOCAL FUEL', value: allowanceVals['LOCAL FUEL'] },
-        { label: 'OUTSTATION FUEL', value: allowanceVals['OUTSTATION FUEL'] },
-        { label: 'HOUSING', value: allowanceVals.HOUSING },
-        { label: 'FOOD', value: allowanceVals.FOOD },
-        { label: 'OTHERS', value: allowanceVals.OTHERS },
-        { label: '', type: 'empty' },
-        { label: 'TOTAL FIXED INCOME', value: totalFixedIncome, type: 'total' },
-        
-        { label: '', type: 'empty' },
-        { label: 'COMMISSION', type: 'header' },
-        { label: 'COMMISSION AMOUNT', value: commission },
-        { label: 'INCENTIVE', type: 'header' },
-        { label: 'COLLECTION', value: collectionIncentive },
-        { label: 'ACTIVE CALL', value: activeCallIncentive },
-        { label: 'QUATERLY', value: quarterlyBonus },
-        { label: '', type: 'empty' },
-        { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
-        
-        { label: '', type: 'empty' },
-        { label: epfLabel, value: epfAmount, type: 'epf' },
-        { label: '', type: 'empty' },
-        { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
-    ];
+    let rows;
+    if (isSupervisor) {
+        rows = [
+            { label: 'INCOME', type: 'header' },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', ''] },
+            { label: 'SALARY', value: salary },
+
+            { label: 'ALLOWANCES', type: 'header' },
+            { label: 'HP', value: allowanceVals.HP },
+            { label: 'CAR', value: allowanceVals.CAR },
+            { label: 'LOCAL FUEL', value: allowanceVals['LOCAL FUEL'] },
+            { label: 'OUTSTATION FUEL', value: allowanceVals['OUTSTATION FUEL'] },
+            { label: 'HOUSING', value: allowanceVals.HOUSING },
+            { label: 'FOOD', value: allowanceVals.FOOD },
+            { label: 'OTHERS', value: allowanceVals.OTHERS },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL FIXED INCOME', value: totalFixedIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: 'INCENTIVE', type: 'header' },
+            { label: 'SALE', value: commission },
+            { label: 'COLLECTION', value: collectionIncentive },
+            { label: 'ACTIVE CALL', value: activeCallIncentive },
+            { label: 'QUATERLY', value: quarterlyBonus },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
+        ];
+    } else if (isMerchandiser) {
+        rows = [
+            { label: 'INCOME', type: 'header' },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', ''] },
+            { label: 'SALARY', value: salary },
+
+            { label: 'ALLOWANCES', type: 'header' },
+            { label: 'HP', value: allowanceVals.HP },
+            { label: 'CAR', value: allowanceVals.CAR },
+            { label: 'LOCAL FUEL', value: allowanceVals['LOCAL FUEL'] },
+            { label: 'OUTSTATION FUEL', value: allowanceVals['OUTSTATION FUEL'] },
+            { label: 'HOUSING', value: allowanceVals.HOUSING },
+            { label: 'FOOD', value: allowanceVals.FOOD },
+            { label: 'OTHERS', value: allowanceVals.OTHERS },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL FIXED INCOME', value: totalFixedIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: 'INCENTIVE', type: 'header' },
+            { label: 'BLOCK INCENTIVE', value: blockIncentive },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
+        ];
+    } else {
+        rows = [
+            { label: 'INCOME', type: 'header' },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'INDV%', 'TEAM%'] },
+            { label: 'SALARY', value: salary },
+
+            { label: 'ALLOWANCES', type: 'header' },
+            { label: 'HP', value: allowanceVals.HP },
+            { label: 'CAR', value: allowanceVals.CAR },
+            { label: 'LOCAL FUEL', value: allowanceVals['LOCAL FUEL'] },
+            { label: 'OUTSTATION FUEL', value: allowanceVals['OUTSTATION FUEL'] },
+            { label: 'HOUSING', value: allowanceVals.HOUSING },
+            { label: 'FOOD', value: allowanceVals.FOOD },
+            { label: 'OTHERS', value: allowanceVals.OTHERS },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL FIXED INCOME', value: totalFixedIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: 'COMMISSION', type: 'header' },
+            { label: 'COMMISSION AMOUNT', value: commission },
+            { label: 'INCENTIVE', type: 'header' },
+            { label: 'COLLECTION', value: collectionIncentive },
+            { label: 'ACTIVE CALL', value: activeCallIncentive },
+            { label: 'QUATERLY', value: quarterlyBonus },
+            { label: '', type: 'empty' },
+            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+
+            { label: '', type: 'empty' },
+            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
+        ];
+    }
 
     let rowNum = 2;
     for (const row of rows) {
@@ -1651,24 +1722,37 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             }
         }
         
-        if (row.value !== undefined && personMonthlySales > 0) {
-            const cell5 = sheet.getCell(rowNum, 5);
-            cell5.value = row.value / personMonthlySales;
-            cell5.numFmt = '0.00%';
-        } else if (row.value !== undefined) {
-            const cell5 = sheet.getCell(rowNum, 5);
-            cell5.value = 0;
-            cell5.numFmt = '0.00%';
-        }
-        
-        if (row.value !== undefined && totalTeamSales > 0) {
-            const cell6 = sheet.getCell(rowNum, 6);
-            cell6.value = row.value / totalTeamSales;
-            cell6.numFmt = '0.00%';
-        } else if (row.value !== undefined) {
-            const cell6 = sheet.getCell(rowNum, 6);
-            cell6.value = 0;
-            cell6.numFmt = '0.00%';
+        if (isSupervisor || isMerchandiser) {
+            // No INDV%, only TEAM% in col 5
+            if (row.value !== undefined && totalTeamSales > 0) {
+                const cell5 = sheet.getCell(rowNum, 5);
+                cell5.value = row.value / totalTeamSales;
+                cell5.numFmt = '0.000%';
+            } else if (row.value !== undefined) {
+                const cell5 = sheet.getCell(rowNum, 5);
+                cell5.value = 0;
+                cell5.numFmt = '0.000%';
+            }
+        } else {
+            if (row.value !== undefined && personMonthlySales > 0) {
+                const cell5 = sheet.getCell(rowNum, 5);
+                cell5.value = row.value / personMonthlySales;
+                cell5.numFmt = '0.000%';
+            } else if (row.value !== undefined) {
+                const cell5 = sheet.getCell(rowNum, 5);
+                cell5.value = 0;
+                cell5.numFmt = '0.000%';
+            }
+
+            if (row.value !== undefined && totalTeamSales > 0) {
+                const cell6 = sheet.getCell(rowNum, 6);
+                cell6.value = row.value / totalTeamSales;
+                cell6.numFmt = '0.000%';
+            } else if (row.value !== undefined) {
+                const cell6 = sheet.getCell(rowNum, 6);
+                cell6.value = 0;
+                cell6.numFmt = '0.000%';
+            }
         }
 
         rowNum++;
@@ -1681,21 +1765,23 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     sheet.getCell(currentRow, 1).value = '';
     currentRow++;
 
-    // Personal Sale
-    const personalSaleLabelCell = sheet.getCell(currentRow, 1);
-    personalSaleLabelCell.value = 'Personal Sale';
-    personalSaleLabelCell.font = { bold: true, size: 11 };
-    personalSaleLabelCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF2F2F2' }
-    };
+    // Personal Sale (skip for Supervisor and Merchandiser)
+    if (!isSupervisor && !isMerchandiser) {
+        const personalSaleLabelCell = sheet.getCell(currentRow, 1);
+        personalSaleLabelCell.value = 'Personal Sale';
+        personalSaleLabelCell.font = { bold: true, size: 11 };
+        personalSaleLabelCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF2F2F2' }
+        };
 
-    const personalSaleValueCell = sheet.getCell(currentRow, 4);
-    personalSaleValueCell.value = personMonthlySales;
-    personalSaleValueCell.numFmt = '#,##0.00';
-    personalSaleValueCell.font = { bold: true };
-    currentRow++;
+        const personalSaleValueCell = sheet.getCell(currentRow, 4);
+        personalSaleValueCell.value = personMonthlySales;
+        personalSaleValueCell.numFmt = '#,##0.00';
+        personalSaleValueCell.font = { bold: true };
+        currentRow++;
+    }
 
     // Team Sale
     const teamSaleLabelCell = sheet.getCell(currentRow, 1);
@@ -1796,7 +1882,7 @@ async function createGroupSummarySheet(sheet, salespeople, config, currentMonth)
         const cell = sheet.getCell(1, i + 1);
         cell.value = h;
         Object.assign(cell, headerStyle);
-        if (i > 0) cell.numFmt = i < 4 ? '#,##0.00' : '0.00%';
+        if (i > 0) cell.numFmt = i < 4 ? '#,##0.00' : '0.000%';
     });
     sheet.getRow(1).height = 20;
 
@@ -1814,7 +1900,7 @@ async function createGroupSummarySheet(sheet, salespeople, config, currentMonth)
         sheet.getCell(rowNum, 5).value = d.target > 0 ? d.sales / d.target : '';
         
         for (let col = 1; col <= 5; col++) {
-            sheet.getCell(rowNum, col).numFmt = col < 5 ? '#,##0.00' : '0.00%';
+            sheet.getCell(rowNum, col).numFmt = col < 5 ? '#,##0.00' : '0.000%';
             sheet.getCell(rowNum, col).border = {
                 top: {style:'thin'}, bottom: {style:'thin'}, 
                 left: {style:'thin'}, right: {style:'thin'}
@@ -1836,7 +1922,7 @@ async function createGroupSummarySheet(sheet, salespeople, config, currentMonth)
             pattern: 'solid',
             fgColor: { argb: 'FF2E75B6' }
         };
-        sheet.getCell(totalRow, col).numFmt = col < 5 ? '#,##0.00' : '0.00%';
+        sheet.getCell(totalRow, col).numFmt = col < 5 ? '#,##0.00' : '0.000%';
     }
 }
 
@@ -1853,7 +1939,11 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     const colWidths = [14, 14, 14, 10, 12, 12, 12, 12, 16, 20, 20, 14];
     colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
-    // ========== 第一部分：Commission Summary (从 A1 开始) ==========
+    // Separate by type
+    const salesSupervisor = salespeople.filter(p => p.type !== 'Merchandiser');
+    const merchandisers = salespeople.filter(p => p.type === 'Merchandiser');
+
+    // ========== 第一部分：Commission Summary for Sales + Supervisor ==========
     sheet.getCell(1, 1).value = month;
     Object.assign(sheet.getCell(1, 1), headerStyle);
 
@@ -1866,7 +1956,7 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     });
     sheet.getRow(1).height = 30;
 
-    salespeople.forEach((person, idx) => {
+    salesSupervisor.forEach((person, idx) => {
         const rowNum = idx + 2;
         const target = parseFloat(person.target) || 0;
         const sales = parseFloat(person.sales) || 0;
@@ -1877,7 +1967,9 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         const call = parseFloat(person.activeCallIncentive) || 0;
         const total = comm + qtr + coll + call;
 
-        sheet.getCell(rowNum, 1).value = person.name;
+        // Add type tag for Supervisor
+        const nameDisplay = person.type === 'Supervisor' ? '👔 ' + person.name : person.name;
+        sheet.getCell(rowNum, 1).value = nameDisplay;
         sheet.getCell(rowNum, 2).value = target;
         sheet.getCell(rowNum, 3).value = sales;
         sheet.getCell(rowNum, 4).value = achievement > 0 ? achievement / 100 : '';
@@ -1902,11 +1994,11 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         sheet.getCell(rowNum, 10).value = coll || '';
         sheet.getCell(rowNum, 11).value = call || '';
         sheet.getCell(rowNum, 12).value = total;
-        
+
         for (let col = 1; col <= 12; col++) {
             const cell = sheet.getCell(rowNum, col);
             if (col === 4) {
-                cell.numFmt = '0.00%';
+                cell.numFmt = '0.000%';
             } else if (col >= 2) {
                 cell.numFmt = '#,##0.00';
             }
@@ -1914,14 +2006,18 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
                 top: {style:'thin'}, bottom: {style:'thin'},
                 left: {style:'thin'}, right: {style:'thin'}
             };
+            // Purple tint for Supervisor row
+            if (person.type === 'Supervisor') {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3E8FF' } };
+            }
         }
     });
 
     // TOTAL Row
-    const totalRowNum = salespeople.length + 2;
+    const totalRowNum = salesSupervisor.length + 2;
     let totTarget = 0, totSales = 0, totCol5 = 0, totCol6 = 0, totCol7 = 0, totCol8 = 0, totQtr = 0, totColl = 0, totCall = 0, totTotal = 0;
 
-    salespeople.forEach(person => {
+    salesSupervisor.forEach(person => {
         const target = parseFloat(person.target) || 0;
         const sales = parseFloat(person.sales) || 0;
         const achievement = target > 0 ? (sales / target) * 100 : 0;
@@ -1931,8 +2027,11 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
         const call = parseFloat(person.activeCallIncentive) || 0;
         const total = comm + qtr + coll + call;
 
-        totTarget += target;
-        totSales += sales;
+        // Only Sales contribute to target/sales total (avoid double-counting supervisor's team totals)
+        if (person.type === 'Sales') {
+            totTarget += target;
+            totSales += sales;
+        }
         if (comm > 0) {
             if (achievement >= 106) totCol8 += comm;
             else if (achievement >= 100) totCol7 += comm;
@@ -1967,12 +2066,83 @@ async function createCommissionSummarySheet(sheet, salespeople, config, currentM
     for (let col = 1; col <= 12; col++) {
         const cell = sheet.getCell(totalRowNum, col);
         Object.assign(cell, totalStyle);
-        if (col === 4) { cell.numFmt = '0.00%'; }
+        if (col === 4) { cell.numFmt = '0.000%'; }
         else if (col >= 2) { cell.numFmt = '#,##0.00'; }
     }
 
-    // ========== 第二部分：费率表格 (从 A18 开始) ==========
-    const startRow = totalRowNum + 3; // 在TOTAL行下面空3行开始
+    // Track end row to offset subsequent tables
+    let endOfMainSection = totalRowNum;
+
+    // ========== Merchandiser section (if any) ==========
+    if (merchandisers.length > 0) {
+        const merchStartRow = totalRowNum + 3;
+        // Title
+        sheet.mergeCells(merchStartRow, 1, merchStartRow, 5);
+        const merchTitle = sheet.getCell(merchStartRow, 1);
+        merchTitle.value = '📦 MERCHANDISER — ' + month;
+        merchTitle.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+        merchTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD97706' } };
+        merchTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+        merchTitle.border = { top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'} };
+
+        // Headers: Name | Blocks | Rate/Block | Incentive | Total
+        const merchHeaderStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' } },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF92400E' } },
+            alignment: { horizontal: 'center', vertical: 'middle' },
+            border: { top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'} }
+        };
+        const merchHeaders = ['NAME', 'BLOCKS', 'RATE/BLOCK (RM)', 'INCENTIVE (RM)', 'TOTAL'];
+        merchHeaders.forEach((h, i) => {
+            const cell = sheet.getCell(merchStartRow + 1, i + 1);
+            cell.value = h;
+            Object.assign(cell, merchHeaderStyle);
+        });
+        sheet.getRow(merchStartRow + 1).height = 25;
+
+        let totBlocks = 0, totInc = 0;
+        merchandisers.forEach((person, idx) => {
+            const r = merchStartRow + 2 + idx;
+            const blocks = parseFloat(person.blocks) || 0;
+            const rate = parseFloat(person.blockRate) || 0;
+            const inc = parseFloat(person.blockIncentive) || 0;
+            totBlocks += blocks;
+            totInc += inc;
+            sheet.getCell(r, 1).value = person.name;
+            sheet.getCell(r, 2).value = blocks;
+            sheet.getCell(r, 3).value = rate;
+            sheet.getCell(r, 4).value = inc;
+            sheet.getCell(r, 5).value = inc;
+            for (let col = 1; col <= 5; col++) {
+                const cell = sheet.getCell(r, col);
+                if (col >= 3) cell.numFmt = '#,##0.00';
+                cell.border = { top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'} };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+            }
+        });
+
+        // Merchandiser TOTAL row
+        const merchTotalRow = merchStartRow + 2 + merchandisers.length;
+        sheet.getCell(merchTotalRow, 1).value = 'TOTAL';
+        sheet.getCell(merchTotalRow, 2).value = totBlocks;
+        sheet.getCell(merchTotalRow, 3).value = '';
+        sheet.getCell(merchTotalRow, 4).value = totInc;
+        sheet.getCell(merchTotalRow, 5).value = totInc;
+        const merchTotStyle = {
+            font: { bold: true, color: { argb: 'FFFFFFFF' } },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD97706' } },
+            border: { top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'} }
+        };
+        for (let col = 1; col <= 5; col++) {
+            const cell = sheet.getCell(merchTotalRow, col);
+            Object.assign(cell, merchTotStyle);
+            if (col === 2 || col >= 3) cell.numFmt = '#,##0.00';
+        }
+        endOfMainSection = merchTotalRow;
+    }
+
+    // ========== 第二部分：费率表格 ==========
+    const startRow = endOfMainSection + 3; // 在 (merchandiser或TOTAL)行下面空3行开始
 
     // 表格1: Commission Rate Summary
     let currentRow = startRow;

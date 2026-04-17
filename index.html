@@ -62,7 +62,7 @@
         .person-row.active{background:var(--blue-l);}
         .person-row.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
         .person-row .p-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
-        .person-row .p-name{font-size:11px;font-weight:600;color:var(--ink2);flex:1;}
+        .person-row .p-name{font-size:11px;font-weight:600;color:var(--ink2);flex:1;text-align:left;}
         .person-row.active .p-name{color:var(--blue-d);}
         .person-row .p-ach{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;font-family:'IBM Plex Mono',monospace;}
         /* center panel */
@@ -772,6 +772,62 @@
             return;
         }
 
+        function calcTeamTotalsForMonth(monthName) {
+            var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===monthName.toUpperCase();});
+            if (!hEntry || !hEntry.data) return {ach:0, collAch:0, callAch:0};
+            var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
+            hEntry.data.forEach(function(p) {
+                var t = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
+                if (t !== 'Sales') return;
+                tS += parseFloat(p.sales)||0;
+                tT += parseFloat(p.target)||0;
+                tCo += parseFloat(p.collectionAmount)||0;
+                tCoT += parseFloat(p.collectionTarget)||0;
+                tCa += parseFloat(p.callActual)||0;
+                tCaT += parseFloat(p.callTarget)||0;
+            });
+            return {
+                ach: tT>0?(tS/tT*100):0,
+                collAch: tCoT>0?(tCo/tCoT*100):0,
+                callAch: tCaT>0?(tCa/tCaT*100):0
+            };
+        }
+        function getTierA(tiers, pct) {
+            if (!tiers || !tiers.length) return 0;
+            var s = tiers.slice().sort(function(a,b){return b.min-a.min;});
+            for (var i=0;i<s.length;i++) if (pct >= s[i].min) return s[i].amt || 0;
+            return 0;
+        }
+        function calcPersonBonus(p, monthName) {
+            var empType = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
+            var nu = (p.name||'').toUpperCase();
+            if (empType === 'Supervisor') {
+                var team = calcTeamTotalsForMonth(monthName);
+                var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
+                var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
+                var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
+                var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
+                var qtrBonus = ['MAR','JUN','SEP','DEC'].indexOf(monthName.toUpperCase())!==-1 ? getTierA(qtrT, team.ach) : 0;
+                var total = getTierA(saleT, team.ach) + getTierA(collT, team.collAch) + getTierA(callT, team.callAch) + qtrBonus;
+                return { total: total, ach: team.ach, display: empType };
+            }
+            if (empType === 'Merchandiser') {
+                var blocks = parseFloat(p.collectionAmount) || 0;
+                var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
+                    ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                    : (parseFloat(cfg.merchandiser_block_rate)||10);
+                return { total: blocks * rate, blocks: blocks, display: empType };
+            }
+            // Sales (default)
+            var comm = calcC(p.sales, p.target, p.name);
+            var collPct = (p.collectionTarget||0)>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
+            var callPct = (p.callTarget||0)>0?(p.callActual||0)/p.callTarget*100:0;
+            var collI = calcInc(collPct,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
+            var callI = calcInc(callPct,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
+            var ach = (p.target||0)>0?(p.sales||0)/p.target*100:0;
+            return { total: comm+collI+callI, ach: ach, display: empType };
+        }
+
         historyList.innerHTML = '<div class="history-grid">'
             + sorted.map(function(report) {
                 // Merge configured people with report data
@@ -789,28 +845,36 @@
                 var realIndex=history.indexOf(report);
                 var totalComm=0;
                 people.forEach(function(p){
-                    var nu=(p.name||'').toUpperCase();
-                    var comm=calcC(p.sales,p.target,p.name);
-                    var collPct=(p.collectionTarget||0)>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
-                    var callPct=(p.callTarget||0)>0?(p.callActual||0)/p.callTarget*100:0;
-                    var collI=calcInc(collPct,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
-                    var callI=calcInc(callPct,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
-                    totalComm+=comm+collI+callI;
+                    totalComm += calcPersonBonus(p, month).total;
                 });
-                var peopleHtml=people.filter(function(p){return (p.target||0)>0||(p.sales||0)>0;}).slice(0,4).map(function(p){
-                    var ach=(p.target||0)>0?(p.sales||0)/p.target*100:0;
-                    var comm=calcC(p.sales,p.target,p.name);
-                    var achColor=ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
+                // Only include people with data (varies by type)
+                var peopleWithData = people.filter(function(p) {
+                    var t = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
+                    if (t === 'Sales') return (p.target||0)>0 || (p.sales||0)>0;
+                    if (t === 'Merchandiser') return (p.collectionAmount||0)>0;
+                    if (t === 'Supervisor') return true;
+                    return false;
+                });
+                var peopleHtml = peopleWithData.slice(0,4).map(function(p){
+                    var bonus = calcPersonBonus(p, month);
+                    var typeColors = { Sales:{c:'#1e40af',tag:''}, Supervisor:{c:'#7c3aed',tag:'👔'}, Merchandiser:{c:'#92400e',tag:'📦'} };
+                    var tc = typeColors[bonus.display] || typeColors.Sales;
+                    var ach = bonus.ach || 0;
+                    var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
+                    var mainVal = '';
+                    if (bonus.display === 'Merchandiser') mainVal = bonus.blocks + ' blocks';
+                    else if (bonus.display === 'Supervisor') mainVal = ach.toFixed(2)+'% (team)';
+                    else mainVal = ach.toFixed(2)+'%';
                     return '<div class="h-person">'
-                        +'<div class="h-pname">'+((p.name||'').substring(0,6))+'</div>'
-                        +'<div class="h-pach" style="color:'+achColor+';">'+ach.toFixed(2)+'%</div>'
-                        +'<div class="h-pcomm">'+formatCurrency(comm)+'</div>'
+                        +'<div class="h-pname">'+(tc.tag?tc.tag+' ':'')+((p.name||'').substring(0,6))+'</div>'
+                        +'<div class="h-pach" style="color:'+(bonus.display==='Sales'?achColor:tc.c)+';">'+mainVal+'</div>'
+                        +'<div class="h-pcomm">'+formatCurrency(bonus.total)+'</div>'
                         +'</div>';
                 }).join('');
                 return '<div class="h-card">'
                     +'<div class="h-card-top">'
                     +'<div><div class="h-month">'+month+'</div><div class="h-year">'+new Date().getFullYear()+'</div></div>'
-                    +'<div><div class="h-comm-lbl">Total Commission Paid</div><div class="h-comm-val">'+formatCurrency(totalComm)+'</div></div>'
+                    +'<div><div class="h-comm-lbl">TOTAL COMM/INC PAID</div><div class="h-comm-val">'+formatCurrency(totalComm)+'</div></div>'
                     +'</div>'
                     +(peopleHtml.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
                     +'<div class="h-foot">'
