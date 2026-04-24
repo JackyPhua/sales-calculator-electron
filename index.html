@@ -35,7 +35,7 @@
         .tab-button.active{color:var(--blue-d);border-bottom-color:var(--blue);}
         .tab-button:hover:not(.active){color:var(--ink2);}
         /* ── LAYOUT ── */
-        #app-body{max-width:1200px;margin:0 auto;padding:10px 20px;}
+        #app-body{max-width:1600px;margin:0 auto;padding:10px 20px;}
         .view-container{display:none;}
         .view-container.active{display:block;}
         /* ── TOOLBAR ── */
@@ -206,6 +206,32 @@
 
 <!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
 <div id="view-dashboard" class="view-container">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <div>
+            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Year</div>
+            <select id="dashboard-year-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+            </select>
+        </div>
+        <div>
+            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
+            <select id="dashboard-month-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <option value="ALL">Full Year</option>
+                <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
+            </select>
+        </div>
+        <div>
+            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
+            <select id="dashboard-group-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Supervisor">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
+    </div>
     <div id="dashboard-body">
         <div style="text-align:center;padding:48px;color:var(--ink4);">
             <div style="font-size:32px;margin-bottom:12px;">📊</div>
@@ -227,6 +253,16 @@
                 <option value="JUL">JUL</option><option value="AUG">AUG</option>
                 <option value="SEP">SEP</option><option value="OCT">OCT</option>
                 <option value="NOV">NOV</option><option value="DEC">DEC</option>
+            </select>
+            &nbsp;
+            <select id="report-year" style="padding:6px 10px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+            </select>
+            &nbsp;
+            <select id="calc-group-select" onchange="filterByGroup()" style="padding:6px 10px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Supervisor">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
             </select>
         </div>
         <div style="flex:1"></div>
@@ -317,6 +353,12 @@
         <input id="people-search" class="if" placeholder="🔍 Search by name..."
             style="flex:1;min-width:200px;"
             oninput="filterPeopleList(this.value)">
+        <select id="people-group-select" onchange="filterPeopleList(document.getElementById('people-search').value)" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+            <option value="ALL">All Groups</option>
+            <option value="Sales">💼 Sales</option>
+            <option value="Supervisor">👔 Management Staff</option>
+            <option value="Support Staff">🛠️ Support Staff</option>
+        </select>
         <button onclick="promptAddPerson()" class="tbtn dark" style="padding:10px 22px;white-space:nowrap;font-size:13px;">➕ Add Person</button>
     </div>
     <div id="people-list-container"></div>
@@ -417,15 +459,43 @@
                     <option value="ALL">All Employees</option>
                 </select>
             </div>
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
+                <select id="ec-group-select" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">All Groups</option>
+                    <option value="Sales">💼 Sales</option>
+                    <option value="Supervisor">👔 Management Staff</option>
+                    <option value="Support Staff">🛠️ Support Staff</option>
+                </select>
+            </div>
         </div>
     </div>
     <!-- Annual Report person selector -->
     <div id="annual-report-selectors" style="margin-bottom:12px;">
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <div>
                 <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Employee</div>
                 <select id="ar-person-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                     <option value="ALL">All Employees</option>
+                </select>
+            </div>
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
+                <select id="ar-month-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">Full Year</option>
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                    <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                    <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
+                </select>
+            </div>
+            <div>
+                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
+                <select id="ar-group-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+                    <option value="ALL">All Groups</option>
+                    <option value="Sales">💼 Sales</option>
+                    <option value="Management Staff">👔 Management Staff</option>
+                    <option value="Support Staff">🛠️ Support Staff</option>
                 </select>
             </div>
         </div>
@@ -445,6 +515,15 @@
 </div>
 <div id="view-settings" class="view-container">
     <div class="settings-grid">
+        <div class="set-card">
+            <div class="set-title">🏢 Company Management</div>
+            <div style="font-size:11px;color:var(--ink4);margin-bottom:10px;">Manage companies for employee grouping</div>
+            <div id="company-list" style="margin-bottom:10px;"></div>
+            <div style="display:flex;gap:6px;">
+                <input id="new-company-name" type="text" placeholder="e.g. ABC Sdn Bhd" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:'Sora',sans-serif;outline:none;box-sizing:border-box;">
+                <button onclick="addCompany()" class="set-btn sb-green" style="white-space:nowrap;">+ Add</button>
+            </div>
+        </div>
         <div class="set-card">
             <div class="set-title">🔒 Backup &amp; Restore</div>
             <button onclick="exportFullBackup()" class="set-btn sb-blue">📦 Export Backup</button>
@@ -755,12 +834,23 @@
 
         var monthOrder=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
         var curMonthIdx=new Date().getMonth();
+        var curYear=new Date().getFullYear();
         var sorted=history.slice()
             .filter(function(r){
-                var mi=monthOrder.indexOf((r.month||'').toUpperCase());
-                return mi<=curMonthIdx && (r.data||[]).some(function(p){return (p.target||0)>0||(p.sales||0)>0;});
+                var yr = (typeof keyYear==='function') ? keyYear(r.month) : curYear;
+                if (!yr) yr = curYear;
+                var bm = (typeof bareMonth==='function') ? bareMonth(r.month) : (r.month||'').toUpperCase().replace(/-\d{4}$/,'');
+                var mi = monthOrder.indexOf(bm);
+                return (yr < curYear || (yr === curYear && mi <= curMonthIdx)) && (r.data||[]).some(function(p){return (p.target||0)>0||(p.sales||0)>0;});
             })
-            .sort(function(a,b){return monthOrder.indexOf((b.month||'').toUpperCase())-monthOrder.indexOf((a.month||'').toUpperCase());});
+            .sort(function(a,b){
+                var yA = (typeof keyYear==='function') ? (keyYear(a.month)||curYear) : curYear;
+                var yB = (typeof keyYear==='function') ? (keyYear(b.month)||curYear) : curYear;
+                if (yA !== yB) return yB - yA;
+                var bA = (typeof bareMonth==='function') ? bareMonth(a.month) : (a.month||'').toUpperCase().replace(/-\d{4}$/,'');
+                var bB = (typeof bareMonth==='function') ? bareMonth(b.month) : (b.month||'').toUpperCase().replace(/-\d{4}$/,'');
+                return monthOrder.indexOf(bB)-monthOrder.indexOf(bA);
+            });
 
         if (subEl) subEl.textContent = sorted.length + ' records · ' + new Date().getFullYear();
 
@@ -773,7 +863,9 @@
         }
 
         function calcTeamTotalsForMonth(monthName) {
-            var hEntry = history.find(function(r){return (r.month||'').toUpperCase()===monthName.toUpperCase();});
+            var bm = (typeof bareMonth==='function') ? bareMonth(monthName) : monthName.toUpperCase().replace(/-\d{4}$/,'');
+            var yr = (typeof keyYear==='function') ? keyYear(monthName) : null;
+            var hEntry = (typeof findHistEntry==='function') ? findHistEntry(history, bm, yr||curYear) : history.find(function(r){return (r.month||'').toUpperCase()===monthName.toUpperCase();});
             if (!hEntry || !hEntry.data) return {ach:0, collAch:0, callAch:0};
             var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
             hEntry.data.forEach(function(p) {
@@ -811,7 +903,7 @@
                 var total = getTierA(saleT, team.ach) + getTierA(collT, team.collAch) + getTierA(callT, team.callAch) + qtrBonus;
                 return { total: total, ach: team.ach, display: empType };
             }
-            if (empType === 'Merchandiser') {
+            if (empType === 'Support Staff') {
                 var blocks = parseFloat(p.collectionAmount) || 0;
                 var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
                     ? parseFloat(cfg.person_merchandiser_rates[p.name])
@@ -841,7 +933,8 @@
                     if (configuredPeople.indexOf((p.name||'').toUpperCase()) === -1) people.push(p);
                 });
 
-                var month=(report.month||'').toUpperCase();
+                var month = (typeof bareMonth==='function') ? bareMonth(report.month) : (report.month||'').toUpperCase().replace(/-\d{4}$/,'');
+                var monthYear = (typeof keyYear==='function') ? (keyYear(report.month)||curYear) : curYear;
                 var realIndex=history.indexOf(report);
                 var totalComm=0;
                 people.forEach(function(p){
@@ -851,18 +944,18 @@
                 var peopleWithData = people.filter(function(p) {
                     var t = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
                     if (t === 'Sales') return (p.target||0)>0 || (p.sales||0)>0;
-                    if (t === 'Merchandiser') return (p.collectionAmount||0)>0;
+                    if (t === 'Support Staff') return (p.collectionAmount||0)>0;
                     if (t === 'Supervisor') return true;
                     return false;
                 });
                 var peopleHtml = peopleWithData.slice(0,4).map(function(p){
                     var bonus = calcPersonBonus(p, month);
-                    var typeColors = { Sales:{c:'#1e40af',tag:''}, Supervisor:{c:'#7c3aed',tag:'👔'}, Merchandiser:{c:'#92400e',tag:'📦'} };
+                    var typeColors = { Sales:{c:'#1e40af',tag:''}, Supervisor:{c:'#7c3aed',tag:'👔'}, 'Support Staff':{c:'#92400e',tag:'🛠️'} };
                     var tc = typeColors[bonus.display] || typeColors.Sales;
                     var ach = bonus.ach || 0;
                     var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
                     var mainVal = '';
-                    if (bonus.display === 'Merchandiser') mainVal = bonus.blocks + ' blocks';
+                    if (bonus.display === 'Support Staff') mainVal = bonus.blocks + ' blocks';
                     else if (bonus.display === 'Supervisor') mainVal = ach.toFixed(2)+'% (team)';
                     else mainVal = ach.toFixed(2)+'%';
                     return '<div class="h-person">'
@@ -873,7 +966,7 @@
                 }).join('');
                 return '<div class="h-card">'
                     +'<div class="h-card-top">'
-                    +'<div><div class="h-month">'+month+'</div><div class="h-year">'+new Date().getFullYear()+'</div></div>'
+                    +'<div><div class="h-month">'+month+'</div><div class="h-year">'+monthYear+'</div></div>'
                     +'<div><div class="h-comm-lbl">TOTAL COMM/INC PAID</div><div class="h-comm-val">'+formatCurrency(totalComm)+'</div></div>'
                     +'</div>'
                     +(peopleHtml.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')

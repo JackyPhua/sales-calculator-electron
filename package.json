@@ -1,6 +1,6 @@
 {
   "name": "commission-pro",
-  "version": "4.4.1",
+  "version": "4.5.1",
   "description": "CommissionPro — Sales Commission Calculator for Teams",
   "main": "main.js",
   "scripts": {
@@ -22,12 +22,13 @@
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
     "better-sqlite3": "^9.6.0",
     "electron-updater": "^6.8.3",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.5.0"
   },
   "build": {
     "appId": "com.commissionpro.app",
