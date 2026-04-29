@@ -4675,13 +4675,9 @@ function filterByGroup() {
     // Update sidebar count
     var countEl = document.getElementById('sidebar-count');
     if (countEl) {
-        var total = list.querySelectorAll('.person-row').length;
         var label = selectedGroup === 'ALL' ? 'Salesperson' : selectedGroup;
         countEl.textContent = label + ' · ' + visibleCount;
     }
-    // Auto-click first visible person so the card updates
-    var firstVisible = list.querySelector('.person-row[style=""], .person-row:not([style*="none"])');
-    if (firstVisible) firstVisible.click();
 }
 
 function openHistoryExcel(index) {
