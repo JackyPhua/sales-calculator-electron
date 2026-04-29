@@ -6737,8 +6737,13 @@ function renderDashboard() {
     // Top performer: only Sales
     var rankedSales = salesPeople.slice().sort(function(a,b){return b.totalSales-a.totalSales;});
     var topPerson = rankedSales.length>0 ? rankedSales[0].name : '—';
-    // All ranking: sort by commission
-    var ranked = peopleStats.slice().sort(function(a,b){return b.totalComm-a.totalComm;});
+    var typeOrder = {'Sales':0,'Supervisor':1,'Support Staff':2};
+    var ranked = peopleStats.slice().sort(function(a,b){
+        var tA = typeOrder[a.type]!==undefined ? typeOrder[a.type] : 3;
+        var tB = typeOrder[b.type]!==undefined ? typeOrder[b.type] : 3;
+        if (tA !== tB) return tA - tB;
+        return b.totalComm - a.totalComm;
+    });
     var colors = ['#1e40af','#be185d','#15803d','#a16207','#6d28d9','#be123c'];
     var bgColors = ['#dbeafe','#fce7f3','#dcfce7','#fef9c3','#ede9fe','#fff1f2'];
     var medals = ['🥇','🥈','🥉'];
