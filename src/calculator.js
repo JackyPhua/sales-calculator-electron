@@ -2141,17 +2141,26 @@ function renderPersonSidebar() {
     var companies = (window.appState.config.companies || []).slice();
     var hasCompanies = companies.length > 0;
 
+    var typeOrder = {'Sales':0,'Supervisor':1,'Support Staff':2};
+    function sortByType(arr) {
+        return arr.slice().sort(function(a,b){
+            var tA = typeOrder[getEmployeeType(a)]!==undefined ? typeOrder[getEmployeeType(a)] : 3;
+            var tB = typeOrder[getEmployeeType(b)]!==undefined ? typeOrder[getEmployeeType(b)] : 3;
+            return tA - tB;
+        });
+    }
+
     // Group people by company
     var groups = [];
     if (hasCompanies) {
         companies.forEach(function(c) {
-            var members = configPeople.filter(function(n) { return getEmployeeCompany(n) === c; });
+            var members = sortByType(configPeople.filter(function(n) { return getEmployeeCompany(n) === c; }));
             if (members.length > 0) groups.push({ company: c, people: members });
         });
-        var unassigned = configPeople.filter(function(n) { return !getEmployeeCompany(n); });
+        var unassigned = sortByType(configPeople.filter(function(n) { return !getEmployeeCompany(n); }));
         if (unassigned.length > 0) groups.push({ company: '', people: unassigned });
     } else {
-        groups.push({ company: '', people: configPeople });
+        groups.push({ company: '', people: sortByType(configPeople) });
     }
 
     var globalIdx = 0;
@@ -2188,7 +2197,7 @@ function renderPersonSidebar() {
             var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
             var achBg    = ach>=100?'#d1fae5':ach>=90?'#fef3c7':'#ffe4e6';
             var col = (colors[i % colors.length]||'#f1f5f9:#64748b').split(':');
-            var typeIcon = empType==='Supervisor'?'\ud83d\udc54 ':empType==='Support Staff'?'\ud83d\udce6 ':'';
+            var typeIcon = empType==='Supervisor'?'👔 ':empType==='Support Staff'?'🛠️ ':'💼 ';
 
             var row = document.createElement('div');
             row.className = 'person-row';
@@ -4576,6 +4585,20 @@ function promptAddPerson() {
     typeSel.innerHTML = '<option value="Sales">💼 Sales</option><option value="Supervisor">👔 Supervisor</option><option value="Support Staff">🛠️ Support Staff</option>';
     body.appendChild(typeSel);
 
+    // Company selector (only if companies exist)
+    var companies = (window.appState.config.companies || []);
+    var compSel = null;
+    if (companies.length > 0) {
+        var compLbl = document.createElement('label');
+        compLbl.style.cssText = 'display:block;font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:14px;';
+        compLbl.textContent = 'Branch / Team';
+        body.appendChild(compLbl);
+        compSel = document.createElement('select');
+        compSel.style.cssText = 'display:block;width:100%;padding:10px 14px;border:2px solid #d1d5db;border-radius:8px;font-size:15px;outline:none;box-sizing:border-box;color:#111;background:#fff;cursor:pointer;';
+        compSel.innerHTML = '<option value="">— No Branch —</option>' + companies.map(function(c){return '<option value="'+c+'">🏢 '+c+'</option>';}).join('');
+        body.appendChild(compSel);
+    }
+
     var errEl = document.createElement('div');
     errEl.style.cssText = 'color:#dc2626;font-size:12px;margin-top:6px;display:none;';
     errEl.textContent = 'Name already exists';
@@ -4610,8 +4633,13 @@ function promptAddPerson() {
             return;
         }
         var selectedType = typeSel.value || 'Sales';
+        var selectedCompany = compSel ? compSel.value : '';
         overlay.remove();
         addNewPerson(name, selectedType);
+        if (selectedCompany) {
+            setEmployeeCompany(name, selectedCompany);
+            saveConfig();
+        }
     }
 
     function close() { overlay.remove(); }
@@ -4646,7 +4674,8 @@ function filterPeopleList(query) {
                 groupMatch = pType === selectedGroup;
             }
         }
-        item.style.display = (nameMatch && groupMatch) ? '' : 'none';
+        // Must restore `flex` — clearing display with '' removes inline flex from cssText and falls back to block, stacking the row vertically.
+        item.style.display = (nameMatch && groupMatch) ? 'flex' : 'none';
     });
 }
 
@@ -5581,6 +5610,8 @@ function printProjectionExcel() {
     var nu = personName.toUpperCase();
 
     // Get data from reportHistory
+    var yearSelect = document.getElementById('proj-year-select');
+    var selectedYear = yearSelect ? parseInt(yearSelect.value) : new Date().getFullYear();
     var rh = cfg.reportHistory || [];
     var rEntry = findHistEntry(rh, month, selectedYear);
     var rp = rEntry && rEntry.data ? rEntry.data.find(function(p){ return (p.name||'').toUpperCase() === nu; }) : null;
@@ -5590,8 +5621,7 @@ function printProjectionExcel() {
     var sales = rp ? (parseFloat(rp.sales)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.sales)||0) : 0);
     var callActual = rp ? (parseFloat(rp.callActual)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.callActual)||0) : 0);
 
-    var year = new Date().getFullYear();
-    var tKey = year + '-' + month;
+    var tKey = selectedYear + '-' + month;
     var target = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
     var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
     var ach = target > 0 ? (sales/target*100) : 0;
@@ -6061,9 +6091,12 @@ function renderPeopleList() {
         var typeColors = { Sales:{bg:'#dbeafe',c:'#1e40af',icon:'💼'}, Supervisor:{bg:'#f3e8ff',c:'#7c3aed',icon:'👔'}, 'Support Staff':{bg:'#fef3c7',c:'#92400e',icon:'🛠️'} };
         var tc = typeColors[empType] || typeColors.Sales;
         var item = document.createElement('div');
-        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s;margin-bottom:8px;';
+        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s,opacity .15s;margin-bottom:8px;cursor:grab;';
+        item.setAttribute('draggable', 'true');
+        item.setAttribute('data-name', name);
         item.innerHTML =
-            '<div style="width:38px;height:38px;border-radius:50%;background:'+col[0]+';color:'+col[1]+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
+            '<div style="color:#cbd5e1;font-size:16px;cursor:grab;flex-shrink:0;" title="Drag to reorder">⠿</div>'
+            + '<div style="width:38px;height:38px;border-radius:50%;background:'+col[0]+';color:'+col[1]+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
             + '<div style="flex:1;">'
             + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'
             + '<div style="font-size:14px;font-weight:700;color:var(--ink);">'+name+'</div>'
@@ -6143,6 +6176,45 @@ function renderPeopleList() {
         bD.textContent = '🗑️';
         bD.addEventListener('click',(function(n){return function(){deleteSalespersonConfig(n);};})(name));
         btns.appendChild(bD);
+    });
+
+    // Drag-to-reorder
+    var dragSrc = null;
+    Array.from(container.children).forEach(function(el) {
+        el.addEventListener('dragstart', function(e) {
+            dragSrc = this;
+            this.style.opacity = '0.4';
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        el.addEventListener('dragend', function() {
+            this.style.opacity = '';
+            Array.from(container.children).forEach(function(c){ c.style.background=''; });
+        });
+        el.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            Array.from(container.children).forEach(function(c){ c.style.background=''; });
+            if (this !== dragSrc) this.style.background = '#f0f9ff';
+        });
+        el.addEventListener('drop', function(e) {
+            e.preventDefault();
+            if (dragSrc === this) return;
+            // Reorder in DOM
+            var children = Array.from(container.children);
+            var fromIdx = children.indexOf(dragSrc);
+            var toIdx = children.indexOf(this);
+            if (fromIdx < toIdx) container.insertBefore(dragSrc, this.nextSibling);
+            else container.insertBefore(dragSrc, this);
+            // Persist new order in base_salaries
+            var newOrder = Array.from(container.children).map(function(c){ return c.getAttribute('data-name'); }).filter(Boolean);
+            var cfg = window.appState.config;
+            var newBS = {};
+            newOrder.forEach(function(n){ if(cfg.base_salaries[n]!==undefined) newBS[n]=cfg.base_salaries[n]; });
+            // Keep any not shown
+            Object.keys(cfg.base_salaries).forEach(function(n){ if(!newBS[n]) newBS[n]=cfg.base_salaries[n]; });
+            cfg.base_salaries = newBS;
+            saveConfig();
+        });
     });
 }
 
@@ -6762,47 +6834,50 @@ function renderDashboard() {
     ranked.forEach(function(p, i) {
         var c = colors[i%colors.length]; var bg = bgColors[i%bgColors.length];
         var achC = p.ach>=100?'#059669':p.ach>=90?'#d97706':'#dc2626';
-        var typeIcon = p.type==='Supervisor'?'👔':p.type==='Support Staff'?'🛠️':'';
-        var typeLabel = p.type!=='Sales' ? ' <span style="background:'+(p.type==='Supervisor'?'#f3e8ff':'#fef3c7')+';color:'+(p.type==='Supervisor'?'#7c3aed':'#92400e')+';padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:4px;">'+typeIcon+' '+p.type+'</span>' : '';
+        var typeIcon = p.type==='Supervisor'?'👔':p.type==='Support Staff'?'🛠️':'💼';
+        var typeBg = p.type==='Supervisor'?'#f3e8ff':p.type==='Support Staff'?'#fef3c7':'#dbeafe';
+        var typeColor = p.type==='Supervisor'?'#7c3aed':p.type==='Support Staff'?'#92400e':'#1e40af';
+        var typeDisplay = p.type==='Supervisor'?'Management Staff':p.type;
+        var typeLabel = '<span style="background:'+typeBg+';color:'+typeColor+';padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:4px;">'+typeIcon+' '+typeDisplay+'</span>';
         var maxSale = Math.max.apply(null, p.salesByMonth.concat([1]));
         var bars = p.salesByMonth.map(function(v,mi){
-            var h = maxSale>0?Math.max(3,(v/maxSale)*40):3;
-            return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;"><div style="width:100%;height:'+h+'px;background:'+(v>0?c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.3)+';"></div><div style="font-size:7px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
+            var h = maxSale>0?Math.max(3,(v/maxSale)*28):3;
+            return '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:24px;"><div style="width:20px;height:'+h+'px;background:'+(v>0?c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.3)+';"></div><div style="font-size:6px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
         }).join('');
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 20px;margin-bottom:8px;display:grid;grid-template-columns:180px 1fr 110px 110px 110px;align-items:center;gap:16px;">';
-        html += '<div style="display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div><div style="font-size:13px;font-weight:700;color:#0f172a;">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
-        html += '<div style="display:flex;align-items:end;gap:2px;height:50px;">'+bars+'</div>';
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-bottom:8px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) minmax(0,1.05fr);align-items:center;gap:10px 12px;max-width:100%;box-sizing:border-box;">';
+        html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;flex-shrink:0;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div style="min-width:0;"><div style="font-size:13px;font-weight:700;color:#0f172a;overflow-wrap:break-word;line-height:1.25;">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
+        html += '<div style="min-width:0;display:flex;align-items:end;gap:2px;height:35px;overflow-x:auto;">'+bars+'</div>';
+        var monoAmt = 'font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;text-align:right;overflow-wrap:break-word;word-break:break-word;line-height:1.25;';
         // Column 1: Total Sales or Total Blocks or "—"
         if (p.type === 'Sales') {
-            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="'+monoAmt+'">'+fmt(p.totalSales)+'</div></div>';
         } else if (p.type === 'Support Staff') {
-            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Blocks</div><div style="font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+p.totalBlocks+'</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Blocks</div><div style="'+monoAmt+'">'+p.totalBlocks+'</div></div>';
         } else {
-            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:#7c3aed;">Team</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:#7c3aed;overflow-wrap:break-word;">Team</div></div>';
         }
         // Column 2: Achievement or "—"
         if (p.type === 'Sales') {
-            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
         } else {
-            html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+(p.type==='Supervisor'?'#7c3aed':'#92400e')+';">'+typeIcon+' '+p.type+'</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+typeColor+';overflow-wrap:break-word;line-height:1.25;">'+typeIcon+' '+typeDisplay+'</div></div>';
         }
         var commLabel = p.type==='Supervisor'?'Sale Incentive':p.type==='Support Staff'?'Block Incentive':'Commission';
-        html += '<div style="text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="font-size:13px;font-weight:700;color:#2563eb;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalComm)+'</div></div>';
+        html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="'+monoAmt+'color:#2563eb;">'+fmt(p.totalComm)+'</div></div>';
         html += '</div>';
     });
     // Monthly Sales Trend - only show for ALL or Sales group
     if (selectedGroup === 'ALL' || selectedGroup === 'Sales') {
     html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-top:12px;">';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:16px;">📈 Monthly Sales Trend</div>';
-    html += '<div style="display:flex;align-items:end;gap:6px;height:180px;padding:0 10px;">';
+    html += '<div style="display:flex;align-items:end;gap:4px;height:100px;padding:0 4px;">';
     var monthTotals = MONTHS.map(function(m){return salesPeople.reduce(function(s,p){var mi=MONTHS.indexOf(m);return s+p.salesByMonth[mi];},0);});
     var maxMonth = Math.max.apply(null, monthTotals.concat([1]));
     MONTHS.forEach(function(m,mi){
-        var total = monthTotals[mi]; var h = maxMonth>0?Math.max(8,(total/maxMonth)*160):8; var hasData = total>0;
-        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;">';
-        if(hasData) html += '<div style="font-size:10px;font-weight:700;color:#475569;font-family:\'IBM Plex Mono\',monospace;">'+fmt(total)+'</div>';
-        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,#3b82f6,#1d4ed8)':'#f1f5f9')+';border-radius:6px 6px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
-        html += '<div style="font-size:11px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';">'+m+'</div></div>';
+        var total = monthTotals[mi]; var h = maxMonth>0?Math.max(6,(total/maxMonth)*80):6; var hasData = total>0;
+        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;">';
+        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,#3b82f6,#1d4ed8)':'#f1f5f9')+';border-radius:4px 4px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
+        html += '<div style="font-size:9px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';text-align:center;white-space:nowrap;">'+m+(hasData?'<br><span style="font-family:\'IBM Plex Mono\',monospace;font-size:8px;color:#475569;">'+fmt(total)+'</span>':'')+'</div></div>';
     });
     html += '</div></div>';
     }
