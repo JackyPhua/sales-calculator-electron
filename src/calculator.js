@@ -1880,12 +1880,12 @@ function updateSalespersonData(index) {
         } else {
             // Sales (default)
             commission = calculateCommission(person.sales, person.target, person.name);
-            collectionBonus = calculateIncentive(collectionAchievement, window.appState.config.collection_incentive);
-            callBonus = calculateIncentive(callAchievement, window.appState.config.active_call_incentive);
+            collectionBonus = calculateIncentive(collectionAchievement, collectionIncentiveTiersFor(person.name));
+            callBonus = calculateIncentive(callAchievement, activeCallIncentiveTiersFor(person.name));
             var _qMonth = (document.getElementById('report-month')||{}).value || '';
             _qMonth = _qMonth.toUpperCase();
             var _isQuarterEnd = ['MAR','JUN','SEP','DEC'].indexOf(_qMonth) !== -1;
-            quarterlyBonus = _isQuarterEnd ? calculateIncentive(quarterlyAchievement, window.appState.config.quarterly_incentive) : 0;
+            quarterlyBonus = _isQuarterEnd ? calculateIncentive(quarterlyAchievement, quarterlyIncentiveTiersFor(person.name)) : 0;
         }
 
         var totalCommission = commission + collectionBonus + callBonus + quarterlyBonus;
@@ -2007,6 +2007,32 @@ function calculateIncentive(achievement, incentiveTiers) {
     }
     
     return 0;
+}
+
+/** Personal incentive tiers override global (aligned with Commission setup UI & history Excel). */
+function collectionIncentiveTiersFor(personName) {
+    var nu = (personName || '').toUpperCase();
+    var cfg = window.appState.config || {};
+    var tiers = cfg.collection_incentive || [];
+    if (nu && cfg.person_collection_incentive && cfg.person_collection_incentive[nu])
+        tiers = cfg.person_collection_incentive[nu];
+    return tiers;
+}
+function activeCallIncentiveTiersFor(personName) {
+    var nu = (personName || '').toUpperCase();
+    var cfg = window.appState.config || {};
+    var tiers = cfg.active_call_incentive || [];
+    if (nu && cfg.person_call_incentive && cfg.person_call_incentive[nu])
+        tiers = cfg.person_call_incentive[nu];
+    return tiers;
+}
+function quarterlyIncentiveTiersFor(personName) {
+    var nu = (personName || '').toUpperCase();
+    var cfg = window.appState.config || {};
+    var tiers = cfg.quarterly_incentive || [];
+    if (nu && cfg.person_quarterly_incentive && cfg.person_quarterly_incentive[nu])
+        tiers = cfg.person_quarterly_incentive[nu];
+    return tiers;
 }
 
 // Get achievement color
@@ -4183,9 +4209,9 @@ function viewHistoryReport(index) {
 
         if (empType === 'Sales') {
             comm    = calculateCommission(sales, target, p.name);
-            collBon = calculateIncentive(collPct, cfg.collection_incentive);
-            callBon = calculateIncentive(callPct, cfg.active_call_incentive);
-            qtrBon  = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive) : 0;
+            collBon = calculateIncentive(collPct, collectionIncentiveTiersFor(p.name));
+            callBon = calculateIncentive(callPct, activeCallIncentiveTiersFor(p.name));
+            qtrBon  = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(p.name)) : 0;
             totalComm = comm + collBon + callBon + qtrBon;
 
             detailRows = ''
@@ -4398,8 +4424,8 @@ function loadQuickCalculateHistory() {
             var comm    = calcComm(p.sales, p.target, p.name);
             var collPct = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
             var callPct = (p.callTarget||0) > 0 ? (p.callActual||0)/p.callTarget*100 : 0;
-            var coll    = calculateIncentive(collPct, window.appState.config.collection_incentive);
-            var callB   = calculateIncentive(callPct, window.appState.config.active_call_incentive);
+            var coll    = calculateIncentive(collPct, collectionIncentiveTiersFor(p.name));
+            var callB   = calculateIncentive(callPct, activeCallIncentiveTiersFor(p.name));
             totalComm  += comm + coll + callB;
         });
 
@@ -4468,7 +4494,8 @@ function updateLivePayslip() {
     var ach = target > 0 ? (sales / target * 100) : 0;
     var totalAllow = hp+car+lf+of2+hs+food+oth;
     var totalFixed = salary + totalAllow;
-    var totalInc   = totalFixed + comm + collBon + callBon + qtrBon;
+    var totalFlexible = comm + collBon + callBon + qtrBon;
+    var totalInc   = totalFixed + totalFlexible;
     var epfAmt     = totalInc * (epfRate / 100);
     var grand      = totalInc - epfAmt;
     var achColor   = ach>=100 ? '#1D9E75' : ach>=90 ? '#BA7517' : '#E24B4A';
@@ -4527,7 +4554,8 @@ function updateLivePayslip() {
           + sec('INCENTIVE')     + row('COLLECTION',        collBon, true, false)
           + row('ACTIVE CALL',   callBon, true, false)
           + row('QUARTERLY',     qtrBon,  true, false)
-          + row('TOTAL',         totalInc, false, true)
+          + row('TOTAL FLEXIBLE INCOME', totalFlexible, false, true)
+          + row('GRAND TOTAL',         totalInc, false, true)
           + erow(epfAmt);
     if(g('ps-body')) g('ps-body').innerHTML = html;
 }
@@ -4973,21 +5001,29 @@ function showTargetModal(personName) {
     var body = document.createElement('div');
     body.style.cssText = 'padding:20px 24px;overflow-y:auto;flex:1;';
 
-    // Year selector
-    var curYear = new Date().getFullYear();
+    // Year selector — align with Calculate toolbar (#report-year) so Team Target Allocation keys match
+    var ryBar = parseInt(String(((document.getElementById('report-year')||{}).value||'')), 10);
+    var curYear = !isNaN(ryBar) ? ryBar : new Date().getFullYear();
     var yearRow = document.createElement('div');
     yearRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:16px;';
     yearRow.innerHTML = '<label style="font-size:12px;font-weight:700;color:var(--ink3);">Year:</label>';
     var yearSel = document.createElement('select');
     yearSel.style.cssText = 'padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);';
-    [curYear-1, curYear, curYear+1].forEach(function(y){
+    var yCandidates = [curYear - 1, curYear, curYear + 1];
+    yCandidates.sort(function(a, b) { return a - b; });
+    yCandidates.forEach(function(y){
         var opt = document.createElement('option');
-        opt.value = y; opt.textContent = y;
+        opt.value = y;
+        opt.textContent = y;
         if (y === curYear) opt.selected = true;
         yearSel.appendChild(opt);
     });
     yearRow.appendChild(yearSel);
     body.appendChild(yearRow);
+    var yearAlignHint = document.createElement('div');
+    yearAlignHint.style.cssText = 'font-size:11px;color:var(--ink4);margin:-8px 0 14px 2px;line-height:1.4;';
+    yearAlignHint.textContent = 'Default year matches Calculate \u2192 Year (same period keys as Team Target Allocation).';
+    body.appendChild(yearAlignHint);
 
     // Month grid
     var grid = document.createElement('div');
@@ -5096,6 +5132,7 @@ function showTargetModal(personName) {
                 else delete cfg.person_targets[nu][key];
             }
         });
+        refreshTeamTargetAllocationFromPersonTargetsForYear(cfg, String(yearSel.value));
         saveConfig();
         overlay.remove();
         showToast('✅', personName + ' targets saved!');
@@ -5106,6 +5143,576 @@ function showTargetModal(personName) {
     });
 }
 
+// ==================== Team Target Allocation ====================
+function teamAllocationMonthKey() {
+    var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var year  = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+    return { month: month, year: String(year), key: String(year) + '-' + month };
+}
+
+function salesNamesForTeamAllocation(scope) {
+    var cfg = window.appState.config;
+    var raw = Object.keys(cfg.base_salaries || {}).filter(function(n) {
+        return getEmployeeType(n) === 'Sales';
+    });
+    raw.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+    var up = function(n) { return String(n).toUpperCase(); };
+    if (!scope || scope === 'ALL') return raw.map(up);
+    if (scope === '__UNASSIGNED__') return raw.filter(function(n) { return !getEmployeeCompany(n); }).map(up);
+    return raw.filter(function(n) { return getEmployeeCompany(n) === scope; }).map(up);
+}
+
+function distributeTeamTotalRM(teamTotal, names, pctMap) {
+    var sumPct = names.reduce(function(s, n) { return s + (parseFloat(pctMap[n]) || 0); }, 0);
+    var out = {};
+    if (names.length === 0 || sumPct <= 0 || !(teamTotal > 0)) return out;
+    var cents = Math.round(teamTotal * 100);
+    var acc = 0;
+    names.slice(0, -1).forEach(function(n) {
+        var part = Math.round(cents * ((parseFloat(pctMap[n]) || 0) / sumPct));
+        out[n] = part / 100;
+        acc += part;
+    });
+    var last = names[names.length - 1];
+    out[last] = Math.round((cents - acc)) / 100;
+    return out;
+}
+
+/** Derive team total & contribution % from saved Sale Targets (person_targets) for one period key. */
+function computeTeamAllocationFromPersonTargets(cfg, key, scope) {
+    var ns = salesNamesForTeamAllocation(scope);
+    if (ns.length === 0) return null;
+    var amounts = {};
+    var sum = 0;
+    ns.forEach(function(nu) {
+        var amt = parseFloat((((cfg.person_targets || {})[nu]) || {})[key]) || 0;
+        amounts[nu] = amt;
+        sum += amt;
+    });
+    if (!(sum > 0)) return null;
+    var pct = {};
+    var dec = 1e6;
+    ns.slice(0, -1).forEach(function(nu) {
+        pct[nu] = Math.round((amounts[nu] / sum) * 100 * dec) / dec;
+    });
+    var used = ns.slice(0, -1).reduce(function(s, n) { return s + (pct[n] || 0); }, 0);
+    pct[ns[ns.length - 1]] = Math.round((100 - used) * dec) / dec;
+    return { teamTotal: sum, contributions: pct };
+}
+
+/** After Person Monthly Target edits: refresh team_target_allocation for each month (only entries saved with scope ALL). */
+function refreshTeamTargetAllocationFromPersonTargetsForYear(cfg, yearStr) {
+    var mons = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    mons.forEach(function(mon) {
+        var key = String(yearStr) + '-' + mon;
+        var existing = cfg.team_target_allocation && cfg.team_target_allocation[key];
+        if (existing && existing.scope && existing.scope !== 'ALL') return;
+        var got = computeTeamAllocationFromPersonTargets(cfg, key, 'ALL');
+        if (!got) {
+            if (cfg.team_target_allocation && cfg.team_target_allocation[key]) delete cfg.team_target_allocation[key];
+            return;
+        }
+        if (!cfg.team_target_allocation) cfg.team_target_allocation = {};
+        cfg.team_target_allocation[key] = {
+            teamTotal: got.teamTotal,
+            contributions: got.contributions,
+            autoAllocate: false,
+            scope: 'ALL'
+        };
+    });
+}
+
+function showTeamTargetAllocationModal() {
+    var ex = document.getElementById('team-target-allocation-modal');
+    if (ex) ex.remove();
+
+    var cfg = window.appState.config;
+    var monthsFull = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var initTk = teamAllocationMonthKey();
+    var pmFromBar = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
+    var calendarMonth = monthsFull[new Date().getMonth()];
+    var defaultMonth = (pmFromBar && monthsFull.indexOf(pmFromBar) >= 0) ? pmFromBar : calendarMonth;
+    var period = {
+        year: initTk.year,
+        month: (initTk.month && monthsFull.indexOf(initTk.month) >= 0) ? initTk.month : defaultMonth
+    };
+    function periodKey() { return String(period.year) + '-' + period.month; }
+    function currentSaved() {
+        return (cfg.team_target_allocation && cfg.team_target_allocation[periodKey()]) || {};
+    }
+
+    if (!cfg.team_target_allocation) cfg.team_target_allocation = {};
+
+    var overlay = document.createElement('div');
+    overlay.id = 'team-target-allocation-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;overflow:auto;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:16px;width:720px;max-width:96vw;max-height:92vh;margin:auto;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(8,15,26,.25);overflow:hidden;';
+    card.addEventListener('click', function(e) { e.stopPropagation(); });
+
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:linear-gradient(135deg,#0f172a,#0369a1);padding:18px 22px;color:#fff;flex-shrink:0;';
+    hdr.innerHTML = '<div style="font-size:17px;font-weight:800;">\ud83d\udcca Team Target Allocation</div>';
+    var periodLbl = document.createElement('div');
+    periodLbl.style.cssText = 'font-size:12px;opacity:.75;margin-top:4px;line-height:1.35;';
+    hdr.appendChild(periodLbl);
+    card.appendChild(hdr);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:18px 20px;overflow-y:auto;flex:1;';
+
+    function syncToolbarFromPeriod() {
+        var rm = document.getElementById('report-month');
+        var ry = document.getElementById('report-year');
+        if (rm && monthsFull.indexOf(period.month) >= 0) rm.value = period.month;
+        if (ry) ry.value = period.year;
+    }
+
+    function updatePeriodSubtitle() {
+        periodLbl.innerHTML = ''
+            + '<span style="opacity:.95;font-weight:700;">' + period.month + ' ' + period.year + '</span>'
+            + ' \u2014 Same month keys as <strong>Salesperson \u2192 Target</strong> (e.g. <code style="font-size:11px;background:rgba(255,255,255,.12);padding:2px 6px;border-radius:4px;">' + period.year + '-' + period.month + '</code>)';
+    }
+
+    var periodRow = document.createElement('div');
+    periodRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);';
+
+    var py = parseInt(String(period.year), 10);
+    if (isNaN(py)) py = new Date().getFullYear();
+    var yCandidates = [py - 1, py, py + 1];
+    if (yCandidates.indexOf(py) < 0) yCandidates.push(py);
+    yCandidates.sort(function(a, b) { return a - b; });
+
+    var yrLab = document.createElement('label');
+    yrLab.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:var(--ink3);';
+    yrLab.textContent = 'YEAR';
+    var yearSel = document.createElement('select');
+    yearSel.style.cssText = 'padding:10px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-weight:600;background:var(--paper);min-width:100px;';
+    yCandidates.forEach(function(y) {
+        var opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        if (String(y) === String(period.year)) opt.selected = true;
+        yearSel.appendChild(opt);
+    });
+    if (!yearSel.querySelector('option:checked')) {
+        var optCur = document.createElement('option');
+        optCur.value = String(period.year);
+        optCur.textContent = String(period.year);
+        optCur.selected = true;
+        yearSel.appendChild(optCur);
+    }
+    yrLab.appendChild(yearSel);
+    periodRow.appendChild(yrLab);
+
+    var moLab = document.createElement('label');
+    moLab.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:var(--ink3);';
+    moLab.textContent = 'MONTH';
+    var monthSel = document.createElement('select');
+    monthSel.style.cssText = 'padding:10px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-weight:600;background:var(--paper);min-width:110px;';
+    monthsFull.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (m === period.month) opt.selected = true;
+        monthSel.appendChild(opt);
+    });
+    moLab.appendChild(monthSel);
+    periodRow.appendChild(moLab);
+
+    body.appendChild(periodRow);
+
+    var pctMap = {};
+    var namesRef = { list: [] };
+
+    var scopeRow = document.createElement('div');
+    scopeRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:14px;';
+    var totalWrap = document.createElement('div');
+    totalWrap.style.flex = '1';
+    totalWrap.innerHTML = '<label style="display:block;font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:6px;">TEAM TOTAL TARGET (RM)</label>';
+    var totalInp = document.createElement('input');
+    totalInp.type = 'number';
+    totalInp.min = '0';
+    totalInp.step = '1';
+    totalInp.placeholder = '0';
+    var _initSaved = currentSaved();
+    totalInp.value = _initSaved.teamTotal > 0 ? String(_initSaved.teamTotal) : '';
+    totalInp.style.cssText = 'width:100%;padding:10px 14px;border:2px solid #bfdbfe;border-radius:10px;font-size:18px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;background:#eff6ff;color:#1e40af;box-sizing:border-box;';
+    totalWrap.appendChild(totalInp);
+    scopeRow.appendChild(totalWrap);
+
+    var grpLab = document.createElement('label');
+    grpLab.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:var(--ink3);';
+    grpLab.textContent = 'SCOPE';
+    var grpSel = document.createElement('select');
+    grpSel.style.cssText = 'padding:10px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-weight:600;background:var(--paper);min-width:160px;';
+    grpSel.innerHTML = '<option value="ALL">All Groups</option>';
+    (cfg.companies || []).forEach(function(c) {
+        grpSel.innerHTML += '<option value="' + String(c).replace(/"/g, '&quot;') + '">\ud83c\udfe2 ' + String(c).replace(/</g, '') + '</option>';
+    });
+    grpSel.innerHTML += '<option value="__UNASSIGNED__">\u2014 Unassigned \u2014</option>';
+    if (_initSaved.scope) {
+        var scopeOk = false;
+        for (var si = 0; si < grpSel.options.length; si++) {
+            if (grpSel.options[si].value === _initSaved.scope) {
+                grpSel.selectedIndex = si;
+                scopeOk = true;
+                break;
+            }
+        }
+        if (!scopeOk) grpSel.selectedIndex = 0;
+    }
+    grpLab.appendChild(grpSel);
+    scopeRow.appendChild(grpLab);
+
+    var autoBtn = document.createElement('button');
+    autoBtn.type = 'button';
+    autoBtn.style.cssText = 'padding:10px 16px;border:none;border-radius:10px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;';
+    var autoOn = !!_initSaved.autoAllocate;
+    function syncAutoLabel() {
+        autoBtn.innerHTML = autoOn ? '\u2728 Auto-allocate ON' : '\u2728 Auto-allocate OFF';
+        autoBtn.style.background = autoOn ? '#fef08a' : '#f1f5f9';
+        autoBtn.style.color = autoOn ? '#854d0e' : '#64748b';
+    }
+    syncAutoLabel();
+    function primeTeamInputsFromPersonTargetsIfEmpty() {
+        var s = currentSaved();
+        if (s.teamTotal > 0) return;
+        var primed = computeTeamAllocationFromPersonTargets(cfg, periodKey(), grpSel.value);
+        if (!primed) return;
+        totalInp.value = String(primed.teamTotal);
+        pctMap = primed.contributions;
+        autoOn = false;
+        syncAutoLabel();
+    }
+    scopeRow.appendChild(autoBtn);
+    body.appendChild(scopeRow);
+
+    function onPeriodChange() {
+        period.year = yearSel.value;
+        period.month = monthSel.value;
+        var s = currentSaved();
+        totalInp.value = s.teamTotal > 0 ? String(s.teamTotal) : '';
+        autoOn = !!s.autoAllocate;
+        syncAutoLabel();
+        if (s.scope) {
+            var ok = false;
+            for (var sj = 0; sj < grpSel.options.length; sj++) {
+                if (grpSel.options[sj].value === s.scope) {
+                    grpSel.selectedIndex = sj;
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) grpSel.selectedIndex = 0;
+        } else grpSel.selectedIndex = 0;
+        pctMap = {};
+        rebuildPctFromSaved(salesNamesForTeamAllocation(grpSel.value));
+        primeTeamInputsFromPersonTargetsIfEmpty();
+        renderRows();
+        updatePeriodSubtitle();
+        syncToolbarFromPeriod();
+    }
+    yearSel.addEventListener('change', onPeriodChange);
+    monthSel.addEventListener('change', onPeriodChange);
+
+    var hint = document.createElement('div');
+    hint.style.cssText = 'font-size:11px;color:var(--ink4);margin-bottom:10px;line-height:1.45;';
+    hint.textContent = 'Writes the same Sale Target fields as People \u2192 Monthly Target Setting. If that grid already has amounts for this month, they load here when team allocation is empty (scope ALL). After saving Person targets, team snapshot updates for scope ALL.';
+    body.appendChild(hint);
+
+    var tableWrap = document.createElement('div');
+    tableWrap.style.cssText = 'border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;';
+
+    var tblTop = document.createElement('div');
+    tblTop.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--sheet);border-bottom:1px solid var(--line);';
+    tblTop.innerHTML = '<span style="font-size:12px;font-weight:800;color:var(--ink);">\ud83d\udcca Allocation</span>'
+        + '<span id="tta-team-sum-lbl" style="font-size:12px;font-weight:700;color:#0369a1;font-family:\'IBM Plex Mono\',monospace;">Total Team Target: RM 0</span>';
+    tableWrap.appendChild(tblTop);
+
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+    table.innerHTML = '<thead><tr style="background:#f1f5f9;">'
+        + '<th style="padding:8px 12px;text-align:left;font-weight:700;color:#475569;">SALESPERSON</th>'
+        + '<th style="padding:8px 10px;text-align:right;width:110px;font-weight:700;color:#475569;">CONTRIBUTION %</th>'
+        + '<th style="padding:8px 10px;text-align:left;font-weight:700;color:#475569;">SHARE</th>'
+        + '<th style="padding:8px 12px;text-align:right;font-weight:700;color:#475569;">AUTO TARGET</th>'
+        + '</tr></thead><tbody id="tta-tbody"></tbody>'
+        + '<tfoot><tr style="background:#dbeafe;">'
+        + '<td style="padding:10px 12px;font-weight:800;color:#0f172a;">Grand Total</td>'
+        + '<td id="tta-foot-pct" style="padding:10px;text-align:right;font-weight:800;color:#059669;">0%</td>'
+        + '<td></td>'
+        + '<td id="tta-foot-rm" style="padding:10px 12px;text-align:right;font-weight:800;color:#0369a1;font-family:\'IBM Plex Mono\',monospace;">RM 0.00</td>'
+        + '</tr></tfoot>';
+    tableWrap.appendChild(table);
+    body.appendChild(tableWrap);
+
+    var foot = document.createElement('div');
+    foot.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:4px;';
+    var btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:10px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;';
+    var btnApply = document.createElement('button');
+    btnApply.innerHTML = '\u2705 Apply Targets to This Month';
+    btnApply.style.cssText = 'padding:11px 22px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0369a1,#2563eb);color:#fff;cursor:pointer;font-size:13px;font-weight:800;';
+    foot.appendChild(btnCancel);
+    foot.appendChild(btnApply);
+    body.appendChild(foot);
+
+    card.appendChild(body);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    var tbody = document.getElementById('tta-tbody');
+    var lblSum = document.getElementById('tta-team-sum-lbl');
+    var footPct = document.getElementById('tta-foot-pct');
+    var footRm = document.getElementById('tta-foot-rm');
+
+    var colors = ['#dbeafe:#1e40af','#fce7f3:#be185d','#dcfce7:#15803d','#fef9c3:#a16207','#ede9fe:#6d28d9'];
+
+    function storedPersonSaleRm(nu) {
+        var k = periodKey();
+        var row = cfg.person_targets && cfg.person_targets[nu];
+        if (!row || !Object.prototype.hasOwnProperty.call(row, k)) return null;
+        var raw = row[k];
+        if (raw === '' || raw === null || raw === undefined) return null;
+        var x = parseFloat(raw);
+        return isNaN(x) ? null : x;
+    }
+
+    function fmtPctField(v) {
+        var x = parseFloat(v);
+        if (isNaN(x)) return '0.0000';
+        return x.toFixed(4);
+    }
+
+    function equalPercents(ns) {
+        if (ns.length === 0) return {};
+        var base = Math.floor(10000 / ns.length) / 100;
+        var m = {};
+        var used = 0;
+        ns.slice(0, -1).forEach(function(n) { m[n] = base; used += base; });
+        m[ns[ns.length - 1]] = Math.round((100 - used) * 100) / 100;
+        return m;
+    }
+
+    function rebuildPctFromSaved(ns) {
+        var cm = currentSaved().contributions || {};
+        ns.forEach(function(n) {
+            pctMap[n] = cm[n] != null ? parseFloat(cm[n]) : (ns.length ? Math.round(10000 / ns.length) / 100 : 0);
+        });
+    }
+
+    function getLivePctFromInputs() {
+        var order = [];
+        var map = {};
+        tbody.querySelectorAll('.tta-pct').forEach(function(inp) {
+            var nm = inp.getAttribute('data-name');
+            if (!nm) return;
+            order.push(nm);
+            var v = parseFloat(String(inp.value).replace(/,/g, ''));
+            map[nm] = isNaN(v) ? 0 : v;
+        });
+        return { order: order, map: map };
+    }
+
+    function refreshAllocationTotals() {
+        var teamTotal = parseFloat(totalInp.value) || 0;
+        lblSum.textContent = 'Total Team Target: RM ' + teamTotal.toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+        var live = getLivePctFromInputs();
+        if (live.order.length === 0) return;
+
+        var sumPct = live.order.reduce(function(s, n) { return s + (live.map[n] || 0); }, 0);
+        var rmMap = distributeTeamTotalRM(teamTotal, live.order, live.map);
+
+        var sumRmDisplayed = 0;
+        tbody.querySelectorAll('tr').forEach(function(tr) {
+            var inp = tr.querySelector('.tta-pct');
+            if (!inp) return;
+            var nm = inp.getAttribute('data-name');
+            var pct = live.map[nm] || 0;
+            var bar = tr.querySelector('.tta-bar');
+            if (bar) bar.style.width = Math.min(pct, 100) + '%';
+            var rmCell = tr.querySelector('.tta-rm-cell');
+            var rmComputed = rmMap[nm] != null ? rmMap[nm] : 0;
+            var sto = storedPersonSaleRm(nm);
+            var rmShown = sto !== null ? sto : rmComputed;
+            sumRmDisplayed += rmShown;
+            if (rmCell) {
+                rmCell.textContent = 'RM ' + rmShown.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        });
+
+        footPct.textContent = sumPct.toFixed(2) + '%';
+        footPct.style.color = Math.abs(sumPct - 100) < 0.51 ? '#059669' : '#dc2626';
+        footRm.textContent = 'RM ' + sumRmDisplayed.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        live.order.forEach(function(n) { pctMap[n] = live.map[n]; });
+    }
+
+    function attachPctInputHandlers() {
+        var pctInputs = function() {
+            return Array.prototype.slice.call(tbody.querySelectorAll('.tta-pct'));
+        };
+        tbody.querySelectorAll('.tta-pct').forEach(function(inp) {
+            inp.addEventListener('input', function() {
+                autoOn = false;
+                syncAutoLabel();
+                refreshAllocationTotals();
+            });
+            inp.addEventListener('blur', function() {
+                var raw = String(inp.value).trim().replace(/,/g, '');
+                if (raw === '') return;
+                var v = parseFloat(raw);
+                if (!isNaN(v)) inp.value = fmtPctField(v);
+                refreshAllocationTotals();
+            });
+            inp.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                var list = pctInputs();
+                var idx = list.indexOf(inp);
+                var raw = String(inp.value).trim().replace(/,/g, '');
+                if (raw !== '') {
+                    var v = parseFloat(raw);
+                    if (!isNaN(v)) inp.value = fmtPctField(v);
+                }
+                refreshAllocationTotals();
+                if (idx >= 0 && idx < list.length - 1) {
+                    setTimeout(function() {
+                        var next = list[idx + 1];
+                        next.focus();
+                        if (typeof next.select === 'function') next.select();
+                    }, 0);
+                } else {
+                    setTimeout(function() { btnApply.focus(); }, 0);
+                }
+            });
+        });
+    }
+
+    function renderRows() {
+        namesRef.list = salesNamesForTeamAllocation(grpSel.value);
+        if (autoOn && namesRef.list.length > 0) {
+            pctMap = equalPercents(namesRef.list);
+        } else if (namesRef.list.some(function(n) { return pctMap[n] == null || pctMap[n] === undefined; })) {
+            rebuildPctFromSaved(namesRef.list);
+        }
+
+        tbody.innerHTML = '';
+        var teamTotal = parseFloat(totalInp.value) || 0;
+        lblSum.textContent = 'Total Team Target: RM ' + teamTotal.toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+        if (namesRef.list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--ink4);">No Sales people in this scope. Add people or choose another group.</td></tr>';
+            footPct.textContent = '\u2014';
+            footRm.textContent = '\u2014';
+            return;
+        }
+
+        var rmMap = distributeTeamTotalRM(teamTotal, namesRef.list, pctMap);
+
+        namesRef.list.forEach(function(nu, i) {
+            var pct = parseFloat(pctMap[nu]) || 0;
+            var sto = storedPersonSaleRm(nu);
+            if (sto !== null && teamTotal > 0) {
+                pct = (sto / teamTotal) * 100;
+            }
+            var tr = document.createElement('tr');
+            tr.style.borderTop = '1px solid var(--line)';
+            var col = (colors[i % colors.length] || '#f1f5f9:#64748b').split(':');
+            var rmComputed = rmMap[nu] != null ? rmMap[nu] : 0;
+            var rmShown = sto !== null ? sto : rmComputed;
+            var barBg = 'linear-gradient(90deg,' + col[1] + ',' + col[0] + ')';
+            tr.innerHTML = ''
+                + '<td style="padding:8px 12px;font-weight:600;">'
+                + '<span style="display:inline-flex;align-items:center;gap:8px;">'
+                + '<span style="width:26px;height:26px;border-radius:50%;background:' + col[0] + ';color:' + col[1] + ';font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;">' + nu.charAt(0) + '</span>'
+                + nu + '</span></td>'
+                + '<td style="padding:6px 10px;text-align:right;"><input type="text" inputmode="decimal" autocomplete="off" data-name="' + nu.replace(/"/g, '') + '" class="tta-pct" value="' + fmtPctField(pct) + '" '
+                + 'style="width:92px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;text-align:right;font-weight:700;"></td>'
+                + '<td style="padding:6px 12px;"><div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
+                + '<div class="tta-bar" style="height:100%;width:' + Math.min(pct, 100) + '%;background:' + barBg + ';border-radius:4px;"></div></div></td>'
+                + '<td class="tta-rm-cell" style="padding:8px 12px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:' + col[1] + ';">RM ' + rmShown.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        attachPctInputHandlers();
+        refreshAllocationTotals();
+    }
+
+    grpSel.addEventListener('change', function() {
+        pctMap = {};
+        rebuildPctFromSaved(salesNamesForTeamAllocation(grpSel.value));
+        primeTeamInputsFromPersonTargetsIfEmpty();
+        renderRows();
+    });
+    totalInp.addEventListener('input', function() { renderRows(); });
+    autoBtn.addEventListener('click', function() {
+        autoOn = !autoOn;
+        syncAutoLabel();
+        if (autoOn && namesRef.list.length > 0) pctMap = equalPercents(namesRef.list);
+        renderRows();
+    });
+
+    pctMap = {};
+    rebuildPctFromSaved(salesNamesForTeamAllocation(grpSel.value));
+    primeTeamInputsFromPersonTargetsIfEmpty();
+    renderRows();
+    updatePeriodSubtitle();
+    syncToolbarFromPeriod();
+
+    btnCancel.addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+    btnApply.addEventListener('click', function() {
+        var teamTotal = parseFloat(totalInp.value) || 0;
+        if (!(teamTotal > 0)) {
+            showToast('\u26a0\ufe0f', 'Enter team total target');
+            return;
+        }
+        var ns = salesNamesForTeamAllocation(grpSel.value);
+        if (ns.length === 0) {
+            showToast('\u26a0\ufe0f', 'No Sales people to allocate');
+            return;
+        }
+        var live = getLivePctFromInputs();
+        var sumPct = live.order.reduce(function(s, n) { return s + (live.map[n] || 0); }, 0);
+        if (Math.abs(sumPct - 100) > 0.51) {
+            showToast('\u26a0\ufe0f', 'Contribution % must sum to 100% (now ' + sumPct.toFixed(2) + '%)');
+            return;
+        }
+        var rmMap = distributeTeamTotalRM(teamTotal, live.order, live.map);
+
+        if (!cfg.person_targets) cfg.person_targets = {};
+        live.order.forEach(function(nu) {
+            var amt = rmMap[nu] || 0;
+            if (!cfg.person_targets[nu]) cfg.person_targets[nu] = {};
+            if (amt > 0) cfg.person_targets[nu][periodKey()] = amt;
+            else delete cfg.person_targets[nu][periodKey()];
+        });
+
+        var contribSave = {};
+        live.order.forEach(function(nu) { contribSave[nu] = live.map[nu] || 0; });
+        cfg.team_target_allocation[periodKey()] = {
+            teamTotal: teamTotal,
+            contributions: contribSave,
+            autoAllocate: autoOn,
+            scope: grpSel.value
+        };
+
+        saveConfig().then(function() {
+            if (window.appState.salespeople.length > 0) applyPersonTarget(0);
+            showToast('\u2705', 'Team targets saved for ' + periodKey());
+            overlay.remove();
+        }).catch(function() {
+            showToast('\u274c', 'Save failed');
+        });
+    });
+}
+
 function applyPersonTarget(cardIndex) {
     // Apply the set target for current person + month to the card
     var person = window.appState.salespeople[cardIndex];
@@ -5113,7 +5720,7 @@ function applyPersonTarget(cardIndex) {
     var cfg = window.appState.config;
     var nu  = person.name.toUpperCase();
     var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
-    var year  = new Date().getFullYear();
+    var year  = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
     var key   = year + '-' + month;
     var targets = cfg.person_targets && cfg.person_targets[nu];
     var targetVal = targets && targets[key];
@@ -5332,6 +5939,7 @@ function updateCardForEmployeeType(cardIndex) {
 window.updateCardForEmployeeType = updateCardForEmployeeType;
 window.applyPersonTarget = applyPersonTarget;
 window.showTargetModal   = showTargetModal;
+window.showTeamTargetAllocationModal = showTeamTargetAllocationModal;
 
 
 // ==================== Projection Report ====================
@@ -5425,12 +6033,20 @@ function renderProjectionReport() {
         sales = parseFloat(person0.sales) || 0;
         calls = parseFloat(person0.callActual) || 0;
     }
+    if (person0 && (person0.name||'').toUpperCase() === nu && calcMonth === month) {
+        var liveCollT = parseFloat(person0.collectionTarget);
+        var liveCollA = parseFloat(person0.collectionAmount);
+        if (!isNaN(liveCollT) && liveCollT > 0) collTgt = liveCollT;
+        if (!isNaN(liveCollA)) collAmt = liveCollA;
+    }
 
     // Get targets
     var year    = selectedYear;
     var tKey    = year + '-' + month;
     var target  = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
     var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
+    var outletCollTgt = (cfg.person_outlet_targets && cfg.person_outlet_targets[nu] && cfg.person_outlet_targets[nu][tKey]) || 0;
+    if ((!collTgt || collTgt <= 0) && outletCollTgt > 0) collTgt = outletCollTgt;
 
     // Salary data
     var salRec  = getSalaryForMonth(personName, month);
@@ -5449,6 +6065,9 @@ function renderProjectionReport() {
     var callTiers = (cfg.person_call_incentive && cfg.person_call_incentive[nu] && cfg.person_call_incentive[nu].length > 0)
                     ? cfg.person_call_incentive[nu] : (cfg.active_call_incentive || [{min:90,incentive:200},{min:75,incentive:100},{min:60,incentive:50},{min:0,incentive:0}]);
 
+    var collTiers = collectionIncentiveTiersFor(personName);
+    var collPctAch = collTgt > 0 ? (collAmt / collTgt * 100) : 0;
+
     function getSaleRate(pct) {
         var sorted = rates.slice().sort(function(a,b){return b.min-a.min;});
         for (var i=0;i<sorted.length;i++) if (pct>=sorted[i].min) return sorted[i].rate||0;
@@ -5459,20 +6078,21 @@ function renderProjectionReport() {
         for (var i=0;i<sorted.length;i++) if (pct>=sorted[i].min) return sorted[i].incentive||sorted[i].amt||0;
         return 0;
     }
-    function calcIncome(s, cl) {
+    function calcIncome(s, cl, collAchPct) {
         var sp   = target > 0 ? s/target*100 : 0;
         var cp   = callTgt > 0 ? cl/callTgt*100 : 0;
         var rate = getSaleRate(sp);
         var comm = s * rate;
         var cInc = getCallInc(cp);
-        var tot  = fixedIncome + comm + cInc;
-        return { income: tot*(1-epfRate), comm, rate, cInc, sp, cp, tot };
+        var collInc = calculateIncentive(collAchPct || 0, collTiers);
+        var tot  = fixedIncome + comm + cInc + collInc;
+        return { income: tot*(1-epfRate), comm, rate, cInc, collInc, sp, cp, collAch: collAchPct || 0, tot };
     }
     function fmt(n){ return 'RM ' + n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function fmtN(n){ return n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-    var curr = calcIncome(sales, calls);
-    var sPct = curr.sp, cPct = curr.cp;
+    var curr = calcIncome(sales, calls, collPctAch);
+    var sPct = curr.sp, cPct = curr.cp, collPct = curr.collAch;
 
     // Sales milestones — built dynamically from commission rates
     var msColors = [
@@ -5491,6 +6111,10 @@ function renderProjectionReport() {
     // Build call milestone labels from tiers
     var CALL_MS = callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).map(function(t){
         return {pct:t.min, label:t.min+'% ('+fmt(t.incentive||t.amt||0)+')', bg:'#f5f3ff', bc:'#ddd6fe', tc:'#4c1d95', inc:t.incentive||t.amt||0};
+    });
+
+    var COLL_MS = collTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).map(function(t){
+        return {pct:t.min, label:t.min+'% ('+fmt(t.incentive||t.amt||0)+')', bg:'#fffbeb', bc:'#fde68a', tc:'#92400e', inc:t.incentive||t.amt||0};
     });
 
     var html = '';
@@ -5521,7 +6145,7 @@ function renderProjectionReport() {
         unachievedMS.forEach(function(m){
             var mS   = target * m.pct / 100;
             var gap  = Math.max(0, mS - sales);
-            var mD   = calcIncome(mS, calls);
+            var mD   = calcIncome(mS, calls, collPctAch);
             var extraComm = mD.comm - curr.comm;
             html += '<div style="background:'+m.bg+';border:1px solid '+m.bc+';border-radius:10px;padding:10px;text-align:center;">';
             html += '<div style="font-size:11px;font-weight:600;color:'+m.tc+';margin-bottom:5px;">'+m.label+'</div>';
@@ -5534,6 +6158,45 @@ function renderProjectionReport() {
         html += '</div>';
     } else {
         html += '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;text-align:center;margin-bottom:16px;color:#166534;font-weight:600;">✓ All sales milestones achieved!</div>';
+    }
+
+    // ── Collection (outlets) progress ─────────────────────────────────────────
+    var collBarW = Math.min(100, collPct).toFixed(2);
+    var collBarC = collPct>=100?'#16a34a':collPct>=90?'#ca8a04':collPct>=75?'#ea580c':'#f59e0b';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Collection Target</div><div style="font-size:14px;font-weight:600;color:#78350f;">'+(collTgt>0?fmtN(collTgt):'—')+'</div></div>';
+    html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Collected Outlets</div><div style="font-size:14px;font-weight:600;color:#78350f;">'+fmtN(collAmt)+'</div></div>';
+    html += '<div style="background:'+(collPct>=100?'#f0fdf4':'#fefce8')+';border:1px solid '+(collPct>=100?'#86efac':'#fde68a')+';border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Collection Achievement</div><div style="font-size:14px;font-weight:600;color:'+(collPct>=100?'#166534':collPct>=75?'#92400e':'#dc2626')+';">'+collPct.toFixed(2)+'%</div></div>';
+    html += '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Collection Incentive</div><div style="font-size:14px;font-weight:600;color:#b45309;">'+fmt(curr.collInc)+'</div></div>';
+    html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;"><div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Progress</div><div style="font-size:14px;font-weight:600;color:#92400e;">'+collPct.toFixed(2)+'%</div></div>';
+    html += '</div>';
+
+    html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;"><span>Collection progress</span><span style="font-weight:600;">'+collPct.toFixed(2)+'%</span></div>';
+    html += '<div style="background:#f1f5f9;border-radius:99px;height:7px;overflow:hidden;margin-bottom:14px;"><div style="height:100%;border-radius:99px;width:'+collBarW+'%;background:'+collBarC+';"></div></div>';
+
+    if (collTgt > 0 && COLL_MS.length > 0) {
+        var unachievedColl = COLL_MS.filter(function(m){ return collAmt < collTgt * m.pct / 100; });
+        if (unachievedColl.length > 0) {
+            html += '<div style="font-size:10px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Collection — Balance to Go With Higher Earnings</div>';
+            html += '<div style="display:grid;grid-template-columns:'+('1fr '.repeat(unachievedColl.length)).trim()+';gap:8px;margin-bottom:16px;">';
+            unachievedColl.forEach(function(m){
+                var mNeed = collTgt * m.pct / 100;
+                var gap   = Math.max(0, mNeed - collAmt);
+                var extraInc = (m.inc || 0) - curr.collInc;
+                html += '<div style="background:'+m.bg+';border:1px solid '+m.bc+';border-radius:10px;padding:10px;text-align:center;">';
+                html += '<div style="font-size:11px;font-weight:600;color:'+m.tc+';margin-bottom:5px;">'+m.label+'</div>';
+                html += '<div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Balance to go</div>';
+                html += '<div style="font-size:14px;font-weight:600;color:#dc2626;margin-bottom:8px;">'+fmtN(gap)+' outlets</div>';
+                html += '<div style="border-top:1px solid '+m.bc+';padding-top:6px;"><div style="font-size:10px;color:'+m.tc+';opacity:.7;margin-bottom:2px;">Extra incentive</div>';
+                html += '<div style="font-size:13px;font-weight:600;color:'+m.tc+';">+ '+fmt(Math.max(0, extraInc))+'</div></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;text-align:center;margin-bottom:16px;color:#166534;font-weight:600;">✓ All collection milestones achieved!</div>';
+        }
+    } else if (collTgt <= 0) {
+        html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center;margin-bottom:16px;color:#64748b;font-size:12px;">No collection target for '+month+' '+year+' — set Collection Target in Monthly Target Setting or enter outlets on Calculate.</div>';
     }
 
     // Call stats - 5 boxes
@@ -5620,14 +6283,26 @@ function printProjectionExcel() {
     var calcMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
     var sales = rp ? (parseFloat(rp.sales)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.sales)||0) : 0);
     var callActual = rp ? (parseFloat(rp.callActual)||0) : (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month ? (parseFloat(person0.callActual)||0) : 0);
+    var collTgt = rp ? (parseFloat(rp.collectionTarget)||0) : 0;
+    var collAmt = rp ? (parseFloat(rp.collectionAmount)||0) : 0;
+    if (person0 && (person0.name||'').toUpperCase()===nu && calcMonth===month) {
+        var xlLiveCollT = parseFloat(person0.collectionTarget);
+        var xlLiveCollA = parseFloat(person0.collectionAmount);
+        if (!isNaN(xlLiveCollT) && xlLiveCollT > 0) collTgt = xlLiveCollT;
+        if (!isNaN(xlLiveCollA)) collAmt = xlLiveCollA;
+    }
 
     var tKey = selectedYear + '-' + month;
     var target = (cfg.person_targets && cfg.person_targets[nu] && cfg.person_targets[nu][tKey]) || 0;
     var callTgt = (cfg.person_call_targets && cfg.person_call_targets[nu] && cfg.person_call_targets[nu][tKey]) || 0;
+    var outletCollTgt = (cfg.person_outlet_targets && cfg.person_outlet_targets[nu] && cfg.person_outlet_targets[nu][tKey]) || 0;
+    if ((!collTgt || collTgt <= 0) && outletCollTgt > 0) collTgt = outletCollTgt;
     var ach = target > 0 ? (sales/target*100) : 0;
     var comm = calculateCommission(sales, target, personName);
     var callPct = callTgt > 0 ? (callActual/callTgt*100) : 0;
-    var callInc = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+    var callInc = calculateIncentive(callPct, activeCallIncentiveTiersFor(personName));
+    var collPctAch = collTgt > 0 ? (collAmt / collTgt * 100) : 0;
+    var collInc = calculateIncentive(collPctAch, collectionIncentiveTiersFor(personName));
 
     // Get commission rate
     var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
@@ -5657,21 +6332,34 @@ function printProjectionExcel() {
     var callTiers = (cfg.person_call_incentive && cfg.person_call_incentive[nu] && cfg.person_call_incentive[nu].length > 0)
                     ? cfg.person_call_incentive[nu] : (cfg.active_call_incentive || []);
     var callMilestones = [];
-    callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||0)>0;}).forEach(function(t) {
+    callTiers.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).forEach(function(t) {
         var mC = Math.ceil(callTgt * t.min / 100);
         if (callActual < mC) {
-            callMilestones.push({ label: t.min+'% (RM '+(t.incentive||0).toFixed(2)+')', gap: mC - callActual, extraInc: (t.incentive||0) - callInc });
+            var cIncAmt = t.incentive||t.amt||0;
+            callMilestones.push({ label: t.min+'% (RM '+cIncAmt.toFixed(2)+')', gap: mC - callActual, extraInc: Math.max(0, cIncAmt - callInc) });
+        }
+    });
+
+    var collTiersXl = collectionIncentiveTiersFor(personName);
+    var collMilestones = [];
+    collTiersXl.slice().sort(function(a,b){return a.min-b.min;}).filter(function(t){return (t.incentive||t.amt||0)>0;}).forEach(function(t) {
+        var mNeed = collTgt * t.min / 100;
+        if (collAmt < mNeed) {
+            var tierInc = t.incentive||t.amt||0;
+            collMilestones.push({ label: t.min+'% (RM '+tierInc.toFixed(2)+')', gap: mNeed - collAmt, extraInc: Math.max(0, tierInc - collInc) });
         }
     });
 
     var projData = {
         target: target, sales: sales, achievement: ach, commission: comm, commissionRate: commRate,
         callTarget: callTgt, callActual: callActual, callAchievement: callPct, callIncentive: callInc, callProgress: callPct,
-        saleMilestones: saleMilestones, callMilestones: callMilestones
+        saleMilestones: saleMilestones, callMilestones: callMilestones,
+        collectionTarget: collTgt, collectionActual: collAmt, collectionAchievement: collPctAch,
+        collectionIncentive: collInc, collectionProgress: collPctAch, collMilestones: collMilestones
     };
 
     showToast('⏳', 'Opening Excel...');
-    window.electronAPI.exportProjectionExcel({ personName: personName, month: month, projData: projData })
+    window.electronAPI.exportProjectionExcel({ personName: personName, month: month, year: selectedYear, projData: projData })
         .then(function(result) {
             if (result.success) showToast('✅', 'Excel opened!');
             else showToast('❌', 'Failed: ' + (result.error||''));
@@ -5861,8 +6549,8 @@ function exportHistoryToExcel(index) {
         const comm = calculateCommission(p.sales||0, p.target||0, p.name);
         const collAch = p.collectionTarget>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
         const callAch = p.callTarget>0?(p.callActual||0)/p.callTarget*100:0;
-        const coll = calculateIncentive(collAch, window.appState.config.collection_incentive);
-        const call = calculateIncentive(callAch, window.appState.config.active_call_incentive);
+        const coll = calculateIncentive(collAch, collectionIncentiveTiersFor(p.name));
+        const call = calculateIncentive(callAch, activeCallIncentiveTiersFor(p.name));
         return Object.assign({}, p, {
             commission: comm, collectionIncentive: coll, activeCallIncentive: call,
             quarterlyBonus: 0, totalCommission: comm+coll+call,
@@ -5920,9 +6608,9 @@ function printHistoryReport(index) {
             comm = calculateCommission(sales, target, name);
             var collAch = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0) / p.collectionTarget * 100 : 0;
             var callAch = (p.callTarget||0) > 0 ? (p.callActual||0) / p.callTarget * 100 : 0;
-            collI = calculateIncentive(collAch, cfg.collection_incentive || []);
-            callI = calculateIncentive(callAch, cfg.active_call_incentive || []);
-            qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive || []) : 0;
+            collI = calculateIncentive(collAch, collectionIncentiveTiersFor(name));
+            callI = calculateIncentive(callAch, activeCallIncentiveTiersFor(name));
+            qtrI = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(name)) : 0;
             totalComm = comm + collI + callI + qtrI;
 
             detailRows = '<tr style="background:#f1f5f9;"><td style="padding:6px 10px;font-weight:600;">Target</td><td style="padding:6px 10px;text-align:right;">'+formatCurrency(target)+'</td></tr>'
@@ -6763,8 +7451,8 @@ function renderDashboard() {
                     totalComm += calculateCommission(pd.sales||0, pd.target||0, name);
                     var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
                     var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-                    totalComm += calculateIncentive(collPct, cfg.collection_incentive||[]);
-                    totalComm += calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                    totalComm += calculateIncentive(collPct, collectionIncentiveTiersFor(name));
+                    totalComm += calculateIncentive(callPct, activeCallIncentiveTiersFor(name));
                     monthCount++;
                     }
                     return parseFloat(pd.sales)||0;
@@ -6961,11 +7649,11 @@ function renderAnnualReport() {
                     var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
                     var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
                     var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-                    var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
-                    var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                    var collI = calculateIncentive(collPct, collectionIncentiveTiersFor(nu));
+                    var callI = calculateIncentive(callPct, activeCallIncentiveTiersFor(nu));
                     var ach = (pd.target||0)>0?((pd.sales||0)/(pd.target)*100):0;
                     var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
-                    var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+                    var qtrI = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(nu)) : 0;
                     peopleData[nu][m] = { type:'Sales', target: parseFloat(pd.target)||0, sales: parseFloat(pd.sales)||0, ach: ach, commission: comm, collInc: collI, callInc: callI, qtrBonus: qtrI };
                 } else if (empType === 'Support Staff') {
                     var blocks = parseFloat(pd.collectionAmount)||0;
@@ -7401,11 +8089,11 @@ function renderEmployerCostReport() {
                 var comm = calculateCommission(sales, target, name);
                 var collPct = (pd.collectionTarget||0)>0?(pd.collectionAmount||0)/pd.collectionTarget*100:0;
                 var callPct = (pd.callTarget||0)>0?(pd.callActual||0)/pd.callTarget*100:0;
-                var collI = calculateIncentive(collPct, cfg.collection_incentive||[]);
-                var callI = calculateIncentive(callPct, cfg.active_call_incentive||[]);
+                var collI = calculateIncentive(collPct, collectionIncentiveTiersFor(name));
+                var callI = calculateIncentive(callPct, activeCallIncentiveTiersFor(name));
                 var ach = target>0?(sales/target*100):0;
                 var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
-                var qtrI = isQtr ? calculateIncentive(ach, cfg.quarterly_incentive||[]) : 0;
+                var qtrI = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(name)) : 0;
                 totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
             } else if (empType === 'Supervisor') {
                 // Supervisor earns from team every month (if team has data)

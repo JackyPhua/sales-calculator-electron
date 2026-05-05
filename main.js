@@ -383,6 +383,8 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
         const lightBlueFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
         const greenFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
         const purpleFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F3FF' } };
+        const amberFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD97706' } };
+        const amberLightFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
         const thinBorder = { top: {style:'thin'}, bottom: {style:'thin'}, left: {style:'thin'}, right: {style:'thin'} };
         const rmFmt = '#,##0.00';
         const pctFmt = '0.0%';
@@ -400,7 +402,7 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
         row++;
 
         sheet.mergeCells(row, 1, row, 4);
-        sheet.getCell(row, 1).value = (data.month || '') + ' ' + new Date().getFullYear();
+        sheet.getCell(row, 1).value = (data.month || '') + ' ' + (typeof data.year === 'number' ? data.year : new Date().getFullYear());
         sheet.getCell(row, 1).font = { size: 11, color: { argb: 'FF64748B' } };
         sheet.getCell(row, 1).alignment = { horizontal: 'center' };
         row += 2;
@@ -470,6 +472,64 @@ ipcMain.handle('export-projection-excel', async (event, data) => {
                 sheet.getCell(row, 1).font = { color: { argb: 'FF166534' }, bold: true };
                 row++;
             }
+            row++;
+        }
+
+        // ── Collection Summary (outlets) ──
+        sheet.mergeCells(row, 1, row, 4);
+        sheet.getCell(row, 1).value = 'COLLECTION SUMMARY (OUTLETS)';
+        sheet.getCell(row, 1).font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        sheet.getCell(row, 1).fill = amberFill;
+        sheet.getCell(row, 1).alignment = { horizontal: 'center' };
+        for (let c=1;c<=4;c++) sheet.getCell(row,c).border = thinBorder;
+        row++;
+
+        const outletFmt = '#,##0.##';
+        const collItems = [
+            ['Collection Target', d.collectionTarget || 0, outletFmt],
+            ['Collected Outlets', d.collectionActual || 0, outletFmt],
+            ['Collection Achievement', (d.collectionAchievement || 0) / 100, pctFmt],
+            ['Collection Incentive', d.collectionIncentive || 0, rmFmt],
+            ['Collection Progress', (d.collectionProgress || 0) / 100, pctFmt]
+        ];
+        collItems.forEach(item => {
+            sheet.getCell(row, 1).value = item[0];
+            sheet.getCell(row, 1).font = { color: { argb: 'FF92400E' } };
+            sheet.getCell(row, 2).value = item[1];
+            sheet.getCell(row, 2).font = { bold: true, color: { argb: 'FF78350F' } };
+            sheet.getCell(row, 2).numFmt = item[2];
+            sheet.getCell(row, 2).alignment = { horizontal: 'right' };
+            for (let c=1;c<=2;c++) sheet.getCell(row,c).border = thinBorder;
+            row++;
+        });
+        row++;
+
+        if (d.collMilestones && d.collMilestones.length > 0) {
+            sheet.mergeCells(row, 1, row, 4);
+            sheet.getCell(row, 1).value = 'COLLECTION — BALANCE TO GO WITH HIGHER EARNINGS';
+            sheet.getCell(row, 1).font = { bold: true, size: 10, color: { argb: 'FF92400E' } };
+            row++;
+
+            ['Milestone', 'Balance (Outlets)', 'Extra Incentive'].forEach((h, i) => {
+                sheet.getCell(row, i+1).value = h;
+                sheet.getCell(row, i+1).font = { bold: true };
+                sheet.getCell(row, i+1).fill = amberLightFill;
+                sheet.getCell(row, i+1).border = thinBorder;
+            });
+            row++;
+
+            d.collMilestones.forEach(ms => {
+                sheet.getCell(row, 1).value = ms.label;
+                sheet.getCell(row, 1).font = { bold: true };
+                sheet.getCell(row, 2).value = ms.gap;
+                sheet.getCell(row, 2).numFmt = outletFmt;
+                sheet.getCell(row, 2).font = { color: { argb: 'FFDC2626' }, bold: true };
+                sheet.getCell(row, 3).value = ms.extraInc;
+                sheet.getCell(row, 3).numFmt = rmFmt;
+                sheet.getCell(row, 3).font = { color: { argb: 'FF166534' }, bold: true };
+                for (let c=1;c<=3;c++) sheet.getCell(row,c).border = thinBorder;
+                row++;
+            });
             row++;
         }
 
@@ -1529,6 +1589,10 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     const isSupervisor = empType === 'Supervisor';
     const isMerchandiser = empType === 'Merchandiser';
 
+    const totalFlexibleIncome = isMerchandiser
+        ? blockIncentive
+        : commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
+
     // For Merchandiser, totalExtraIncome = fixed + blockIncentive only
     const totalExtraIncome = isMerchandiser
         ? totalFixedIncome + blockIncentive
@@ -1610,7 +1674,9 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'ACTIVE CALL', value: activeCallIncentive },
             { label: 'QUATERLY', value: quarterlyBonus },
             { label: '', type: 'empty' },
-            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+            { label: 'TOTAL FLEXIBLE INCOME', value: totalFlexibleIncome, type: 'total' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
             { label: epfLabel, value: epfAmount, type: 'epf' },
@@ -1638,7 +1704,9 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'INCENTIVE', type: 'header' },
             { label: 'BLOCK INCENTIVE', value: blockIncentive },
             { label: '', type: 'empty' },
-            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+            { label: 'TOTAL FLEXIBLE INCOME', value: totalFlexibleIncome, type: 'total' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
             { label: epfLabel, value: epfAmount, type: 'epf' },
@@ -1670,7 +1738,9 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'ACTIVE CALL', value: activeCallIncentive },
             { label: 'QUATERLY', value: quarterlyBonus },
             { label: '', type: 'empty' },
-            { label: 'TOTAL', value: totalExtraIncome, type: 'total' },
+            { label: 'TOTAL FLEXIBLE INCOME', value: totalFlexibleIncome, type: 'total' },
+            { label: '', type: 'empty' },
+            { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
             { label: epfLabel, value: epfAmount, type: 'epf' },
