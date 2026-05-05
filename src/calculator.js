@@ -5665,7 +5665,16 @@ function showTeamTargetAllocationModal() {
     syncToolbarFromPeriod();
 
     btnCancel.addEventListener('click', function() { overlay.remove(); });
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    // Only close when both mousedown and click land on the backdrop — not when selecting text
+    // inside the card and releasing over the dimmed area (click target becomes overlay).
+    var backdropDown = false;
+    overlay.addEventListener('mousedown', function(e) {
+        backdropDown = (e.target === overlay);
+    });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay && backdropDown) overlay.remove();
+        backdropDown = false;
+    });
 
     btnApply.addEventListener('click', function() {
         var teamTotal = parseFloat(totalInp.value) || 0;
