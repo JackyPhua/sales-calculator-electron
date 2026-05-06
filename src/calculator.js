@@ -739,6 +739,50 @@ function switchView(view) {
         }
         if (typeof renderAnnualReport === 'function') renderAnnualReport();
     } else if (view === 'settings') {
+        if (!window._settingsUnlocked) {
+            if (viewEl) { viewEl.style.display = 'none'; }
+            var overlayS = document.createElement('div');
+            overlayS.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+            var boxS = document.createElement('div');
+            boxS.style.cssText = 'background:var(--paper,#fff);border-radius:16px;max-width:380px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(8,15,26,.3);text-align:center;';
+            boxS.innerHTML = '<div style="font-size:36px;margin-bottom:12px;">\ud83d\udd12</div>'
+                + '<div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">Settings</div>'
+                + '<div style="font-size:13px;color:#64748b;margin-bottom:20px;">Enter password to access (same as Annual Report)</div>'
+                + '<input id="settings-pw-input" type="password" placeholder="Password" style="width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;text-align:center;margin-bottom:8px;">'
+                + '<div id="settings-pw-err" style="font-size:12px;color:#dc2626;margin-bottom:12px;min-height:18px;"></div>';
+            var btnRowS = document.createElement('div');
+            btnRowS.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+            var btnCancelS = document.createElement('button');
+            btnCancelS.textContent = 'Cancel';
+            btnCancelS.style.cssText = 'padding:9px 24px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;';
+            var btnUnlockS = document.createElement('button');
+            btnUnlockS.textContent = '\ud83d\udd13 Unlock';
+            btnUnlockS.style.cssText = 'padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:Sora,sans-serif;';
+            btnRowS.appendChild(btnCancelS);
+            btnRowS.appendChild(btnUnlockS);
+            boxS.appendChild(btnRowS);
+            overlayS.appendChild(boxS);
+            document.body.appendChild(overlayS);
+            setTimeout(function(){ var _inp = document.getElementById('settings-pw-input'); if (_inp) _inp.focus(); }, 100);
+            var settingsPw = (window.appState.config && window.appState.config.annual_password) || 'boss123';
+            function tryUnlockSettings() {
+                var _inp = document.getElementById('settings-pw-input');
+                var _err = document.getElementById('settings-pw-err');
+                if (_inp && _inp.value === settingsPw) {
+                    window._settingsUnlocked = true;
+                    overlayS.remove();
+                    switchView('settings');
+                } else {
+                    if (_err) _err.textContent = '\u274c Wrong password';
+                    if (_inp) { _inp.value = ''; _inp.focus(); }
+                }
+            }
+            btnUnlockS.addEventListener('click', tryUnlockSettings);
+            var pwInputS = document.getElementById('settings-pw-input');
+            if (pwInputS) pwInputS.addEventListener('keydown', function(e) { if (e.key === 'Enter') tryUnlockSettings(); });
+            btnCancelS.addEventListener('click', function() { overlayS.remove(); switchView('quick'); });
+            return;
+        }
         var lt = document.getElementById('settings-license-type');
         if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
         if (window.electronAPI && window.electronAPI.getAppVersion) {
@@ -5001,7 +5045,7 @@ function showTargetModal(personName) {
     var body = document.createElement('div');
     body.style.cssText = 'padding:20px 24px;overflow-y:auto;flex:1;';
 
-    // Year selector — align with Calculate toolbar (#report-year) so Team Target Allocation keys match
+    // Year selector — align with Calculation / Projection year so Team Target Setting keys match
     var ryBar = parseInt(String(((document.getElementById('report-year')||{}).value||'')), 10);
     var curYear = !isNaN(ryBar) ? ryBar : new Date().getFullYear();
     var yearRow = document.createElement('div');
@@ -5022,7 +5066,7 @@ function showTargetModal(personName) {
     body.appendChild(yearRow);
     var yearAlignHint = document.createElement('div');
     yearAlignHint.style.cssText = 'font-size:11px;color:var(--ink4);margin:-8px 0 14px 2px;line-height:1.4;';
-    yearAlignHint.textContent = 'Default year matches Calculate \u2192 Year (same period keys as Team Target Allocation).';
+    yearAlignHint.textContent = 'Default year matches Calculation / Projection \u2192 Year (same period keys as Team Target Setting).';
     body.appendChild(yearAlignHint);
 
     // Month grid
@@ -5143,8 +5187,13 @@ function showTargetModal(personName) {
     });
 }
 
-// ==================== Team Target Allocation ====================
+// ==================== Team Target Setting (allocation UI) ====================
 function teamAllocationMonthKey() {
+    var pjm = ((document.getElementById('proj-month-select')||{}).value||'').toUpperCase();
+    var pjy = ((document.getElementById('proj-year-select')||{}).value||'').trim();
+    if (pjm && pjy) {
+        return { month: pjm, year: String(pjy), key: String(pjy) + '-' + pjm };
+    }
     var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
     var year  = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
     return { month: month, year: String(year), key: String(year) + '-' + month };
@@ -5229,9 +5278,11 @@ function showTeamTargetAllocationModal() {
     var cfg = window.appState.config;
     var monthsFull = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var initTk = teamAllocationMonthKey();
+    var pmFromProj = ((document.getElementById('proj-month-select')||{}).value||'').toUpperCase();
     var pmFromBar = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
     var calendarMonth = monthsFull[new Date().getMonth()];
-    var defaultMonth = (pmFromBar && monthsFull.indexOf(pmFromBar) >= 0) ? pmFromBar : calendarMonth;
+    var defaultMonth = (pmFromProj && monthsFull.indexOf(pmFromProj) >= 0) ? pmFromProj
+        : (pmFromBar && monthsFull.indexOf(pmFromBar) >= 0) ? pmFromBar : calendarMonth;
     var period = {
         year: initTk.year,
         month: (initTk.month && monthsFull.indexOf(initTk.month) >= 0) ? initTk.month : defaultMonth
@@ -5253,7 +5304,7 @@ function showTeamTargetAllocationModal() {
 
     var hdr = document.createElement('div');
     hdr.style.cssText = 'background:linear-gradient(135deg,#0f172a,#0369a1);padding:18px 22px;color:#fff;flex-shrink:0;';
-    hdr.innerHTML = '<div style="font-size:17px;font-weight:800;">\ud83d\udcca Team Target Allocation</div>';
+    hdr.innerHTML = '<div style="font-size:17px;font-weight:800;">\ud83c\udfaf Team Target Setting</div>';
     var periodLbl = document.createElement('div');
     periodLbl.style.cssText = 'font-size:12px;opacity:.75;margin-top:4px;line-height:1.35;';
     hdr.appendChild(periodLbl);
@@ -5267,6 +5318,10 @@ function showTeamTargetAllocationModal() {
         var ry = document.getElementById('report-year');
         if (rm && monthsFull.indexOf(period.month) >= 0) rm.value = period.month;
         if (ry) ry.value = period.year;
+        var pjm = document.getElementById('proj-month-select');
+        var pjy = document.getElementById('proj-year-select');
+        if (pjm && monthsFull.indexOf(period.month) >= 0) pjm.value = period.month;
+        if (pjy) pjy.value = period.year;
     }
 
     function updatePeriodSubtitle() {
@@ -5676,25 +5731,7 @@ function showTeamTargetAllocationModal() {
         backdropDown = false;
     });
 
-    btnApply.addEventListener('click', function() {
-        var teamTotal = parseFloat(totalInp.value) || 0;
-        if (!(teamTotal > 0)) {
-            showToast('\u26a0\ufe0f', 'Enter team total target');
-            return;
-        }
-        var ns = salesNamesForTeamAllocation(grpSel.value);
-        if (ns.length === 0) {
-            showToast('\u26a0\ufe0f', 'No Sales people to allocate');
-            return;
-        }
-        var live = getLivePctFromInputs();
-        var sumPct = live.order.reduce(function(s, n) { return s + (live.map[n] || 0); }, 0);
-        if (Math.abs(sumPct - 100) > 0.51) {
-            showToast('\u26a0\ufe0f', 'Contribution % must sum to 100% (now ' + sumPct.toFixed(2) + '%)');
-            return;
-        }
-        var rmMap = distributeTeamTotalRM(teamTotal, live.order, live.map);
-
+    function performApplyTargetsSave(teamTotal, live, rmMap) {
         if (!cfg.person_targets) cfg.person_targets = {};
         live.order.forEach(function(nu) {
             var amt = rmMap[nu] || 0;
@@ -5719,6 +5756,82 @@ function showTeamTargetAllocationModal() {
         }).catch(function() {
             showToast('\u274c', 'Save failed');
         });
+    }
+
+    btnApply.addEventListener('click', function() {
+        var teamTotal = parseFloat(totalInp.value) || 0;
+        if (!(teamTotal > 0)) {
+            showToast('\u26a0\ufe0f', 'Enter team total target');
+            return;
+        }
+        var ns = salesNamesForTeamAllocation(grpSel.value);
+        if (ns.length === 0) {
+            showToast('\u26a0\ufe0f', 'No Sales people to allocate');
+            return;
+        }
+        var live = getLivePctFromInputs();
+        var sumPct = live.order.reduce(function(s, n) { return s + (live.map[n] || 0); }, 0);
+        if (Math.abs(sumPct - 100) > 0.51) {
+            showToast('\u26a0\ufe0f', 'Contribution % must sum to 100% (now ' + sumPct.toFixed(2) + '%)');
+            return;
+        }
+        var rmMap = distributeTeamTotalRM(teamTotal, live.order, live.map);
+
+        var exC = document.getElementById('team-target-apply-confirm');
+        if (exC) exC.remove();
+
+        var cOverlay = document.createElement('div');
+        cOverlay.id = 'team-target-apply-confirm';
+        cOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,26,.5);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px;box-sizing:border-box;';
+
+        var box = document.createElement('div');
+        box.style.cssText = 'background:var(--paper,#fff);border-radius:14px;max-width:440px;width:100%;padding:24px 22px 20px;box-shadow:0 25px 60px rgba(8,15,26,.28);border:1.5px solid var(--line,#e8edf3);';
+        box.addEventListener('click', function(e) { e.stopPropagation(); });
+
+        var title = document.createElement('div');
+        title.style.cssText = 'font-size:17px;font-weight:800;color:var(--ink,#0f172a);display:flex;align-items:center;gap:10px;';
+        title.innerHTML = '<span style="font-size:22px;line-height:1;">\u26a0\ufe0f</span><span>Apply targets to this month?</span>';
+        box.appendChild(title);
+
+        var body = document.createElement('p');
+        body.style.cssText = 'margin:14px 0 20px;font-size:13px;line-height:1.55;color:var(--ink3,#475569);';
+        body.innerHTML = 'This will write <strong>Sale Target (RM)</strong> for <strong>' + period.month + ' ' + period.year + '</strong> to each salesperson\'s Monthly Target Setting. '
+            + '<strong>Existing amounts for that month may be overwritten.</strong> Continue?';
+        box.appendChild(body);
+
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;';
+
+        var btnCancelC = document.createElement('button');
+        btnCancelC.type = 'button';
+        btnCancelC.textContent = 'Cancel';
+        btnCancelC.style.cssText = 'padding:10px 18px;border:1.5px solid var(--line,#e2e8f0);border-radius:var(--r,10px);background:var(--paper,#fff);cursor:pointer;font-size:13px;font-weight:600;color:var(--ink2,#334155);font-family:Sora,sans-serif;';
+
+        var btnConfirm = document.createElement('button');
+        btnConfirm.type = 'button';
+        btnConfirm.textContent = 'Confirm & Save';
+        btnConfirm.style.cssText = 'padding:10px 20px;border:none;border-radius:var(--r,10px);background:#0891b2;color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;';
+        btnConfirm.addEventListener('mouseenter', function() { btnConfirm.style.background = '#0e7490'; });
+        btnConfirm.addEventListener('mouseleave', function() { btnConfirm.style.background = '#0891b2'; });
+
+        function closeConfirm() {
+            if (cOverlay.parentNode) cOverlay.parentNode.removeChild(cOverlay);
+        }
+
+        btnCancelC.addEventListener('click', closeConfirm);
+        cOverlay.addEventListener('click', function(e) {
+            if (e.target === cOverlay) closeConfirm();
+        });
+        btnConfirm.addEventListener('click', function() {
+            closeConfirm();
+            performApplyTargetsSave(teamTotal, live, rmMap);
+        });
+
+        row.appendChild(btnCancelC);
+        row.appendChild(btnConfirm);
+        box.appendChild(row);
+        cOverlay.appendChild(box);
+        document.body.appendChild(cOverlay);
     });
 }
 
@@ -7903,10 +8016,11 @@ function saveAnnualPassword() {
     window.appState.config.annual_password = newInp.value.trim();
     saveConfig();
     window._annualUnlocked = false;
+    window._settingsUnlocked = false;
     oldInp.value = '';
     newInp.value = '';
     if (errEl) errEl.textContent = '';
-    showToast('✅', 'Annual Report password updated');
+    showToast('✅', 'Password updated (Annual & Settings)');
 }
 window.saveAnnualPassword = saveAnnualPassword;
 
