@@ -1,6 +1,6 @@
 {
   "name": "commission-pro",
-  "version": "4.6.0",
+  "version": "4.6.1",
   "description": "CommissionPro — Sales Commission Calculator for Teams",
   "main": "main.js",
   "scripts": {

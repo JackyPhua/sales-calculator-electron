@@ -173,6 +173,78 @@
             .history-grid{grid-template-columns:1fr;}
             .calc-grid{grid-template-columns:1fr;}
         }
+        /* ── CALCULATION VIEW (refined workspace) ── */
+        #view-quick .calc-toolbar-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+        #view-quick .calc-toolbar-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
+        #view-quick .calc-kicker{font-size:9px;font-weight:700;color:var(--ink4);letter-spacing:.12em;text-transform:uppercase;}
+        #view-quick .calc-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
+        #view-quick .calc-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
+        #view-quick .calc-period-box{display:inline-flex;align-items:center;gap:0;flex-wrap:wrap;padding:6px 8px;background:var(--paper);border:1.5px solid var(--line);border-radius:10px;box-shadow:var(--sh);}
+        #view-quick .calc-period-box select{border:none;outline:none;background:transparent;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;padding:6px 8px;border-radius:8px;}
+        #view-quick .calc-period-box select:hover{background:var(--sheet);}
+        #view-quick .calc-period-sep{width:1px;height:22px;background:var(--line);flex-shrink:0;}
+        #view-quick .calc-batch-btn{white-space:nowrap;}
+        #view-quick .calc-grid{gap:14px;grid-template-columns:196px minmax(0,1fr) 272px;}
+        #view-quick .person-sidebar{border-radius:12px;box-shadow:var(--sh-md);border-color:#dfe6ee;}
+        #view-quick .sidebar-hd{padding:11px 14px;font-size:10px;letter-spacing:.1em;background:linear-gradient(180deg,var(--paper),var(--sheet));}
+        #view-quick .person-row[data-type="Sales"] .p-av{background:#ccfbf1;color:#0f766e;}
+        #view-quick .person-row[data-type="Supervisor"] .p-av{background:#dbeafe;color:#1d4ed8;}
+        #view-quick .person-row[data-type="Support Staff"] .p-av{background:#fef9c3;color:#854d0e;}
+        #view-quick .person-row[data-type="Sales"] .p-name{color:#0f766e;}
+        #view-quick .person-row[data-type="Supervisor"] .p-name{color:#1d4ed8;}
+        #view-quick .person-row[data-type="Support Staff"] .p-name{color:#854d0e;}
+        #view-quick .person-row.active .p-name{color:var(--blue-d)!important;}
+        #view-quick .calc-center{gap:10px;}
+        #view-quick .ach-hero{border-radius:12px;box-shadow:var(--sh-md);border-color:#dfe6ee;}
+        #view-quick .ach-hero-body{padding:12px 16px;}
+        #view-quick .ach-big{font-size:28px;}
+        #view-quick .ach-person-name{font-size:13px;font-weight:800;letter-spacing:-.2px;}
+        #view-quick .calc-person-card{background:var(--paper)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:var(--sh-md)!important;padding:18px 44px 16px 18px!important;position:relative;}
+        #view-quick .calc-person-card label.block{font-size:9px!important;font-weight:700!important;color:var(--ink4)!important;letter-spacing:.45px;text-transform:uppercase;margin-bottom:6px!important;}
+        #view-quick .calc-person-card .input-field{font-family:'IBM Plex Mono',monospace;font-size:12px!important;font-weight:600!important;padding:9px 11px!important;border-radius:8px!important;border:1.5px solid var(--line)!important;transition:border-color .15s,box-shadow .15s;}
+        #view-quick .calc-person-card .input-field:focus:not(:disabled){border-color:var(--blue)!important;box-shadow:0 0 0 3px rgba(14,165,233,.12);outline:none!important;}
+        #view-quick .calc-person-card .input-field:disabled{background:var(--sheet)!important;color:var(--ink3)!important;}
+        #view-quick .calc-person-card .calc-section-hd{font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 6px;padding-top:12px;border-top:1px solid var(--line);}
+        #view-quick .calc-person-card .calc-section-hd.calc-section-first{margin-top:4px;padding-top:0;border-top:none;}
+        #view-quick .calc-person-card .calc-card-hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line);}
+        #view-quick .calc-person-card .calc-card-name{font-size:14px;font-weight:800;color:var(--ink);letter-spacing:-.2px;flex:1;min-width:120px;}
+        #view-quick .calc-person-card .calc-card-av{width:36px;height:36px;border-radius:10px;background:linear-gradient(145deg,var(--blue-l),#eff6ff);color:var(--blue-d);display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.8);}
+        #view-quick .calc-card-del{position:absolute;top:14px;right:14px;width:32px;height:32px;border:none;border-radius:8px;background:var(--sheet);color:var(--rose);border:1px solid var(--line);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;transition:background .15s,color .15s,box-shadow .15s;}
+        #view-quick .calc-card-del:hover{background:#fff1f2;border-color:#fecdd3;box-shadow:var(--sh);}
+        #view-quick .calc-preview-panel{margin-top:14px;padding:13px 15px;background:linear-gradient(160deg,#f8fafc 0%,#f0f9ff 100%);border:1px solid #c7e6fd;border-radius:10px;}
+        #view-quick .calc-preview-panel .text-gray-600{color:var(--ink3)!important;font-size:11px!important;}
+        #view-quick .calc-preview-panel .font-semibold{font-family:'IBM Plex Mono',monospace;font-size:11px!important;font-weight:700!important;color:var(--ink)!important;}
+        #view-quick .calc-preview-panel .text-green-600{color:#059669!important;}
+        #view-quick .calc-preview-btn{margin-top:10px;padding:7px 14px;border:none;border-radius:8px;background:var(--ink);color:#fff;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;cursor:pointer;letter-spacing:.02em;transition:transform .15s,box-shadow .15s;}
+        #view-quick .calc-preview-btn:hover{background:var(--ink2);box-shadow:var(--sh);}
+        #view-quick .calc-card-foot{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+        #view-quick .calc-foot-clear{padding:8px 16px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);font-family:'Sora',sans-serif;font-size:11px;font-weight:600;color:var(--ink3);cursor:pointer;}
+        #view-quick .calc-foot-clear:hover{background:var(--sheet);}
+        #view-quick .calc-foot-save{padding:8px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--blue-d),var(--blue));color:#fff;font-family:'Sora',sans-serif;font-size:11px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(14,165,233,.35);}
+        #view-quick .calc-foot-save:hover{filter:brightness(1.05);}
+        #view-quick .live-payslip-card{background:var(--paper)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:var(--sh-md)!important;overflow:hidden;margin-top:0!important;font-size:inherit!important;}
+        #view-quick .live-payslip-card .ps-head{background:linear-gradient(180deg,#0c4a6e,#0e7490)!important;padding:12px 14px!important;text-align:left!important;border-bottom:1px solid rgba(255,255,255,.12);}
+        #view-quick .live-payslip-card .ps-head-title{font-size:11px!important;font-weight:800!important;color:#fff!important;letter-spacing:.1em!important;text-transform:uppercase;}
+        #view-quick .live-payslip-card .ps-head-sub{font-size:10px!important;color:rgba(255,255,255,.72)!important;margin-top:4px!important;font-weight:500;}
+        #view-quick .live-payslip-card table.ps-table{font-size:10px!important;border-collapse:collapse;width:100%;table-layout:fixed;}
+        #view-quick .live-payslip-card .ps-th{background:linear-gradient(180deg,#e0f2fe,#bae6fd)!important;}
+        #view-quick .live-payslip-card .ps-th td{padding:8px 10px!important;font-weight:700!important;color:#0c4a6e!important;font-size:9px!important;letter-spacing:.04em;}
+        #view-quick .live-payslip-card .ps-th td:not(:first-child){text-align:right!important;}
+        #view-quick .live-payslip-card .ps-foot{background:linear-gradient(180deg,#0c4a6e,#155e75)!important;padding:12px 14px!important;display:flex!important;justify-content:space-between!important;align-items:center!important;}
+        #view-quick .live-payslip-card .ps-foot-lbl{font-size:11px!important;color:rgba(255,255,255,.85)!important;font-weight:600;}
+        #view-quick .live-payslip-card .ps-foot-val{font-size:17px!important;font-weight:800!important;color:#fff!important;font-family:'IBM Plex Mono',monospace;}
+        #view-quick .live-payslip-card .ps-meta{padding:12px 14px!important;background:var(--sheet)!important;}
+        #view-quick .live-payslip-card .ps-kpi-row{display:flex;justify-content:space-between;margin-bottom:6px;align-items:center;}
+        #view-quick .live-payslip-card .ps-bar{height:5px;background:var(--line);border-radius:99px;overflow:hidden;}
+        #view-quick .live-payslip-card .ps-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#0e7490,#22d3ee);transition:width .35s ease;}
+        #view-quick .live-payslip-card .ps-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+        #view-quick .live-payslip-card .ps-mini-box{border-radius:8px;padding:8px 10px;border:1px solid var(--line);}
+        #view-quick .live-payslip-card .ps-mini-box.personal{background:var(--paper);border-color:#bfdbfe;}
+        #view-quick .live-payslip-card .ps-mini-box.team{background:var(--paper);border-color:#bbf7d0;}
+        #view-quick .live-payslip-card .ps-mini-lbl{font-size:9px;font-weight:700;color:var(--ink3);margin-bottom:3px;}
+        #view-quick .live-payslip-card .ps-mini-val{font-size:11px;font-weight:800;font-family:'IBM Plex Mono',monospace;}
+        #view-quick .live-payslip-card .ps-mini-box.personal .ps-mini-val{color:#1e40af;}
+        #view-quick .live-payslip-card .ps-mini-box.team .ps-mini-val{color:#166534;}
         /* Keep existing card styles for salespeople cards */
         .card{transition:all .3s ease;}
         .animate-fadeIn{animation:fadeIn .2s ease-out;}
@@ -262,30 +334,34 @@
 <!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
 <div id="view-quick" class="view-container active" style="display:block">
     <!-- Toolbar -->
-    <div class="toolbar">
-        <div class="month-select-wrap">
-            📅&nbsp;
-            <select id="report-month">
-                <option value="JAN">JAN</option><option value="FEB">FEB</option>
-                <option value="MAR">MAR</option><option value="APR">APR</option>
-                <option value="MAY">MAY</option><option value="JUN">JUN</option>
-                <option value="JUL">JUL</option><option value="AUG">AUG</option>
-                <option value="SEP">SEP</option><option value="OCT">OCT</option>
-                <option value="NOV">NOV</option><option value="DEC">DEC</option>
-            </select>
-            &nbsp;
-            <select id="report-year" style="padding:6px 10px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-            </select>
-            &nbsp;
-            <select id="calc-group-select" onchange="filterByGroup()" style="padding:6px 10px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                <option value="ALL">All Groups</option>
-                <option value="Sales">💼 Sales</option>
-                <option value="Supervisor">👔 Management Staff</option>
-                <option value="Support Staff">🛠️ Support Staff</option>
-            </select>
+    <div class="toolbar calc-toolbar-wrap">
+        <div class="calc-toolbar-left">
+            <span class="calc-kicker">Commission workspace</span>
+            <span class="calc-heading">Calculation</span>
         </div>
-        <div style="flex:1"></div>
-        <button onclick="showBatchExportModal()" class="tbtn">📦 Batch Export</button>
+        <div class="calc-toolbar-right">
+            <div class="calc-period-box">
+                <select id="report-month" aria-label="Month">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option>
+                    <option value="MAR">MAR</option><option value="APR">APR</option>
+                    <option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option>
+                    <option value="SEP">SEP</option><option value="OCT">OCT</option>
+                    <option value="NOV">NOV</option><option value="DEC">DEC</option>
+                </select>
+                <span class="calc-period-sep" aria-hidden="true"></span>
+                <select id="report-year" aria-label="Year">
+                </select>
+                <span class="calc-period-sep" aria-hidden="true"></span>
+                <select id="calc-group-select" onchange="filterByGroup()" aria-label="Employee group">
+                    <option value="ALL">All Groups</option>
+                    <option value="Sales">💼 Sales</option>
+                    <option value="Supervisor">👔 Management Staff</option>
+                    <option value="Support Staff">🛠️ Support Staff</option>
+                </select>
+            </div>
+            <button type="button" onclick="showBatchExportModal()" class="tbtn calc-batch-btn">Batch export</button>
+        </div>
     </div>
 
     <div class="calc-grid">
@@ -321,43 +397,43 @@
         <!-- Right: Summary -->
         <div class="calc-right">
             <!-- Live Payslip Preview -->
-            <div id="live-payslip" style="background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:block;margin-top:4px;font-size:10px;">
-                <div style="background:#185FA5;padding:6px 10px;text-align:center;">
-                    <div id="ps-title" style="font-size:10px;font-weight:700;color:#fff;letter-spacing:.5px;">— SALARY REPORT</div>
-                    <div id="ps-ach-lbl" style="font-size:9px;color:rgba(255,255,255,0.7);margin-top:1px;">Achievement: 0%</div>
+            <div id="live-payslip" class="live-payslip-card" style="display:block;">
+                <div class="ps-head">
+                    <div id="ps-title" class="ps-head-title">— Salary report</div>
+                    <div id="ps-ach-lbl" class="ps-head-sub">Achievement: 0%</div>
                 </div>
-                <table style="width:100%;font-size:9px;border-collapse:collapse;table-layout:fixed;">
+                <table class="ps-table">
                     <colgroup><col style="width:38%"><col style="width:21%"><col style="width:20%"><col style="width:21%"></colgroup>
                     <thead>
-                        <tr style="background:#B5D4F4;">
-                            <td style="padding:5px 10px;font-weight:600;color:#0C447C;">BASIC</td>
-                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">PAY</td>
-                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">INDV%</td>
-                            <td style="padding:5px 6px;font-weight:600;color:#0C447C;text-align:right;">TEAM%</td>
+                        <tr class="ps-th">
+                            <td>Basic</td>
+                            <td>Pay</td>
+                            <td>Indv%</td>
+                            <td>Team%</td>
                         </tr>
                     </thead>
                     <tbody id="ps-body"></tbody>
                 </table>
-                <div style="background:#185FA5;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-                    <span style="font-size:11px;color:rgba(255,255,255,.8);font-weight:600;">Grand Total Payable</span>
-                    <span id="ps-grand" style="font-size:16px;font-weight:800;color:#fff;font-family:'IBM Plex Mono',monospace;">RM 0.00</span>
+                <div class="ps-foot">
+                    <span class="ps-foot-lbl">Grand total payable</span>
+                    <span id="ps-grand" class="ps-foot-val">RM 0.00</span>
                 </div>
-                <div style="padding:10px 14px;background:var(--sheet);">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                        <span style="font-size:10px;color:var(--ink3);">Achievement</span>
-                        <span id="ps-ach-pct" style="font-size:10px;font-weight:700;color:#185FA5;">0%</span>
+                <div class="ps-meta">
+                    <div class="ps-kpi-row">
+                        <span style="font-size:10px;color:var(--ink3);font-weight:600;">Achievement</span>
+                        <span id="ps-ach-pct" style="font-size:11px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;">0%</span>
                     </div>
-                    <div style="height:5px;background:var(--line);border-radius:3px;overflow:hidden;">
-                        <div id="ps-ach-bar" style="height:100%;width:0%;background:#185FA5;border-radius:3px;transition:width .3s;"></div>
+                    <div class="ps-bar">
+                        <div id="ps-ach-bar" class="ps-bar-fill" style="width:0%;transition:width .3s;"></div>
                     </div>
-                    <div style="margin-top:6px;">
-                        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:5px 10px;margin-bottom:4px;">
-                            <div style="font-size:9px;color:#1e40af;font-weight:600;margin-bottom:1px;">Personal Sale</div>
-                            <div id="ps-personal" style="font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#1e40af;">RM 0</div>
+                    <div class="ps-mini">
+                        <div class="ps-mini-box personal">
+                            <div class="ps-mini-lbl">Personal sale</div>
+                            <div id="ps-personal" class="ps-mini-val">RM 0</div>
                         </div>
-                        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:5px 10px;">
-                            <div style="font-size:9px;color:#166534;font-weight:600;margin-bottom:1px;">Team Sale</div>
-                            <div id="ps-team" style="font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#166534;">RM 0</div>
+                        <div class="ps-mini-box team">
+                            <div class="ps-mini-lbl">Team sale</div>
+                            <div id="ps-team" class="ps-mini-val">RM 0</div>
                         </div>
                     </div>
                 </div>
@@ -561,7 +637,7 @@
                 <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
                     <div style="display:flex;justify-content:space-between;">
                         <span>Version</span>
-                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.6.0</span>
+                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.6.1</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;">
                         <span>Database</span>
@@ -970,7 +1046,7 @@
                 });
                 var peopleHtml = peopleWithData.slice(0,4).map(function(p){
                     var bonus = calcPersonBonus(p, month);
-                    var typeColors = { Sales:{c:'#1e40af',tag:''}, Supervisor:{c:'#7c3aed',tag:'👔'}, 'Support Staff':{c:'#92400e',tag:'🛠️'} };
+                    var typeColors = { Sales:{c:'#0f766e',tag:''}, Supervisor:{c:'#1d4ed8',tag:'👔'}, 'Support Staff':{c:'#854d0e',tag:'🛠️'} };
                     var tc = typeColors[bonus.display] || typeColors.Sales;
                     var ach = bonus.ach || 0;
                     var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';

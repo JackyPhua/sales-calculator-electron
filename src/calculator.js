@@ -54,6 +54,47 @@ function getEmployeeType(name) {
     if (t === 'Support Staff') t = 'Support Staff';
     return t;
 }
+/** Role pill: Sales 浅青, Supervisor 浅蓝, Support Staff 浅黄 */
+function getRoleBadgeStyle(empType) {
+    var map = {
+        Sales: { bg: '#ccfbf1', c: '#0f766e', icon: '💼' },
+        Supervisor: { bg: '#dbeafe', c: '#1d4ed8', icon: '👔' },
+        'Support Staff': { bg: '#fef9c3', c: '#854d0e', icon: '🛠️' }
+    };
+    return map[empType] || map.Sales;
+}
+/** Avatar + name strip on Calculation card — role colors */
+function applyRoleColorsToCardHeader(cardIndex, personName) {
+    var av = document.getElementById('card-avatar-' + cardIndex);
+    var nm = document.getElementById('card-name-text-' + cardIndex);
+    var hd = document.getElementById('card-name-display-' + cardIndex);
+    if (!personName) {
+        if (av) {
+            av.style.background = '';
+            av.style.color = '';
+            av.style.removeProperty('background-image');
+        }
+        if (nm) nm.style.color = '';
+        if (hd) {
+            hd.style.borderLeft = '';
+            hd.style.paddingLeft = '';
+            hd.style.background = '';
+        }
+        return;
+    }
+    var tc = getRoleBadgeStyle(getEmployeeType(personName));
+    if (av) {
+        av.style.background = tc.bg;
+        av.style.color = tc.c;
+        av.style.setProperty('background-image', 'none');
+    }
+    if (nm) nm.style.color = tc.c;
+    if (hd) {
+        hd.style.borderLeft = '3px solid ' + tc.c;
+        hd.style.paddingLeft = '11px';
+        hd.style.background = 'linear-gradient(90deg,' + tc.bg + ' 0%,rgba(255,255,255,0) 72%)';
+    }
+}
 function setEmployeeType(name, type) {
     if (!name || !type) return;
     var cfg = window.appState.config;
@@ -68,6 +109,8 @@ function getTierAmt(tiers, pct) {
     return 0;
 }
 window.getEmployeeType = getEmployeeType;
+window.getRoleBadgeStyle = getRoleBadgeStyle;
+window.applyRoleColorsToCardHeader = applyRoleColorsToCardHeader;
 window.setEmployeeType = setEmployeeType;
 window.getTierAmt = getTierAmt;
 
@@ -1073,21 +1116,22 @@ function createBlankSalespersonCard() {
         : '<option value="">Please configure salespeople first</option>';
     
     const card = document.createElement('div');
-    card.className = 'card bg-white rounded-xl shadow-sm p-3 border border-gray-200 relative';
+    card.className = 'card calc-person-card relative';
     card.setAttribute('draggable', 'false');
     card.addEventListener('dragstart', function(e) { e.preventDefault(); });
     card.innerHTML = `
         <!-- Delete button -->
-        <button onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${newId})}" 
-                class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
+        <button type="button" onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${newId})}" 
+                class="calc-card-del"
                 title="Delete this salesperson">
             ✕
         </button>
         
         <!-- Person name display -->
-        <div id="card-name-display-${index}" style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
-            <span id="card-avatar-${index}" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">?</span>
-            <span id="card-name-text-${index}" style="letter-spacing:0.3px;">—</span>
+        <div id="card-name-display-${index}" class="calc-card-hd">
+            <span id="card-avatar-${index}" class="calc-card-av">?</span>
+            <span id="card-name-text-${index}" class="calc-card-name">—</span>
+            <span id="card-type-badge-${index}" style="display:none;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;"></span>
         </div>
         
         <div class="grid grid-cols-2 gap-2">
@@ -1119,8 +1163,7 @@ function createBlankSalespersonCard() {
             </div>
             
             <div class="col-span-2">
-                <div class="h-px bg-gray-200 my-1"></div>
-                <h5 class="text-xs font-semibold text-gray-700 mb-1">📊 Quarterly Data (3 months total)</h5>
+                <h5 class="calc-section-hd calc-section-first">Quarterly totals</h5>
             </div>
             
             <div>
@@ -1150,8 +1193,7 @@ function createBlankSalespersonCard() {
             </div>
             
             <div class="col-span-2">
-                <div class="h-px bg-gray-200 my-1"></div>
-                <h5 class="text-xs font-semibold text-gray-700 mb-1">🎯 Other Targets</h5>
+                <h5 class="calc-section-hd">Other targets</h5>
             </div>
             
             <div>
@@ -1200,44 +1242,40 @@ function createBlankSalespersonCard() {
         </div>
         
         <!-- Preview Section - Initially hidden -->
-        <div id="preview-${index}" class="mt-1 p-2 bg-blue-50 rounded-lg border border-blue-200 hidden">
+        <div id="preview-${index}" class="calc-preview-panel hidden">
             <div class="grid grid-cols-2 gap-1 text-xs">
-                <div>
+                <div id="wrap-achievement-${index}">
                     <span class="text-gray-600">Achievement:</span>
                     <span id="achievement-${index}" class="font-semibold ml-2"></span>
                 </div>
-                <div>
-                    <span class="text-gray-600">Commission:</span>
+                <div id="wrap-commission-${index}">
+                    <span class="text-gray-600" id="lbl-commission-${index}">Commission:</span>
                     <span id="commission-${index}" class="font-semibold ml-2"></span>
                 </div>
-                <div>
-                    <span class="text-gray-600">Collection Incentive:</span>
+                <div id="wrap-collection-bonus-${index}">
+                    <span class="text-gray-600" id="lbl-collection-bonus-${index}">Collection Incentive:</span>
                     <span id="collection-bonus-${index}" class="font-semibold ml-2"></span>
                 </div>
-                <div>
-                    <span class="text-gray-600">Call Incentive:</span>
+                <div id="wrap-call-bonus-${index}">
+                    <span class="text-gray-600" id="lbl-call-bonus-${index}">Call Incentive:</span>
                     <span id="call-bonus-${index}" class="font-semibold ml-2"></span>
                 </div>
-                <div>
-                    <span class="text-gray-600">Quarterly Incentive:</span>
+                <div id="wrap-quarterly-${index}">
+                    <span class="text-gray-600" id="lbl-quarterly-${index}">Quarterly Incentive:</span>
                     <span id="quarterly-${index}" class="font-semibold ml-2"></span>
                 </div>
-                <div>
-                    <span class="text-gray-600">Total Commission:</span>
+                <div id="wrap-total-commission-${index}">
+                    <span class="text-gray-600" id="lbl-total-commission-${index}">Total Commission:</span>
                     <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                 </div>
             </div>
-            <div class="mt-1 text-right">
-                <button onclick="showPayslipPreview(${index})" 
-                        class="px-3 py-1 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
-                    📄 Preview Payslip
-                </button>
+            <div class="text-right">
+                <button type="button" onclick="showPayslipPreview(${index})" class="calc-preview-btn">Preview payslip</button>
             </div>
         </div>
-        <!-- Save footer inside card -->
-        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
-            <button onclick="clearAllQuickCalculateData()" style="padding:6px 16px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:11px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
-            <button onclick="manualSave()" style="padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
+        <div class="calc-card-foot">
+            <button type="button" onclick="clearAllQuickCalculateData()" class="calc-foot-clear">Clear</button>
+            <button type="button" onclick="manualSave()" class="calc-foot-save">Save</button>
         </div>
     `;
     
@@ -1565,21 +1603,21 @@ function renderAllSalespeopleCards() {
             : '<option value="">Please configure salespeople first</option>';
         
         const card = document.createElement('div');
-        card.className = 'card bg-white rounded-xl shadow-sm p-3 border border-gray-200 relative';
+        card.className = 'card calc-person-card relative';
         card.setAttribute('draggable', 'false');
         card.addEventListener('dragstart', function(e) { e.preventDefault(); });
         card.innerHTML = `
             <!-- Delete button -->
-            <button onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${person.id})}" 
-                    class="absolute top-3 right-3 w-8 h-8 bg-red-100 text-red-600 rounded-full hover:bg-red-200 flex items-center justify-center transition-colors"
+            <button type="button" onmousedown="this._pressed=true" onmouseleave="this._pressed=false" onclick="if(this._pressed){this._pressed=false;deleteSalespersonCard(${person.id})}" 
+                    class="calc-card-del"
                     title="Delete this salesperson">
                 ✕
             </button>
             
             <!-- Person name display -->
-            <div id="card-name-display-${index}" style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
-                <span id="card-avatar-${index}" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${person.name ? person.name[0] : '?'}</span>
-                <span id="card-name-text-${index}" style="letter-spacing:0.3px;">${person.name || '—'}</span>
+            <div id="card-name-display-${index}" class="calc-card-hd">
+                <span id="card-avatar-${index}" class="calc-card-av">${person.name ? person.name[0] : '?'}</span>
+                <span id="card-name-text-${index}" class="calc-card-name">${person.name || '—'}</span>
                 <span id="card-type-badge-${index}" style="display:none;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;"></span>
             </div>
             
@@ -1612,8 +1650,7 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div class="col-span-2">
-                    <div class="h-px bg-gray-200 my-1"></div>
-                    <h5 class="text-xs font-semibold text-gray-700 mb-1">📊 Quarterly Data (3 months total)</h5>
+                    <h5 class="calc-section-hd calc-section-first">Quarterly totals</h5>
                 </div>
                 
                 <div>
@@ -1643,8 +1680,7 @@ function renderAllSalespeopleCards() {
                 </div>
                 
                 <div class="col-span-2">
-                    <div class="h-px bg-gray-200 my-1"></div>
-                    <h5 class="text-xs font-semibold text-gray-700 mb-1">🎯 Other Targets</h5>
+                    <h5 class="calc-section-hd">Other targets</h5>
                 </div>
                 
                 <div>
@@ -1693,7 +1729,7 @@ function renderAllSalespeopleCards() {
             </div>
             
             <!-- Preview Section -->
-            <div id="preview-${index}" class="mt-1 p-2 bg-blue-50 rounded-lg border border-blue-200">
+            <div id="preview-${index}" class="calc-preview-panel">
                 <div class="grid grid-cols-2 gap-1 text-xs">
                     <div id="wrap-achievement-${index}">
                         <span class="text-gray-600">Achievement:</span>
@@ -1720,17 +1756,13 @@ function renderAllSalespeopleCards() {
                         <span id="total-commission-${index}" class="font-semibold ml-2 text-green-600"></span>
                     </div>
                 </div>
-                <div class="mt-1 text-right">
-                    <button onclick="showPayslipPreview(${index})" 
-                            class="px-3 py-1 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-medium">
-                        📄 Preview Payslip
-                    </button>
+                <div class="text-right">
+                    <button type="button" onclick="showPayslipPreview(${index})" class="calc-preview-btn">Preview payslip</button>
                 </div>
             </div>
-            <!-- Save footer inside card -->
-            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;">
-                <button onclick="clearAllQuickCalculateData()" style="padding:6px 16px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;font-size:11px;font-weight:600;font-family:'Sora',sans-serif;color:var(--ink3);">🗑️ Clear</button>
-                <button onclick="manualSave()" style="padding:6px 18px;border:none;border-radius:8px;background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;">💾 Save</button>
+            <div class="calc-card-foot">
+                <button type="button" onclick="clearAllQuickCalculateData()" class="calc-foot-clear">Clear</button>
+                <button type="button" onclick="manualSave()" class="calc-foot-save">Save</button>
             </div>
         `;
         
@@ -2185,7 +2217,11 @@ function updateAchievementHero() {
     var fillColor = ach>=100?'linear-gradient(90deg,#10b981,#34d399)':ach>=90?'linear-gradient(90deg,#f59e0b,#fbbf24)':'linear-gradient(90deg,#f43f5e,#fb7185)';
     if (fill)   { fill.style.width=Math.min(ach,100)+'%'; fill.style.background=fillColor; }
     if (bigPct) { bigPct.textContent=ach.toFixed(2)+'%'; bigPct.style.color=color; }
-    if (name)   name.textContent = person.name;
+    if (name) {
+        name.textContent = person.name;
+        var _tcH = getRoleBadgeStyle(getEmployeeType(person.name));
+        name.style.color = _tcH.c;
+    }
     if (sub)    sub.textContent  = 'Target: '+formatCurrency(person.target||0)+' · Sales: '+formatCurrency(person.sales||0);
     if (badge) {
         if (ach>=100){ badge.textContent='✅ Target Hit'; badge.style.background='var(--em-l)'; badge.style.color='var(--em)'; }
@@ -2207,7 +2243,6 @@ function renderPersonSidebar() {
     if (countEl) countEl.textContent = 'Salesperson \u00b7 ' + configPeople.length;
     list.innerHTML = '';
 
-    var colors = ['#dbeafe:#1e40af','#fce7f3:#be185d','#dcfce7:#15803d','#fef9c3:#a16207','#ede9fe:#6d28d9','#fff1f2:#be123c'];
     var companies = (window.appState.config.companies || []).slice();
     var hasCompanies = companies.length > 0;
 
@@ -2233,7 +2268,6 @@ function renderPersonSidebar() {
         groups.push({ company: '', people: sortByType(configPeople) });
     }
 
-    var globalIdx = 0;
     groups.forEach(function(group) {
         if (hasCompanies && group.company) {
             var hdr = document.createElement('div');
@@ -2248,7 +2282,6 @@ function renderPersonSidebar() {
         }
 
         group.people.forEach(function(personName) {
-            var i = globalIdx++;
             var empType = getEmployeeType(personName);
             var currentMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
             var currentYear = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
@@ -2266,8 +2299,6 @@ function renderPersonSidebar() {
             var ach = pData && pData.target > 0 ? (parseFloat(pData.sales)||0) / parseFloat(pData.target) * 100 : 0;
             var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
             var achBg    = ach>=100?'#d1fae5':ach>=90?'#fef3c7':'#ffe4e6';
-            var col = (colors[i % colors.length]||'#f1f5f9:#64748b').split(':');
-            var typeIcon = empType==='Supervisor'?'👔 ':empType==='Support Staff'?'🛠️ ':'💼 ';
 
             var row = document.createElement('div');
             row.className = 'person-row';
@@ -2277,8 +2308,8 @@ function renderPersonSidebar() {
                 row.classList.add('active');
             }
             row.innerHTML =
-                '<div class="p-av" style="background:'+col[0]+';color:'+col[1]+';">'+personName[0]+'</div>'
-                + '<span class="p-name">'+typeIcon+personName+'</span>'
+                '<div class="p-av">'+personName[0]+'</div>'
+                + '<span class="p-name">'+personName+'</span>'
                 + (empType==='Sales' && ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(2)+'%</span>' : '');
 
             row.addEventListener('click', (function(name){ return function() {
@@ -5271,6 +5302,58 @@ function refreshTeamTargetAllocationFromPersonTargetsForYear(cfg, yearStr) {
     });
 }
 
+/** Previous calendar month (for "last month" top performer in Team Target equal split). */
+function prevMonthYearForAllocation(monthU, yearStr) {
+    var monthsFull = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var idx = monthsFull.indexOf((monthU || '').toUpperCase());
+    var y = parseInt(String(yearStr), 10);
+    if (isNaN(y)) y = new Date().getFullYear();
+    if (idx < 0) return { month: monthsFull[new Date().getMonth()], year: String(y) };
+    if (idx === 0) return { month: monthsFull[11], year: String(y - 1) };
+    return { month: monthsFull[idx - 1], year: String(y) };
+}
+
+/**
+ * Among Sales people in namesUpper (uppercase), pick top performer for that month in reportHistory.
+ * Primary: achievement %. Tie: higher sales, then name (stable).
+ * If no targets but some sales, rank by sales. Returns uppercase name or null.
+ */
+function topSalesPerformerFromHistoryForMonth(cfg, namesUpper, bareMonth, yearStr) {
+    var hist = (cfg && cfg.reportHistory) || [];
+    var hEntry = findHistEntry(hist, bareMonth, yearStr);
+    if (!hEntry || !hEntry.data || !namesUpper || namesUpper.length === 0) return null;
+    var allowed = {};
+    namesUpper.forEach(function(n) { allowed[String(n).toUpperCase()] = true; });
+    var candidates = [];
+    hEntry.data.forEach(function(p) {
+        if (!p || !p.name) return;
+        if (getEmployeeType(p.name) !== 'Sales') return;
+        var nu = String(p.name).toUpperCase();
+        if (!allowed[nu]) return;
+        var sales = parseFloat(p.sales) || 0;
+        var target = parseFloat(p.target) || 0;
+        var ach = target > 0 ? (sales / target) * 100 : 0;
+        candidates.push({ nu: nu, ach: ach, sales: sales, hasTarget: target > 0 });
+    });
+    if (candidates.length === 0) return null;
+    candidates.sort(function(a, b) {
+        if (b.ach !== a.ach) return b.ach - a.ach;
+        if (b.sales !== a.sales) return b.sales - a.sales;
+        return a.nu.localeCompare(b.nu);
+    });
+    var top = candidates[0];
+    if (top.ach <= 0 && top.sales <= 0) {
+        var withSales = candidates.filter(function(c) { return c.sales > 0; });
+        if (withSales.length === 0) return null;
+        withSales.sort(function(a, b) {
+            if (b.sales !== a.sales) return b.sales - a.sales;
+            return a.nu.localeCompare(b.nu);
+        });
+        return withSales[0].nu;
+    }
+    return top.nu;
+}
+
 function showTeamTargetAllocationModal() {
     var ex = document.getElementById('team-target-allocation-modal');
     if (ex) ex.remove();
@@ -5474,7 +5557,7 @@ function showTeamTargetAllocationModal() {
 
     var hint = document.createElement('div');
     hint.style.cssText = 'font-size:11px;color:var(--ink4);margin-bottom:10px;line-height:1.45;';
-    hint.textContent = 'Writes the same Sale Target fields as People \u2192 Monthly Target Setting. If that grid already has amounts for this month, they load here when team allocation is empty (scope ALL). After saving Person targets, team snapshot updates for scope ALL.';
+    hint.textContent = 'Writes the same Sale Target fields as People \u2192 Monthly Target Setting. If that grid already has amounts for this month, they load here when team allocation is empty (scope ALL). After saving Person targets, team snapshot updates for scope ALL. Equal split / Auto: extra 0.01% (e.g. 33.34% vs 33.33%) goes to last month\u2019s top Sales achiever in Records; if unknown, alphabetical last.';
     body.appendChild(hint);
 
     var tableWrap = document.createElement('div');
@@ -5545,15 +5628,28 @@ function showTeamTargetAllocationModal() {
     function equalPercents(ns) {
         if (ns.length === 0) return {};
         var base = Math.floor(10000 / ns.length) / 100;
+        var prev = prevMonthYearForAllocation(period.month, period.year);
+        var bonusNu = topSalesPerformerFromHistoryForMonth(cfg, ns, prev.month, prev.year);
+        if (!bonusNu || ns.indexOf(bonusNu) < 0) bonusNu = ns[ns.length - 1];
         var m = {};
         var used = 0;
-        ns.slice(0, -1).forEach(function(n) { m[n] = base; used += base; });
-        m[ns[ns.length - 1]] = Math.round((100 - used) * 100) / 100;
+        ns.forEach(function(n) {
+            if (n === bonusNu) return;
+            m[n] = base;
+            used += base;
+        });
+        m[bonusNu] = Math.round((100 - used) * 100) / 100;
         return m;
     }
 
     function rebuildPctFromSaved(ns) {
         var cm = currentSaved().contributions || {};
+        var allMissing = ns.every(function(n) { return cm[n] == null || cm[n] === ''; });
+        if (allMissing && ns.length > 0) {
+            var eq = equalPercents(ns);
+            ns.forEach(function(n) { pctMap[n] = eq[n]; });
+            return;
+        }
         ns.forEach(function(n) {
             pctMap[n] = cm[n] != null ? parseFloat(cm[n]) : (ns.length ? Math.round(10000 / ns.length) / 100 : 0);
         });
@@ -5925,18 +6021,25 @@ function applyPersonTarget(cardIndex) {
 
 function updateCardForEmployeeType(cardIndex) {
     var person = window.appState.salespeople[cardIndex];
-    if (!person || !person.name) return;
+    var nameDisp = document.getElementById('card-name-display-' + cardIndex);
+    var card = nameDisp ? nameDisp.closest('.card') : null;
+    if (!person) return;
+    if (!person.name) {
+        applyRoleColorsToCardHeader(cardIndex, '');
+        var badgeEmpty = document.getElementById('card-type-badge-' + cardIndex);
+        if (badgeEmpty) badgeEmpty.style.display = 'none';
+        return;
+    }
     var empType = getEmployeeType(person.name);
+    applyRoleColorsToCardHeader(cardIndex, person.name);
     var badge = document.getElementById('card-type-badge-' + cardIndex);
+    var tc = getRoleBadgeStyle(empType);
     if (badge) {
-        var typeColors = { Sales:{bg:'#dbeafe',c:'#1e40af',icon:'💼'}, Supervisor:{bg:'#f3e8ff',c:'#7c3aed',icon:'👔'}, 'Support Staff':{bg:'#fef3c7',c:'#92400e',icon:'🛠️'} };
-        var tc = typeColors[empType] || typeColors.Sales;
         badge.style.display = 'inline-block';
         badge.style.background = tc.bg;
         badge.style.color = tc.c;
         badge.textContent = tc.icon + ' ' + empType;
     }
-    var card = badge ? badge.closest('.card') : null;
     if (!card) return;
 
     // Remove existing notice
@@ -5969,7 +6072,7 @@ function updateCardForEmployeeType(cardIndex) {
         var _pmCfg = window.appState.config;
         var _pmRates = _pmCfg.person_merchandiser_rates || {};
         var rate = (_pmRates[person.name] != null ? Number(_pmRates[person.name]) : Number(_pmCfg.merchandiser_block_rate)) || 10;
-        n.style.cssText = 'background:'+(empType==='Supervisor'?'#f3e8ff':'#fef3c7')+';border:1px solid '+(empType==='Supervisor'?'#ddd6fe':'#fde68a')+';border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:'+(empType==='Supervisor'?'#6b21a8':'#92400e')+';';
+        n.style.cssText = 'background:'+(empType==='Supervisor'?'#dbeafe':'#fef9c3')+';border:1px solid '+(empType==='Supervisor'?'#93c5fd':'#facc15')+';border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:'+(empType==='Supervisor'?'#1e40af':'#854d0e')+';';
         if (empType === 'Supervisor') {
             n.innerHTML = '<strong>👔 Supervisor</strong> — Earns from team performance. Sale/Collection/Call Incentives are calculated automatically from team totals on save. No individual target input needed.';
         } else {
@@ -6890,26 +6993,25 @@ function renderPeopleList() {
         return;
     }
     container.innerHTML = '';
-    var colors = ['#dbeafe:#1e40af','#fce7f3:#be185d','#dcfce7:#15803d','#fef9c3:#a16207','#ede9fe:#6d28d9','#fff1f2:#be123c'];
     people.forEach(function(name, i) {
         var salary = window.appState.config.base_salaries[name] || 0;
         var allow  = window.appState.config.allowances[name] || {};
         var totalAllow = Object.values(allow).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
         var hasPersonal = window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[name];
-        var col = (colors[i%colors.length]||'#f1f5f9:#64748b').split(':');
         var empType = getEmployeeType(name);
-        var typeColors = { Sales:{bg:'#dbeafe',c:'#1e40af',icon:'💼'}, Supervisor:{bg:'#f3e8ff',c:'#7c3aed',icon:'👔'}, 'Support Staff':{bg:'#fef3c7',c:'#92400e',icon:'🛠️'} };
-        var tc = typeColors[empType] || typeColors.Sales;
+        var tc = getRoleBadgeStyle(empType);
         var item = document.createElement('div');
-        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s,opacity .15s;margin-bottom:8px;cursor:grab;';
+        item.className = 'people-list-row';
+        item.setAttribute('data-type', empType);
+        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(90deg,'+tc.bg+' 0%,var(--paper) 40%);border:1px solid var(--line);border-left:3px solid '+tc.c+';border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s,opacity .15s;margin-bottom:8px;cursor:grab;';
         item.setAttribute('draggable', 'true');
         item.setAttribute('data-name', name);
         item.innerHTML =
             '<div style="color:#cbd5e1;font-size:16px;cursor:grab;flex-shrink:0;" title="Drag to reorder">⠿</div>'
-            + '<div style="width:38px;height:38px;border-radius:50%;background:'+col[0]+';color:'+col[1]+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
+            + '<div style="width:38px;height:38px;border-radius:50%;background:'+tc.bg+';color:'+tc.c+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
             + '<div style="flex:1;">'
             + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'
-            + '<div style="font-size:14px;font-weight:700;color:var(--ink);">'+name+'</div>'
+            + '<div style="font-size:14px;font-weight:700;color:'+tc.c+';">'+name+'</div>'
             + '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">'+tc.icon+' '+empType+'</span>'
             + '</div>'
             + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
@@ -6963,7 +7065,7 @@ function renderPeopleList() {
             btns.appendChild(bT);
         } else if (empType === 'Supervisor') {
             var bSI = document.createElement('button');
-            bSI.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:#f3e8ff;color:#7c3aed;width:140px;';
+            bSI.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #93c5fd;background:#dbeafe;color:#1d4ed8;width:140px;';
             bSI.textContent = '👔 Incentive Tiers';
             bSI.addEventListener('click',(function(n){return function(){showSupervisorIncentiveModal(n);};})(name));
             var spacer = document.createElement('div');
@@ -6972,7 +7074,7 @@ function renderPeopleList() {
             btns.appendChild(spacer);
         } else if (empType === 'Support Staff') {
             var bMR = document.createElement('button');
-            bMR.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #fde68a;background:#fef3c7;color:#92400e;width:140px;';
+            bMR.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #facc15;background:#fef9c3;color:#854d0e;width:140px;';
             bMR.textContent = '🛠️ Block Rate';
             bMR.addEventListener('click',(function(n){return function(){showMerchandiserRateModal(n);};})(name));
             var spacer2 = document.createElement('div');
@@ -7626,8 +7728,6 @@ function renderDashboard() {
         if (tA !== tB) return tA - tB;
         return b.totalComm - a.totalComm;
     });
-    var colors = ['#1e40af','#be185d','#15803d','#a16207','#6d28d9','#be123c'];
-    var bgColors = ['#dbeafe','#fce7f3','#dcfce7','#fef9c3','#ede9fe','#fff1f2'];
     var medals = ['🥇','🥈','🥉'];
     var html = '';
     html += '<div style="margin-bottom:20px;"><div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;">Team Dashboard</div>';
@@ -7638,24 +7738,23 @@ function renderDashboard() {
     var achColor = teamAch>=100?'#059669':'#d97706';
     html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:16px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+teamAch.toFixed(2)+'%</div></div>';
     html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">TOTAL COMM/INC PAID</div><div style="font-size:16px;font-weight:800;color:#059669;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamComm)+'</div></div>';
-    html += '<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:16px;font-weight:800;color:#7c3aed;margin-top:4px;white-space:nowrap;">🏆 '+topPerson+'</div></div>';
+    var topTc = (topPerson && topPerson !== '—') ? getRoleBadgeStyle(getEmployeeType(topPerson)) : { bg: '#f1f5f9', c: '#64748b', icon: '🏆' };
+    html += '<div style="background:linear-gradient(135deg,'+topTc.bg+' 0%,#fff 55%);border:1.5px solid var(--line);border-left:3px solid '+topTc.c+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:16px;font-weight:800;color:'+topTc.c+';margin-top:4px;white-space:nowrap;">'+topTc.icon+' '+topPerson+'</div></div>';
     html += '</div>';
     html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
     ranked.forEach(function(p, i) {
-        var c = colors[i%colors.length]; var bg = bgColors[i%bgColors.length];
+        var tc = getRoleBadgeStyle(p.type);
         var achC = p.ach>=100?'#059669':p.ach>=90?'#d97706':'#dc2626';
-        var typeIcon = p.type==='Supervisor'?'👔':p.type==='Support Staff'?'🛠️':'💼';
-        var typeBg = p.type==='Supervisor'?'#f3e8ff':p.type==='Support Staff'?'#fef3c7':'#dbeafe';
-        var typeColor = p.type==='Supervisor'?'#7c3aed':p.type==='Support Staff'?'#92400e':'#1e40af';
+        var typeIcon = tc.icon;
         var typeDisplay = p.type==='Supervisor'?'Management Staff':p.type;
-        var typeLabel = '<span style="background:'+typeBg+';color:'+typeColor+';padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:4px;">'+typeIcon+' '+typeDisplay+'</span>';
+        var typeLabel = '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:9px;font-weight:700;margin-left:6px;">'+typeIcon+' '+typeDisplay+'</span>';
         var maxSale = Math.max.apply(null, p.salesByMonth.concat([1]));
         var bars = p.salesByMonth.map(function(v,mi){
             var h = maxSale>0?Math.max(3,(v/maxSale)*28):3;
-            return '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:24px;"><div style="width:20px;height:'+h+'px;background:'+(v>0?c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.3)+';"></div><div style="font-size:6px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
+            return '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:24px;"><div style="width:20px;height:'+h+'px;background:'+(v>0?tc.c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.35)+';"></div><div style="font-size:6px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
         }).join('');
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-bottom:8px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) minmax(0,1.05fr);align-items:center;gap:10px 12px;max-width:100%;box-sizing:border-box;">';
-        html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;flex-shrink:0;border-radius:50%;background:'+bg+';color:'+c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div style="min-width:0;"><div style="font-size:13px;font-weight:700;color:#0f172a;overflow-wrap:break-word;line-height:1.25;">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
+        html += '<div style="background:linear-gradient(90deg,'+tc.bg+' 0%,#fff 38%);border:1px solid #e5e7eb;border-left:3px solid '+tc.c+';border-radius:14px;padding:16px 18px;margin-bottom:8px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) minmax(0,1.05fr);align-items:center;gap:10px 12px;max-width:100%;box-sizing:border-box;">';
+        html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;flex-shrink:0;border-radius:50%;background:'+tc.bg+';color:'+tc.c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div style="min-width:0;"><div style="font-size:13px;font-weight:700;overflow-wrap:break-word;line-height:1.25;"><span style="color:'+tc.c+';">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+'</span>'+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
         html += '<div style="min-width:0;display:flex;align-items:end;gap:2px;height:35px;overflow-x:auto;">'+bars+'</div>';
         var monoAmt = 'font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;text-align:right;overflow-wrap:break-word;word-break:break-word;line-height:1.25;';
         // Column 1: Total Sales or Total Blocks or "—"
@@ -7664,16 +7763,16 @@ function renderDashboard() {
         } else if (p.type === 'Support Staff') {
             html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Blocks</div><div style="'+monoAmt+'">'+p.totalBlocks+'</div></div>';
         } else {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:#7c3aed;overflow-wrap:break-word;">Team</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;">Team</div></div>';
         }
         // Column 2: Achievement or "—"
         if (p.type === 'Sales') {
             html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
         } else {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+typeColor+';overflow-wrap:break-word;line-height:1.25;">'+typeIcon+' '+typeDisplay+'</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;line-height:1.25;">'+typeIcon+' '+typeDisplay+'</div></div>';
         }
         var commLabel = p.type==='Supervisor'?'Sale Incentive':p.type==='Support Staff'?'Block Incentive':'Commission';
-        html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="'+monoAmt+'color:#2563eb;">'+fmt(p.totalComm)+'</div></div>';
+        html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="'+monoAmt+'color:'+tc.c+';">'+fmt(p.totalComm)+'</div></div>';
         html += '</div>';
     });
     // Monthly Sales Trend - only show for ALL or Sales group
@@ -7685,8 +7784,9 @@ function renderDashboard() {
     var maxMonth = Math.max.apply(null, monthTotals.concat([1]));
     MONTHS.forEach(function(m,mi){
         var total = monthTotals[mi]; var h = maxMonth>0?Math.max(6,(total/maxMonth)*80):6; var hasData = total>0;
+        var salesBarC = getRoleBadgeStyle('Sales').c;
         html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;">';
-        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,#3b82f6,#1d4ed8)':'#f1f5f9')+';border-radius:4px 4px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
+        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,'+salesBarC+','+salesBarC+'cc)':'#f1f5f9')+';border-radius:4px 4px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
         html += '<div style="font-size:9px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';text-align:center;white-space:nowrap;">'+m+(hasData?'<br><span style="font-family:\'IBM Plex Mono\',monospace;font-size:8px;color:#475569;">'+fmt(total)+'</span>':'')+'</div></div>';
     });
     html += '</div></div>';
