@@ -483,6 +483,113 @@ function findHistEntry(history, bareM, year) {
         || history.find(function(r){ return (r.month||'').toUpperCase() === bareM.toUpperCase(); });
 }
 
+// ==================== Employee Start (Join) Month ====================
+var _MONTH_ORDER_SY = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+/** Convert a bare month + year into a comparable "YYYY-MM" string. */
+function monthYearToYM(bareM, year) {
+    var idx = _MONTH_ORDER_SY.indexOf((bareM || '').toUpperCase());
+    if (idx < 0) idx = 0;
+    var y = parseInt(year, 10) || new Date().getFullYear();
+    return y + '-' + String(idx + 1).padStart(2, '0');
+}
+
+// Accepts "YYYY-MM" (legacy) or "YYYY-MM-DD" (with day). Returns the value as stored, or null.
+var _DATE_OR_MONTH_RE = /^\d{4}-\d{2}(-\d{2})?$/;
+
+/** A person's configured start (join) date "YYYY-MM-DD" (or legacy "YYYY-MM"), or null if not set. */
+function getEmployeeStartYM(name) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_start_month) return null;
+    var ym = cfg.employee_start_month[(name || '').toUpperCase()];
+    return (ym && _DATE_OR_MONTH_RE.test(ym)) ? ym : null;
+}
+
+function setEmployeeStartYM(name, ym) {
+    var cfg = window.appState.config;
+    if (!cfg.employee_start_month) cfg.employee_start_month = {};
+    var nu = (name || '').toUpperCase();
+    if (ym && _DATE_OR_MONTH_RE.test(ym)) cfg.employee_start_month[nu] = ym;
+    else delete cfg.employee_start_month[nu];
+}
+
+/** A person's configured end (resign) date "YYYY-MM-DD" (or legacy "YYYY-MM"), or null if not set. */
+function getEmployeeEndYM(name) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_end_month) return null;
+    var ym = cfg.employee_end_month[(name || '').toUpperCase()];
+    return (ym && _DATE_OR_MONTH_RE.test(ym)) ? ym : null;
+}
+
+function setEmployeeEndYM(name, ym) {
+    var cfg = window.appState.config;
+    if (!cfg.employee_end_month) cfg.employee_end_month = {};
+    var nu = (name || '').toUpperCase();
+    if (ym && _DATE_OR_MONTH_RE.test(ym)) cfg.employee_end_month[nu] = ym;
+    else delete cfg.employee_end_month[nu];
+}
+
+/** True if the person was employed in the given report month (bareM + year): start <= month <= end.
+ *  Report visibility is month-granular, so any stored day is compared on its YYYY-MM prefix. */
+function isEmployeeActiveInMonth(name, bareM, year) {
+    var ym = monthYearToYM(bareM, year);
+    var startYM = getEmployeeStartYM(name);
+    if (startYM && ym < startYM.slice(0, 7)) return false; // not joined yet (by month)
+    var endYM = getEmployeeEndYM(name);
+    if (endYM && ym > endYM.slice(0, 7)) return false;      // already resigned (by month)
+    return true;
+}
+
+/** Roster active/inactive flag (default active). Inactive = resigned/hidden from daily entry. */
+function isEmployeeActive(name) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_active) return true; // default active
+    var v = cfg.employee_active[(name || '').toUpperCase()];
+    return v !== false; // only explicit false = inactive
+}
+
+function setEmployeeActive(name, active) {
+    var cfg = window.appState.config;
+    if (!cfg.employee_active) cfg.employee_active = {};
+    var nu = (name || '').toUpperCase();
+    if (active) {
+        delete cfg.employee_active[nu]; // active is default → keep config lean
+        setEmployeeEndYM(nu, ''); // reactivating clears the resign month so they fully return
+    } else {
+        cfg.employee_active[nu] = false;
+        // When marking inactive, stamp the resign (end) month to current month if not already set,
+        // so Records / Annual stop showing them after this month while keeping past history.
+        if (!getEmployeeEndYM(nu)) {
+            var now = new Date();
+            setEmployeeEndYM(nu, now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+        }
+    }
+}
+
+window.getEmployeeStartYM = getEmployeeStartYM;
+window.setEmployeeStartYM = setEmployeeStartYM;
+window.getEmployeeEndYM = getEmployeeEndYM;
+window.setEmployeeEndYM = setEmployeeEndYM;
+window.isEmployeeActiveInMonth = isEmployeeActiveInMonth;
+window.isEmployeeActive = isEmployeeActive;
+window.setEmployeeActive = setEmployeeActive;
+window.monthYearToYM = monthYearToYM;
+
+/** Months in the calendar quarter that contains bareM (e.g. APR → APR,MAY,JUN) */
+function quarterMonthsForBareMonth(bareM) {
+    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var i = months.indexOf((bareM || '').toUpperCase());
+    if (i < 0) return null;
+    var s = Math.floor(i / 3) * 3;
+    return [months[s], months[s + 1], months[s + 2]];
+}
+
+/** Only MAR/JUN/SEP/DEC — end of each 3-month period — show cumulative Quarterly Target/Sales */
+function isQuarterEndMonthForRollup(bareM) {
+    var m = (bareM || '').toUpperCase();
+    return m === 'MAR' || m === 'JUN' || m === 'SEP' || m === 'DEC';
+}
+
 // Helper: filter reportHistory entries for a given year
 function filterHistByYear(history, year) {
     var yr = String(year || new Date().getFullYear());
@@ -856,7 +963,7 @@ async function initQuickCalculate() {
     if (window.appState.salespeople && window.appState.salespeople.length > 0) {
         if (container) container.innerHTML = '';
         renderAllSalespeopleCards();
-        updateSummaryView();
+        rerunQuickCalcDerivedFields();
         console.log('✅ Quick Calculate restored existing cards:', window.appState.salespeople.length);
         return;
     }
@@ -1139,7 +1246,7 @@ function createBlankSalespersonCard() {
                 <input type="hidden" id="name-${index}" value="">
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Target (RM)</label>
                 <input type="number" 
                        id="target-${index}"
@@ -1151,7 +1258,7 @@ function createBlankSalespersonCard() {
                        title="Set in Salesperson → 🎯 Target">
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Sales (RM)</label>
                 <input type="number" 
                        id="sales-${index}"
@@ -1166,7 +1273,7 @@ function createBlankSalespersonCard() {
                 <h5 class="calc-section-hd calc-section-first">Quarterly totals</h5>
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Target (RM)</label>
                 <input type="number" 
                        id="quarterly-target-${index}"
@@ -1179,7 +1286,7 @@ function createBlankSalespersonCard() {
                 <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total target</p>
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Sales (RM)</label>
                 <input type="number" 
                        id="quarterly-sales-${index}"
@@ -1196,7 +1303,7 @@ function createBlankSalespersonCard() {
                 <h5 class="calc-section-hd">Other targets</h5>
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Collection Target (Outlets)</label>
                 <input type="number" 
                        id="collection-target-${index}"
@@ -1208,7 +1315,7 @@ function createBlankSalespersonCard() {
                        title="Set outlets in Salesperson → Target">
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Collected Outlets</label>
                 <input type="number" 
                        id="collection-amount-${index}"
@@ -1218,7 +1325,7 @@ function createBlankSalespersonCard() {
                        oninput="updateSalespersonData(${index})">
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Target)</label>
                 <input type="number" 
                        id="call-target-${index}"
@@ -1230,7 +1337,7 @@ function createBlankSalespersonCard() {
                        title="Set in Salesperson → Target">
             </div>
             
-            <div>
+            <div class="calc-input-cell">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Actual)</label>
                 <input type="number" 
                        id="call-actual-${index}"
@@ -1528,6 +1635,96 @@ function _doClearAllData() {
 }
 
 // Delete salesperson configuration
+function toggleEmployeeActive(personName, makeActive) {
+    if (!personName) return;
+    if (typeof setEmployeeActive === 'function') setEmployeeActive(personName, makeActive);
+    if (typeof saveConfig === 'function') saveConfig();
+    renderPeopleList();
+    if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+    if (makeActive) {
+        showToast('✅', personName + ' set to Active');
+    } else {
+        var endYM = (typeof getEmployeeEndYM === 'function') ? getEmployeeEndYM(personName) : null;
+        showToast('🚪', personName + ' set to Inactive' + (endYM ? ' (resigned ' + endYM + ')' : ''));
+    }
+}
+window.toggleEmployeeActive = toggleEmployeeActive;
+
+// Pop up a date picker when toggling a person's Active/Inactive status.
+// - Marking Active   → pick the join (start) date → person appears from that month onwards.
+// - Marking Inactive → pick the resign (end) date → person hidden after that month.
+function showEmployeeStatusDatePicker(personName, currentlyActive) {
+    if (!personName) return;
+    var makeActive = !currentlyActive;
+    var now = new Date();
+    var defaultDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    var existingRaw = makeActive
+        ? ((typeof getEmployeeStartYM === 'function' && getEmployeeStartYM(personName)) || '')
+        : ((typeof getEmployeeEndYM === 'function' && getEmployeeEndYM(personName)) || '');
+    // A <input type="date"> only accepts full YYYY-MM-DD; legacy month-only values fall back to today.
+    var existing = /^\d{4}-\d{2}-\d{2}$/.test(existingRaw) ? existingRaw : defaultDate;
+
+    var headBg = makeActive ? 'linear-gradient(135deg,#065f46,#16a34a)' : 'linear-gradient(135deg,#7f1d1d,#dc2626)';
+    var title  = makeActive ? '● Set Active' : '○ Set Inactive';
+    var lbl    = makeActive ? 'Active from (Join date)' : 'Inactive from (Resign date)';
+    var hint   = makeActive
+        ? 'This person will appear in Records / Annual Report from this month onwards.'
+        : 'This person will not appear in Records / Annual Report after this month. Past history is kept.';
+    var accent = makeActive ? '#16a34a' : '#dc2626';
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:16px;max-width:380px;width:100%;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.addEventListener('click', function (e) { e.stopPropagation(); });
+    card.innerHTML =
+        '<div style="background:' + headBg + ';padding:18px 22px;color:#fff;">'
+        + '<div style="font-size:16px;font-weight:800;">' + title + '</div>'
+        + '<div style="font-size:12px;opacity:.7;margin-top:3px;">' + personName + '</div></div>'
+        + '<div style="padding:20px 22px;">'
+        + '<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px;">' + lbl + '</label>'
+        + '<input id="es-date" type="date" value="' + existing + '" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;">'
+        + '<div style="font-size:11px;color:var(--ink3);margin-top:8px;line-height:1.5;">' + hint + '</div>'
+        + '</div>'
+        + '<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="es-cancel" style="padding:9px 18px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
+        + '<button id="es-save" style="padding:9px 22px;border:none;border-radius:var(--r);background:' + accent + ';color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">Confirm</button>'
+        + '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    document.getElementById('es-cancel').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('es-save').addEventListener('click', function () {
+        var dateVal = document.getElementById('es-date').value;
+        overlay.remove();
+        applyEmployeeStatus(personName, makeActive, dateVal);
+    });
+}
+window.showEmployeeStatusDatePicker = showEmployeeStatusDatePicker;
+
+function applyEmployeeStatus(personName, makeActive, ym) {
+    if (!personName) return;
+    var cfg = window.appState.config;
+    if (!cfg.employee_active) cfg.employee_active = {};
+    var nu = personName.toUpperCase();
+    if (makeActive) {
+        delete cfg.employee_active[nu];
+        if (typeof setEmployeeStartYM === 'function') setEmployeeStartYM(personName, ym || '');
+        if (typeof setEmployeeEndYM === 'function') setEmployeeEndYM(personName, '');
+    } else {
+        cfg.employee_active[nu] = false;
+        if (typeof setEmployeeEndYM === 'function') setEmployeeEndYM(personName, ym || '');
+    }
+    if (typeof saveConfig === 'function') saveConfig();
+    renderPeopleList();
+    if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+    if (makeActive) {
+        showToast('✅', personName + ' set to Active' + (ym ? ' (from ' + ym + ')' : ''));
+    } else {
+        showToast('🚪', personName + ' set to Inactive' + (ym ? ' (resigned ' + ym + ')' : ''));
+    }
+}
+window.applyEmployeeStatus = applyEmployeeStatus;
+
 function deleteSalespersonConfig(personName) {
     if (!personName) return;
 
@@ -1582,6 +1779,17 @@ function deleteSalespersonConfig(personName) {
     });
 }
 
+/** After rebuilding salesperson cards from appState, sync inputs → state and refresh KPIs / commission workspace / summary. */
+function rerunQuickCalcDerivedFields() {
+    var n = (window.appState.salespeople || []).length;
+    for (var i = 0; i < n; i++) {
+        if (typeof applyPersonTarget === 'function') applyPersonTarget(i);
+        updateSalespersonData(i);
+    }
+    if (n === 0 && typeof updateCalcWorkspace === 'function') updateCalcWorkspace();
+    updateSummaryView();
+}
+
 // Re-render all cards
 function renderAllSalespeopleCards() {
     const container = document.getElementById('salespeople-container');
@@ -1626,9 +1834,9 @@ function renderAllSalespeopleCards() {
                     <input type="hidden" id="name-${index}" value="${person.name || ''}">
                 </div>
                 
-                <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Target (RM)</label>
-                    <input type="number" 
+            <div class="calc-input-cell">
+                <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Target (RM)</label>
+                <input type="number" 
                        id="target-${index}"
                        class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg"
                        placeholder="Set in Salesperson tab"
@@ -1636,10 +1844,10 @@ function renderAllSalespeopleCards() {
                        disabled readonly
                        style="background:#f1f5f9;color:#64748b;cursor:not-allowed;pointer-events:none;"
                        title="Set in Salesperson → Target">
-                </div>
-                
-                <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Sales (RM)</label>
+            </div>
+            
+            <div class="calc-input-cell">
+                <label class="block text-xs font-medium text-gray-700 mb-1">Monthly Sales (RM)</label>
                     <input type="number" 
                            id="sales-${index}"
                            class="input-field w-full px-3 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -1653,7 +1861,7 @@ function renderAllSalespeopleCards() {
                     <h5 class="calc-section-hd calc-section-first">Quarterly totals</h5>
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Target (RM)</label>
                     <input type="number" 
                        id="quarterly-target-${index}"
@@ -1666,7 +1874,7 @@ function renderAllSalespeopleCards() {
                     <p class="text-xs text-gray-500" style="margin-top:2px;">3 months total target</p>
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Quarterly Sales (RM)</label>
                     <input type="number" 
                        id="quarterly-sales-${index}"
@@ -1683,7 +1891,7 @@ function renderAllSalespeopleCards() {
                     <h5 class="calc-section-hd">Other targets</h5>
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Collection Target (Outlets)</label>
                     <input type="number" 
                        id="collection-target-${index}"
@@ -1695,7 +1903,7 @@ function renderAllSalespeopleCards() {
                        title="Set in Salesperson → Target">
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Collected Outlets</label>
                     <input type="number" 
                            id="collection-amount-${index}"
@@ -1705,7 +1913,7 @@ function renderAllSalespeopleCards() {
                            oninput="updateSalespersonData(${index})">
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Target)</label>
                     <input type="number" 
                        id="call-target-${index}"
@@ -1717,7 +1925,7 @@ function renderAllSalespeopleCards() {
                        title="Set in Salesperson → Target">
                 </div>
                 
-                <div>
+                <div class="calc-input-cell">
                     <label class="block text-xs font-medium text-gray-700 mb-1">Active Calls (Actual)</label>
                     <input type="number" 
                            id="call-actual-${index}"
@@ -1783,7 +1991,8 @@ function renderAllSalespeopleCards() {
 }
 
 // Update salesperson data
-function updateSalespersonData(index) {
+function updateSalespersonData(index, opts) {
+    opts = opts || {};
     const person = window.appState.salespeople[index];
     if (!person) return;
     
@@ -1817,18 +2026,15 @@ function updateSalespersonData(index) {
         : (parseFloat(targetInput ? targetInput.value : 0) || 0);
     person.sales = parseFloat(salesInput.value) || 0;
 
-    // ── Re-calculate quarterly fields if quarter-end month ──
-    // (current month target/sales may have changed, so re-accumulate)
+    // ── Re-calculate quarterly totals: full quarter containing selected month (Sales only)
     const _curMonth = (document.getElementById('report-month')?.value || '').toUpperCase();
-    if (['MAR','JUN','SEP','DEC'].includes(_curMonth) && person.name) {
-        const _months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        const _ci = _months.indexOf(_curMonth);
+    const _histYear = parseInt((document.getElementById('report-year')||{}).value, 10) || new Date().getFullYear();
+    if (person.name && getEmployeeType(person.name) === 'Sales' && _curMonth) {
         const _history = window.appState.config.reportHistory || [];
         const _nameUpper = person.name.toUpperCase();
+        const _qMonths = quarterMonthsForBareMonth(_curMonth);
 
-        // Helper: get data from Excel first, then history
         function _getData(monthName) {
-            // Try imported Excel data first
             const exData = window.appState.importedExcelData;
             if (exData) {
                 const personEx = exData.find(p => (p.name || '').toUpperCase() === _nameUpper);
@@ -1837,31 +2043,44 @@ function updateSalespersonData(index) {
                     if (md) return { target: parseFloat(md.target) || 0, sales: parseFloat(md.sales) || 0 };
                 }
             }
-            // Fallback to history
-            const entries = _history.filter(r => bareMonth(r.month) === monthName || (r.month || '').toUpperCase() === monthName);
-            if (entries.length > 0) {
-                const pd = (entries[entries.length - 1].data || []).find(p => (p.name || '').toUpperCase() === _nameUpper);
+            const hEntry = findHistEntry(_history, monthName, _histYear);
+            if (hEntry && hEntry.data) {
+                const pd = hEntry.data.find(p => (p.name || '').toUpperCase() === _nameUpper);
                 if (pd) return { target: parseFloat(pd.target) || 0, sales: parseFloat(pd.sales) || 0 };
+            }
+            var _ptKey = _histYear + '-' + monthName;
+            var _ptRow = window.appState.config.person_targets && window.appState.config.person_targets[_nameUpper];
+            var _ptVal = _ptRow && _ptRow[_ptKey];
+            if (_ptVal != null && _ptVal !== '') {
+                var _tv = parseFloat(_ptVal);
+                if (!isNaN(_tv)) return { target: _tv, sales: 0 };
             }
             return null;
         }
 
-        let _qT = 0, _qS = 0;
-        for (let mi = _ci - 2; mi <= _ci; mi++) {
-            if (mi < 0) continue;
-            const qm = _months[mi];
-            if (qm === _curMonth) {
-                _qT += person.target;
-                _qS += person.sales;
-            } else {
-                const d = _getData(qm);
-                if (d) { _qT += d.target; _qS += d.sales; }
+        if (!isQuarterEndMonthForRollup(_curMonth)) {
+            const _qtEl0 = document.getElementById('quarterly-target-' + index);
+            const _qsEl0 = document.getElementById('quarterly-sales-' + index);
+            var _naTitle = 'Quarterly Target/Sales only in Mar/Jun/Sep/Dec (each 3-month period end).';
+            if (_qtEl0) { _qtEl0.value = ''; person.quarterlyTarget = 0; _qtEl0.title = _naTitle; }
+            if (_qsEl0) { _qsEl0.value = ''; person.quarterlySales = 0; _qsEl0.title = _naTitle; }
+        } else if (_qMonths) {
+            let _qT = 0, _qS = 0;
+            for (var _qi = 0; _qi < _qMonths.length; _qi++) {
+                var qm = _qMonths[_qi];
+                if (qm === _curMonth) {
+                    _qT += person.target;
+                    _qS += person.sales;
+                } else {
+                    var d = _getData(qm);
+                    if (d) { _qT += d.target; _qS += d.sales; }
+                }
             }
+            const _qtEl = document.getElementById('quarterly-target-' + index);
+            const _qsEl = document.getElementById('quarterly-sales-' + index);
+            if (_qtEl) { var _qtR = Math.round(_qT * 100) / 100; _qtEl.value = _qtR ? _qtR.toFixed(2) : ''; person.quarterlyTarget = _qtR; }
+            if (_qsEl) { var _qsR = Math.round(_qS * 100) / 100; _qsEl.value = _qsR ? _qsR.toFixed(2) : ''; person.quarterlySales = _qsR; }
         }
-        const _qtEl = document.getElementById('quarterly-target-' + index);
-        const _qsEl = document.getElementById('quarterly-sales-' + index);
-        if (_qtEl) { var _qtR = Math.round(_qT * 100) / 100; _qtEl.value = _qtR ? _qtR.toFixed(2) : ''; person.quarterlyTarget = _qtR; }
-        if (_qsEl) { var _qsR = Math.round(_qS * 100) / 100; _qsEl.value = _qsR ? _qsR.toFixed(2) : ''; person.quarterlySales = _qsR; }
     }
 
     person.quarterlyTarget = parseFloat(document.getElementById(`quarterly-target-${index}`).value) || 0;
@@ -2015,6 +2234,7 @@ function updateSalespersonData(index) {
     // Update summary
     updateSummaryView();
     if (typeof updateLivePayslip === 'function') updateLivePayslip();
+    if (!opts.skipWorkspace && typeof updateCalcWorkspace === 'function') updateCalcWorkspace();
 
     // Auto-save debounced 500ms
     if (window._autoSaveTimer) clearTimeout(window._autoSaveTimer);
@@ -2205,7 +2425,41 @@ function updateAchievementHero() {
     var hero = document.getElementById('ach-hero-card');
     if (!hero) return;
     var person = window.appState.salespeople[0];
-    if (!person || !person.name || !person.target) { hero.style.display='none'; return; }
+    if (!person || !person.name) { hero.style.display='none'; return; }
+    var empTypeH = getEmployeeType(person.name);
+    var monthH = ((document.getElementById('report-month')||{}).value||'JAN').toUpperCase();
+    var yearH = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+
+    if (empTypeH === 'Supervisor') {
+        var tt = cwSupervisorTeamTotals(monthH, yearH);
+        var teamAch = tt.teamTarget > 0 ? (tt.teamSales / tt.teamTarget) * 100 : 0;
+        hero.style.display = 'block';
+        var fill = document.getElementById('ach-progress-fill');
+        var bigPct = document.getElementById('ach-big-pct');
+        var name   = document.getElementById('ach-person-name');
+        var sub    = document.getElementById('ach-sub-text');
+        var badge  = document.getElementById('ach-badge');
+        var color  = teamAch >= 100 ? 'var(--em)' : teamAch >= 90 ? 'var(--am)' : 'var(--rose)';
+        var fillColor = teamAch>=100?'linear-gradient(90deg,#10b981,#34d399)':teamAch>=90?'linear-gradient(90deg,#f59e0b,#fbbf24)':'linear-gradient(90deg,#f43f5e,#fb7185)';
+        if (fill)   { fill.style.width = tt.teamTarget > 0 ? Math.min(teamAch,100)+'%' : '0%'; fill.style.background=fillColor; }
+        if (bigPct) { bigPct.textContent = formatCurrency(tt.teamSales); bigPct.style.color=color; }
+        if (name) {
+            name.textContent = person.name;
+            var _tcHs = getRoleBadgeStyle(empTypeH);
+            name.style.color = _tcHs.c;
+        }
+        if (sub)    sub.textContent = '';
+        if (badge) {
+            if (tt.teamTarget <= 0 && tt.teamSales <= 0) { badge.textContent='\u2014'; badge.style.background='#f1f5f9'; badge.style.color='#64748b'; }
+            else if (tt.teamTarget <= 0) { badge.textContent='Team sales'; badge.style.background='#e0e7ff'; badge.style.color='#3730a3'; }
+            else if (teamAch>=100){ badge.textContent='✅ Target Hit'; badge.style.background='var(--em-l)'; badge.style.color='var(--em)'; }
+            else if (teamAch>=90){ badge.textContent='⚡ Almost There'; badge.style.background='var(--am-l)'; badge.style.color='var(--am)'; }
+            else { badge.textContent='⚠️ Below Target'; badge.style.background='var(--ro-l)'; badge.style.color='var(--rose)'; }
+        }
+        return;
+    }
+
+    if (!person.target) { hero.style.display='none'; return; }
     hero.style.display = 'block';
     var ach = person.target > 0 ? (person.sales||0) / person.target * 100 : 0;
     var fill = document.getElementById('ach-progress-fill');
@@ -2238,6 +2492,10 @@ function renderPersonSidebar() {
     var configPeople = Object.keys(window.appState.config.base_salaries || {});
     if (configPeople.length === 0) {
         configPeople = window.appState.salespeople.filter(function(p){return p.name;}).map(function(p){return p.name;});
+    }
+    // Hide inactive (resigned) people from the daily entry sidebar
+    if (typeof isEmployeeActive === 'function') {
+        configPeople = configPeople.filter(function(n){ return isEmployeeActive(n); });
     }
 
     if (countEl) countEl.textContent = 'Salesperson \u00b7 ' + configPeople.length;
@@ -3329,7 +3587,6 @@ function deleteSalespersonCard(id) {
         overlay.remove();
         window.appState.salespeople = window.appState.salespeople.filter(function(p) { return p.id !== id; });
         renderSalespersonCards();
-        updateSummaryView();
         showToast('🗑️', personName + ' removed');
     });
 }
@@ -3432,6 +3689,7 @@ async function importBackup() {
         // If it's Quick Calculate view, re-render cards
         if (window.appState.currentView === 'quick') {
             renderAllSalespeopleCards();
+            rerunQuickCalcDerivedFields();
         }
         
         hideLoading();
@@ -3613,7 +3871,7 @@ async function restoreSelectedBackup() {
         // Refresh current view
         if (window.appState.currentView === 'quick') {
             renderAllSalespeopleCards();
-            updateSummaryView();
+            rerunQuickCalcDerivedFields();
         }
         
         closeBackupModal();
@@ -3785,7 +4043,7 @@ function quickRecovery() {
         
         if (window.appState.currentView === 'quick') {
             renderAllSalespeopleCards();
-            updateSummaryView();
+            rerunQuickCalcDerivedFields();
         }
         
         showToast('✅', 'Data recovered successfully');
@@ -3828,6 +4086,7 @@ function autoFillLockedFields(index) {
     const nameUpper = (person.name || '').toUpperCase();
     if (!nameUpper) return;
     const month = (document.getElementById('report-month')?.value || '').toUpperCase();
+    const year = parseInt((document.getElementById('report-year')||{}).value, 10) || new Date().getFullYear();
     const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const currentIdx = months.indexOf(month);
     const history = window.appState.config.reportHistory || [];
@@ -3841,34 +4100,43 @@ function autoFillLockedFields(index) {
         return personEx.months.find(m => m.month === monthName) || null;
     }
 
-    // ── Helper: find from reportHistory ──
+    // ── Helper: find from reportHistory (year-aligned) ──
     function getHistoryData(monthName) {
-        const entries = history.filter(r => bareMonth(r.month) === monthName || (r.month || '').toUpperCase() === monthName);
-        if (entries.length === 0) return null;
-        const latest = entries[entries.length - 1];
-        return (latest.data || []).find(p => (p.name || '').toUpperCase() === nameUpper) || null;
+        const hEntry = findHistEntry(history, monthName, year);
+        if (!hEntry || !hEntry.data) return null;
+        return hEntry.data.find(p => (p.name || '').toUpperCase() === nameUpper) || null;
     }
 
-    // ── Helper: get data from Excel first, then history ──
+    // ── Helper: get data from Excel first, then history, then Monthly Target Setting (target only) ──
     function getData(monthName) {
         const exd = getExcelData(monthName);
         if (exd) return { target: parseFloat(exd.target) || 0, sales: parseFloat(exd.sales) || 0, source: 'excel' };
         const hd = getHistoryData(monthName);
         if (hd) return { target: parseFloat(hd.target) || 0, sales: parseFloat(hd.sales) || 0, source: 'history' };
+        var ptk = year + '-' + monthName;
+        var ptr = window.appState.config.person_targets && window.appState.config.person_targets[nameUpper];
+        var ptv = ptr && ptr[ptk];
+        if (ptv != null && ptv !== '') {
+            var t0 = parseFloat(ptv);
+            if (!isNaN(t0)) return { target: t0, sales: 0, source: 'target-setting' };
+        }
         return null;
     }
 
     // ══════════════════════════════════════════════════════
-    // Quarterly Target / Sales — auto-accumulate 3 months
+    // Quarterly Target / Sales — full quarter for selected month (JAN..MAR, APR..JUN, …)
     // ══════════════════════════════════════════════════════
-    const quarterEndMonths = ['MAR','JUN','SEP','DEC'];
-    const isQuarterEnd = quarterEndMonths.includes(month);
     const qTargetEl = document.getElementById('quarterly-target-' + index);
     const qSalesEl = document.getElementById('quarterly-sales-' + index);
+    const isSalesPerson = getEmployeeType(nameUpper) === 'Sales';
 
-    if (isQuarterEnd && currentIdx >= 0) {
-        const qStartIdx = currentIdx - 2;
-        const qMonths = [months[qStartIdx], months[qStartIdx + 1], months[qStartIdx + 2]];
+    if (isSalesPerson && currentIdx >= 0 && month) {
+        const qMonths = quarterMonthsForBareMonth(month);
+        if (!isQuarterEndMonthForRollup(month)) {
+            var _naT = 'Quarterly Target/Sales only in Mar/Jun/Sep/Dec (each 3-month period end).';
+            if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.title = _naT; person.quarterlyTarget = 0; }
+            if (qSalesEl) { qSalesEl.removeAttribute('disabled'); qSalesEl.value = ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.title = _naT; person.quarterlySales = 0; }
+        } else if (qMonths) {
         let qTarget = 0, qSales = 0;
         const details = [];
 
@@ -3878,7 +4146,7 @@ function autoFillLockedFields(index) {
                 const curSales = parseFloat(document.getElementById('sales-' + index)?.value) || 0;
                 qTarget += curTarget;
                 qSales += curSales;
-                details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current)');
+                details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current month)');
             } else {
                 const d = getData(qm);
                 if (d) {
@@ -3891,13 +4159,14 @@ function autoFillLockedFields(index) {
             }
         }
 
-        const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
+        const tooltip = 'Auto (' + year + '): ' + qMonths.join(' + ') + '\n' + details.join('\n');
         if (qTargetEl) { var _qtR2 = Math.round(qTarget * 100) / 100; qTargetEl.removeAttribute('disabled'); qTargetEl.value = _qtR2 ? _qtR2.toFixed(2) : ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.title = tooltip; person.quarterlyTarget = _qtR2; }
         if (qSalesEl) { var _qsR2 = Math.round(qSales * 100) / 100; qSalesEl.removeAttribute('disabled'); qSalesEl.value = _qsR2 ? _qsR2.toFixed(2) : ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.title = tooltip; person.quarterlySales = _qsR2; }
-        console.log(`📊 Quarterly auto-fill for ${nameUpper} (${month}):`, details);
+        console.log(`📊 Quarterly auto-fill for ${nameUpper} (${month} ${year}):`, details);
+        }
     } else {
-        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
-        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlySales  = 0; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = isSalesPerson ? 'Select month' : 'N/A for this role'; person.quarterlyTarget = 0; }
+        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = isSalesPerson ? 'Select month' : 'N/A for this role'; person.quarterlySales  = 0; }
     }
 
     // Collection Target (Outlets) — set from person_outlet_targets via applyPersonTarget
@@ -3983,12 +4252,29 @@ function fillCardsFromImportedData(targetMonth) {
     });
     saveConfig();
 
-    // Keep only ONE card — fill with first person for current month
+    // Keep only ONE card — preserve the currently-selected person across month switches
+    var prevName = (document.getElementById('name-0') || {}).value
+        || (window.appState.salespeople[0] && window.appState.salespeople[0].name) || '';
     const container = document.getElementById('salespeople-container');
     if (container) container.innerHTML = '';
     window.appState.salespeople = [];
-    const fp = data[0];
-    const fmd = fp.months.find(m => m.month === currentMonth) || fp.months[fp.months.length - 1];
+    const fp = (prevName && data.find(function(p){ return (p.name||'').toUpperCase() === prevName.toUpperCase(); })) || data[0];
+    // IMPORTANT: only use data for the EXACT selected month — never fall back to another
+    // month (that caused e.g. May data to show up under June).
+    const fmd = fp.months.find(m => m.month === currentMonth) || null;
+    // If this month isn't in the imported file, fall back to manually-saved Records for
+    // THIS month only (so manual edits aren't wiped) — otherwise leave it empty.
+    var monthData = fmd
+        ? { target: fmd.target, sales: fmd.sales, collectionAmount: fmd.collection, callTarget: fmd.callTarget }
+        : null;
+    if (!monthData) {
+        var _hist = window.appState.config.reportHistory || [];
+        var _yr = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+        var _mKey = currentMonth + '-' + _yr;
+        var _he = _hist.find(function(r){ return (r.month||'').toUpperCase() === _mKey; })
+               || _hist.find(function(r){ return (r.month||'').toUpperCase() === currentMonth; });
+        if (_he && _he.data) monthData = _he.data.find(function(p){ return (p.name||'').toUpperCase() === fp.name.toUpperCase(); }) || null;
+    }
     createBlankSalespersonCard();
     const nameEl0 = document.getElementById('name-0');
     if (nameEl0) {
@@ -3996,13 +4282,21 @@ function fillCardsFromImportedData(targetMonth) {
         if (opt0) { nameEl0.value = opt0.value; }
         else { const o=document.createElement('option'); o.value=fp.name; o.text=fp.name; nameEl0.appendChild(o); nameEl0.value=fp.name; }
     }
-    if (fmd) {
-        const s0=(id,v)=>{const el=document.getElementById(id+'-0');if(el&&v){el.value=v;el.readOnly=false;el.style.backgroundColor='';}};
-        s0('target',fmd.target); s0('sales',fmd.sales);
-        if(fmd.collection){const el=document.getElementById('collection-amount-0');if(el)el.value=fmd.collection;}
-        if(fmd.callTarget){const el=document.getElementById('call-target-0');if(el)el.value=fmd.callTarget;}
-        autoFillLockedFieldsWithExcel(0, fp.months, currentMonth);
+    const s0=(id,v)=>{const el=document.getElementById(id+'-0');if(el){el.value=(v!=null&&v!==0&&v!=='')?v:'';el.readOnly=false;el.style.backgroundColor='';}};
+    s0('target',            monthData ? monthData.target : '');
+    s0('sales',             monthData ? monthData.sales : '');
+    s0('collection-amount', monthData ? monthData.collectionAmount : '');
+    s0('call-target',       monthData ? monthData.callTarget : '');
+    if (!monthData) {
+        // Clear remaining monthly inputs and stale state so nothing carries over
+        s0('call-actual', ''); s0('quarterly-sales', '');
+        if (window.appState.salespeople[0]) {
+            window.appState.salespeople[0].sales = 0;
+            window.appState.salespeople[0].collectionAmount = 0;
+            window.appState.salespeople[0].callActual = 0;
+        }
     }
+    autoFillLockedFieldsWithExcel(0, fp.months, currentMonth);
     updateSalespersonData(0);
 
     // Force-save quickCalculateData immediately after import so data persists on restart
@@ -4032,70 +4326,77 @@ function autoFillLockedFieldsWithExcel(index, excelMonths, currentMonth) {
     const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const currentIdx = months.indexOf(month);
     const history = window.appState.config.reportHistory || [];
+    const year = parseInt((document.getElementById('report-year')||{}).value, 10) || new Date().getFullYear();
 
-    // Helper: find from reportHistory
+    // Helper: find from reportHistory (year-aligned)
     function getHistoryData(monthName) {
-        const entries = history.filter(r => bareMonth(r.month) === monthName || (r.month || '').toUpperCase() === monthName);
-        if (entries.length === 0) return null;
-        return (entries[entries.length - 1].data || []).find(p => (p.name || '').toUpperCase() === nameUpper) || null;
+        const hEntry = findHistEntry(history, monthName, year);
+        if (!hEntry || !hEntry.data) return null;
+        return hEntry.data.find(p => (p.name || '').toUpperCase() === nameUpper) || null;
     }
 
-    // Helper: find from imported Excel data
+    // Helper: find from imported Excel data (current import row)
     function getExcelData(monthName) {
         if (!excelMonths) return null;
         return excelMonths.find(m => m.month === monthName) || null;
     }
 
-    // ── Quarterly Target/Sales ──
-    const quarterEndMonths = ['MAR','JUN','SEP','DEC'];
-    const isQuarterEnd = quarterEndMonths.includes(month);
+    function getData(monthName) {
+        const exd = getExcelData(monthName);
+        if (exd) return { target: parseFloat(exd.target) || 0, sales: parseFloat(exd.sales) || 0, source: 'excel' };
+        const hd = getHistoryData(monthName);
+        if (hd) return { target: parseFloat(hd.target) || 0, sales: parseFloat(hd.sales) || 0, source: 'history' };
+        var ptk = year + '-' + monthName;
+        var ptr = window.appState.config.person_targets && window.appState.config.person_targets[nameUpper];
+        var ptv = ptr && ptr[ptk];
+        if (ptv != null && ptv !== '') {
+            var t1 = parseFloat(ptv);
+            if (!isNaN(t1)) return { target: t1, sales: 0, source: 'target-setting' };
+        }
+        return null;
+    }
+
+    // ── Quarterly Target/Sales — full quarter for selected month (Sales only) ──
     const qTargetEl = document.getElementById('quarterly-target-' + index);
     const qSalesEl = document.getElementById('quarterly-sales-' + index);
+    const isSalesPerson = getEmployeeType(nameUpper) === 'Sales';
 
-    if (isQuarterEnd && currentIdx >= 0) {
-        const qStartIdx = currentIdx - 2;
-        const qMonths = [months[qStartIdx], months[qStartIdx + 1], months[qStartIdx + 2]];
-        let qTarget = 0, qSales = 0;
-        const details = [];
+    if (isSalesPerson && currentIdx >= 0 && month) {
+        const qMonths = quarterMonthsForBareMonth(month);
+        if (!isQuarterEndMonthForRollup(month)) {
+            var _naT2 = 'Quarterly Target/Sales only in Mar/Jun/Sep/Dec (each 3-month period end).';
+            if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = _naT2; person.quarterlyTarget = 0; }
+            if (qSalesEl) { qSalesEl.removeAttribute('disabled'); qSalesEl.value = ''; qSalesEl.setAttribute('disabled','disabled'); qSalesEl.style.background='#f1f5f9'; qSalesEl.title = _naT2; person.quarterlySales = 0; }
+        } else if (qMonths) {
+            let qTarget = 0, qSales = 0;
+            const details = [];
 
-        for (const qm of qMonths) {
-            if (qm === month) {
-                // Current month: from card inputs
-                const curTarget = parseFloat(document.getElementById('target-' + index)?.value) || 0;
-                const curSales = parseFloat(document.getElementById('sales-' + index)?.value) || 0;
-                qTarget += curTarget;
-                qSales += curSales;
-                details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current)');
-            } else {
-                // Previous months: try Excel data first, then history
-                const exd = getExcelData(qm);
-                if (exd) {
-                    const et = parseFloat(exd.target) || 0;
-                    const es = parseFloat(exd.sales) || 0;
-                    qTarget += et;
-                    qSales += es;
-                    details.push(qm + ': T=' + et.toLocaleString() + ' S=' + es.toLocaleString() + ' (excel)');
+            for (const qm of qMonths) {
+                if (qm === month) {
+                    const curTarget = parseFloat(document.getElementById('target-' + index)?.value) || 0;
+                    const curSales = parseFloat(document.getElementById('sales-' + index)?.value) || 0;
+                    qTarget += curTarget;
+                    qSales += curSales;
+                    details.push(qm + ': T=' + curTarget.toLocaleString() + ' S=' + curSales.toLocaleString() + ' (current)');
                 } else {
-                    const hd = getHistoryData(qm);
-                    if (hd) {
-                        const ht = parseFloat(hd.target) || 0;
-                        const hs = parseFloat(hd.sales) || 0;
-                        qTarget += ht;
-                        qSales += hs;
-                        details.push(qm + ': T=' + ht.toLocaleString() + ' S=' + hs.toLocaleString() + ' (history)');
+                    const d = getData(qm);
+                    if (d) {
+                        qTarget += d.target;
+                        qSales += d.sales;
+                        details.push(qm + ': T=' + d.target.toLocaleString() + ' S=' + d.sales.toLocaleString() + ' (' + d.source + ')');
                     } else {
                         details.push(qm + ': No data');
                     }
                 }
             }
-        }
 
-        const tooltip = 'Auto: ' + qMonths.join('+') + '\n' + details.join('\n');
-        if (qTargetEl) { var _qtR3 = Math.round(qTarget * 100) / 100; qTargetEl.removeAttribute('disabled'); qTargetEl.value = _qtR3 ? _qtR3.toFixed(2) : ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = tooltip; person.quarterlyTarget = _qtR3; }
-        if (qSalesEl)  { var _qsR3 = Math.round(qSales * 100) / 100; qSalesEl.removeAttribute('disabled');  qSalesEl.value  = _qsR3 ? _qsR3.toFixed(2) : ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = tooltip; person.quarterlySales  = _qsR3; }
+            const tooltip = 'Auto (' + year + '): ' + qMonths.join(' + ') + '\n' + details.join('\n');
+            if (qTargetEl) { var _qtR3 = Math.round(qTarget * 100) / 100; qTargetEl.removeAttribute('disabled'); qTargetEl.value = _qtR3 ? _qtR3.toFixed(2) : ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = tooltip; person.quarterlyTarget = _qtR3; }
+            if (qSalesEl)  { var _qsR3 = Math.round(qSales * 100) / 100; qSalesEl.removeAttribute('disabled');  qSalesEl.value  = _qsR3 ? _qsR3.toFixed(2) : ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = tooltip; person.quarterlySales  = _qsR3; }
+        }
     } else {
-        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlyTarget = 0; }
-        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = 'N/A — only MAR/JUN/SEP/DEC'; person.quarterlySales  = 0; }
+        if (qTargetEl) { qTargetEl.removeAttribute('disabled'); qTargetEl.value = ''; qTargetEl.setAttribute('disabled','disabled'); qTargetEl.style.background='#f1f5f9'; qTargetEl.title = isSalesPerson ? 'Select month' : 'N/A for this role'; person.quarterlyTarget = 0; }
+        if (qSalesEl)  { qSalesEl.removeAttribute('disabled');  qSalesEl.value  = ''; qSalesEl.setAttribute('disabled','disabled');  qSalesEl.style.background='#f1f5f9';  qSalesEl.title  = isSalesPerson ? 'Select month' : 'N/A for this role'; person.quarterlySales  = 0; }
     }
 
     // ── Collection Target — from 2 months ago (try Excel first, then history) ──
@@ -4243,6 +4544,7 @@ function onSalespersonNameChange(index) {
 
 function renderSalespersonCards() {
     renderAllSalespeopleCards();
+    rerunQuickCalcDerivedFields();
 }
 
 function viewHistoryReport(index) {
@@ -4254,6 +4556,13 @@ function viewHistoryReport(index) {
     var cfg    = window.appState.config;
     var qMonths = ['MAR','JUN','SEP','DEC'];
     var isQtr   = qMonths.indexOf(month) !== -1;
+
+    // Hide people who had not joined yet in this report month
+    var _hvBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : month;
+    var _hvYear  = (typeof keyYear === 'function') ? (keyYear(report.month) || new Date().getFullYear()) : new Date().getFullYear();
+    people = people.filter(function(p){
+        return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(p.name, _hvBareM, _hvYear);
+    });
 
     var existing = document.getElementById('history-view-modal');
     if (existing) existing.remove();
@@ -4280,7 +4589,6 @@ function viewHistoryReport(index) {
         var comm = 0, collBon = 0, callBon = 0, qtrBon = 0, totalComm = 0;
         var detailRows = '';
         var achColor = ach >= 100 ? '#16a34a' : ach >= 90 ? '#d97706' : '#dc2626';
-        var typeTag = '';
 
         if (empType === 'Sales') {
             comm    = calculateCommission(sales, target, p.name);
@@ -4300,7 +4608,6 @@ function viewHistoryReport(index) {
                 + (isQtr ? '<div style="color:#6b7280;">Quarterly Incentive</div><div style="text-align:right;color:#2563eb;">' + formatCurrency(qtrBon) + '</div>' : '')
                 + '<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">' + formatCurrency(totalComm) + '</div>';
         } else if (empType === 'Supervisor') {
-            typeTag = ' <span style="background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">👔 Supervisor</span>';
             // Compute team totals for the month
             var teamS=0, teamT=0, teamCo=0, teamCoT=0, teamCa=0, teamCaT=0;
             people.forEach(function(tp) {
@@ -4333,7 +4640,6 @@ function viewHistoryReport(index) {
                 + (isQtr ? '<div style="color:#6b7280;">Quarterly Incentive</div><div style="text-align:right;color:#7c3aed;">' + formatCurrency(qtrBon) + '</div>' : '')
                 + '<div style="color:#6b7280;font-weight:600;">Total Incentive</div><div style="text-align:right;font-weight:700;color:#7c3aed;">' + formatCurrency(totalComm) + '</div>';
         } else if (empType === 'Support Staff') {
-            typeTag = ' <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">🛠️ Support Staff</span>';
             var blocks = parseFloat(p.collectionAmount)||0;
             var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
                 ? parseFloat(cfg.person_merchandiser_rates[p.name])
@@ -4355,7 +4661,7 @@ function viewHistoryReport(index) {
         return '<div id="hv-person-'+pIdx+'" style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
             + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
             + '<span style="font-size:20px;">&#128100;</span>'
-            + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + typeTag + '</h3></div>'
+            + '<h3 style="margin:0;font-size:16px;font-weight:700;color:#111;">' + p.name + '</h3></div>'
             + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">'
             + '<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">' + formatCurrency(salary) + '</div>'
             + detailRows
@@ -4636,6 +4942,442 @@ function updateLivePayslip() {
 }
 window.updateLivePayslip = updateLivePayslip;
 
+// ==================== Calculation center — commission workspace ====================
+function bareMonthToQuarterLabel(bareM) {
+    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var i = months.indexOf((bareM || '').toUpperCase());
+    if (i < 0) return '\u2014';
+    return 'Q' + (Math.floor(i / 3) + 1);
+}
+function cwGetRatesForPerson(name) {
+    var nu = (name || '').toUpperCase();
+    var rates = (window.appState.config && window.appState.config.monthly_commission_rates) || [];
+    if (nu && window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[nu])
+        rates = window.appState.config.person_commission_rates[nu];
+    return (rates || []).slice();
+}
+function cwFindSalesTier(achievement, rates) {
+    for (var i = 0; i < rates.length; i++) {
+        if (achievement >= rates[i].min && achievement <= rates[i].max) return { tier: rates[i], idx: i };
+    }
+    return null;
+}
+function cwNextSalesTierMin(achievement, rates) {
+    var sorted = rates.slice().sort(function(a, b) { return a.min - b.min; });
+    for (var j = 0; j < sorted.length; j++) {
+        if (achievement < sorted[j].min) return sorted[j];
+    }
+    return null;
+}
+function cwTierSortIdx(achievement, rates) {
+    var sorted = rates.slice().sort(function(a, b) { return a.min - b.min; });
+    for (var k = 0; k < sorted.length; k++) {
+        if (achievement >= sorted[k].min && achievement <= sorted[k].max) return k;
+    }
+    return -1;
+}
+function cwSalesFromHistory(name, month, yearStr) {
+    var nu = (name || '').toUpperCase();
+    var h = findHistEntry(window.appState.config.reportHistory || [], month, yearStr);
+    if (h && h.data) {
+        var row = h.data.find(function(p) { return (p.name || '').toUpperCase() === nu; });
+        if (row) return parseFloat(row.sales) || 0;
+    }
+    return null;
+}
+function cwBindWhatIf() {
+    if (window._cwWhatIfBound) return;
+    var r = document.getElementById('cw-whatif-range');
+    if (!r) return;
+    window._cwWhatIfBound = true;
+    r.addEventListener('input', function() {
+        if (window._cwWhatIfApply) window._cwWhatIfApply();
+    });
+    r.addEventListener('change', function() {
+        r.dataset.cwTouched = '1';
+    });
+}
+function cwSetHtml(id, html) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+}
+function cwSetText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text == null ? '' : String(text);
+}
+function cwTierTitleFromAch(ach, personName) {
+    var rates = cwGetRatesForPerson(personName);
+    var row = cwFindSalesTier(ach, rates);
+    if (!row || !row.tier) return '\u2014';
+    var n = cwTierSortIdx(ach, rates) + 1;
+    var pct = (row.tier.rate || 0) * 100;
+    return 'Tier ' + n + ' (' + pct.toFixed(2) + '%)';
+}
+/** Scroll target into view inside Quick Calculate — grid + min-height fixes make `.calc-center` the real scroller; otherwise walk up or use scrollIntoView. */
+function cwFindScrollableAncestor(el) {
+    var p = el && el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+        var st = window.getComputedStyle(p);
+        var oy = st.overflowY;
+        if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') && p.scrollHeight > p.clientHeight + 2) return p;
+        p = p.parentElement;
+    }
+    return null;
+}
+function cwScrollElIntoQuickCenter(el, pad) {
+    if (!el) return;
+    pad = pad == null ? 12 : pad;
+    var scroller = typeof el.closest === 'function' ? el.closest('.calc-center') : null;
+    if (!scroller) scroller = document.querySelector('#view-quick .calc-center');
+    function scrollWithin(container) {
+        if (!container || container.scrollHeight <= container.clientHeight + 1) return false;
+        var delta = el.getBoundingClientRect().top - container.getBoundingClientRect().top - pad;
+        if (!isFinite(delta)) return false;
+        var next = container.scrollTop + delta;
+        var max = Math.max(0, container.scrollHeight - container.clientHeight);
+        if (next < 0) next = 0;
+        if (next > max) next = max;
+        container.scrollTop = next;
+        return true;
+    }
+    if (!scrollWithin(scroller)) {
+        var alt = cwFindScrollableAncestor(el);
+        if (alt && alt !== scroller) scrollWithin(alt);
+        else el.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+    }
+}
+window.cwScrollToTier = function() {
+    cwScrollElIntoQuickCenter(document.getElementById('cw-tier-panel'));
+};
+window.cwScrollFormula = function() {
+    cwScrollElIntoQuickCenter(document.getElementById('cw-panel-formula'));
+};
+
+/** Sales roles only: team sales and target for supervisors (saved history + open rows, no double-count). */
+function cwSupervisorTeamTotals(bareMonth, year) {
+    var teamSales = 0, teamTarget = 0;
+    var m = (bareMonth || 'JAN').toUpperCase();
+    var y = year || String(new Date().getFullYear());
+    var _hist = (window.appState.config.reportHistory || []);
+    var _hEntry = findHistEntry(_hist, m, y);
+    if (_hEntry && _hEntry.data) {
+        _hEntry.data.forEach(function(p) {
+            if (getEmployeeType(p.name) !== 'Sales') return;
+            teamSales += parseFloat(p.sales) || 0;
+            teamTarget += parseFloat(p.target) || 0;
+        });
+    }
+    (window.appState.salespeople || []).forEach(function(p) {
+        if (!p.name || getEmployeeType(p.name) !== 'Sales') return;
+        var alreadyInHistory = _hEntry && _hEntry.data && _hEntry.data.some(function(hp) {
+            return (hp.name || '').toUpperCase() === (p.name || '').toUpperCase();
+        });
+        if (alreadyInHistory) return;
+        teamSales += parseFloat(p.sales) || 0;
+        teamTarget += parseFloat(p.target) || 0;
+    });
+    return { teamSales: teamSales, teamTarget: teamTarget };
+}
+
+function updateCalcWorkspace() {
+    cwBindWhatIf();
+    var root = document.getElementById('calc-workspace');
+    if (!root) return;
+    if (window.appState.salespeople && window.appState.salespeople[0] && document.getElementById('sales-0') && typeof updateSalespersonData === 'function') {
+        updateSalespersonData(0, { skipWorkspace: true });
+    }
+    var person = window.appState.salespeople[0];
+    if (!person || !person.name || !String(person.name).trim()) {
+        root.classList.remove('cw-visible');
+        root.classList.remove('cw-emp-support');
+        root.setAttribute('aria-hidden', 'true');
+        return;
+    }
+    root.classList.add('cw-visible');
+    root.setAttribute('aria-hidden', 'false');
+
+    var rng = document.getElementById('cw-whatif-range');
+    if (rng && window._cwLastPerson !== (person.name || '')) {
+        delete rng.dataset.cwTouched;
+        window._cwLastPerson = person.name;
+    }
+
+    var empType = getEmployeeType(person.name);
+    if (empType === 'Support Staff') root.classList.add('cw-emp-support');
+    else root.classList.remove('cw-emp-support');
+
+    var selMonth = ((document.getElementById('report-month') || {}).value || 'JAN').toUpperCase();
+    var selYear = parseInt((document.getElementById('report-year') || {}).value, 10) || new Date().getFullYear();
+    var teamSup = empType === 'Supervisor' ? cwSupervisorTeamTotals(selMonth, String(selYear)) : null;
+
+    var cwLblAch = document.getElementById('cw-kpi-lbl-ach');
+    var cwLblSales = document.getElementById('cw-kpi-lbl-sales');
+    var cwLblRate = document.getElementById('cw-kpi-lbl-rate');
+    var cwLblProj = document.getElementById('cw-kpi-lbl-proj');
+    var cwHdInputs = document.getElementById('cw-panel-hd-inputs');
+    var cwHdCalc = document.getElementById('cw-panel-hd-calc-title');
+    if (empType === 'Support Staff') {
+        if (cwLblAch) cwLblAch.textContent = 'Target achievement';
+        if (cwLblSales) cwLblSales.textContent = 'Monthly block';
+        if (cwLblRate) cwLblRate.textContent = 'Block incentive';
+        if (cwLblProj) cwLblProj.textContent = 'Salary';
+        if (cwHdInputs) cwHdInputs.textContent = 'Block display input';
+        if (cwHdCalc) cwHdCalc.textContent = 'Total calculation';
+        cwSetText('cw-kpi-proj-sub', 'Monthly gross');
+    } else {
+        if (cwLblAch) cwLblAch.textContent = empType === 'Supervisor' ? 'Team sales' : 'Target achievement';
+        if (cwLblSales) cwLblSales.textContent = 'Monthly sales';
+        if (cwLblRate) cwLblRate.textContent = 'Commission rate';
+        if (cwLblProj) cwLblProj.textContent = 'Salary';
+        if (cwHdInputs) cwHdInputs.textContent = 'Sales & target input';
+        if (cwHdCalc) cwHdCalc.textContent = 'Commission calculation (live)';
+        cwSetText('cw-kpi-proj-sub', 'Monthly gross');
+    }
+
+    var sales = parseFloat(person.sales) || 0;
+    var target = parseFloat(person.target) || 0;
+    /** Supervisor: team achievement from Sales-role totals (history + workspace). */
+    var ach;
+    if (empType === 'Supervisor') {
+        ach = teamSup.teamTarget > 0 ? (teamSup.teamSales / teamSup.teamTarget) * 100 : 0;
+    } else {
+        ach = target > 0 ? (sales / target) * 100 : (typeof person.achievement === 'number' ? person.achievement : 0);
+    }
+
+    var rStyle = getRoleBadgeStyle(empType);
+    var avEl = document.getElementById('cw-mock-av');
+    if (avEl) {
+        avEl.textContent = (person.name || '?').charAt(0);
+        avEl.style.background = rStyle.bg;
+        avEl.style.color = rStyle.c;
+    }
+    cwSetText('cw-mock-name', person.name || '\u2014');
+    var roleEl = document.getElementById('cw-mock-role');
+    if (roleEl) {
+        roleEl.textContent = empType;
+        roleEl.style.background = rStyle.bg;
+        roleEl.style.color = rStyle.c;
+    }
+    var comp = getEmployeeCompany(person.name);
+    cwSetText('cw-meta-dept', comp ? comp.toUpperCase() : (empType === 'Sales' ? 'SALES' : empType.toUpperCase()));
+
+    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var mi = months.indexOf(selMonth);
+    var pm = mi <= 0 ? months[11] : months[mi - 1];
+    var py = mi <= 0 ? selYear - 1 : selYear;
+    var prevSales = cwSalesFromHistory(person.name, pm, String(py));
+    var momPct = null;
+    if (prevSales != null && prevSales > 0) momPct = ((sales - prevSales) / prevSales) * 100;
+
+    var rates = cwGetRatesForPerson(person.name);
+    var tierRow = empType === 'Sales' ? cwFindSalesTier(ach, rates) : null;
+    var tierIdx1 = empType === 'Sales' ? (cwTierSortIdx(ach, rates) + 1) : 0;
+    var ratePct = 0;
+    if (empType === 'Sales' && tierRow && tierRow.tier.rate != null) ratePct = tierRow.tier.rate * 100;
+    else if (empType === 'Sales' && sales > 0 && (person.commission || 0) > 0) ratePct = (person.commission / sales) * 100;
+
+    var achBar = document.getElementById('cw-kpi-ach-bar');
+    if (empType === 'Supervisor') {
+        cwSetText('cw-kpi-ach', formatCurrency(teamSup.teamSales));
+        cwSetText('cw-kpi-ach-sub', '');
+        if (achBar) achBar.style.width = '0%';
+    } else {
+        cwSetText('cw-kpi-ach', (target > 0 || sales > 0) ? ach.toFixed(0) + '%' : '\u2014');
+        cwSetText('cw-kpi-ach-sub', target > 0 ? formatCurrency(sales) + ' / ' + formatCurrency(target) : 'Enter sales & target');
+        if (achBar) achBar.style.width = (target > 0 || sales > 0) ? Math.min(Math.max(ach, 0), 100) + '%' : '0%';
+    }
+
+    var tnum = document.getElementById('cw-kpi-tier-num');
+    if (tnum) tnum.textContent = (empType === 'Sales' && tierIdx1 > 0) ? String(tierIdx1) : '\u2014';
+
+    if (empType === 'Sales') {
+        cwSetText('cw-kpi-tier', tierRow && tierRow.tier ? ('Tier ' + tierIdx1 + ' (' + ratePct.toFixed(2) + '%)') : '\u2014');
+        var tierSubTxt = '';
+        if (tierRow && tierRow.tier) {
+            tierSubTxt = tierRow.tier.label || (tierRow.tier.min + '\u2013' + (tierRow.tier.max >= 999 ? '\u221e' : tierRow.tier.max + '%'));
+        } else tierSubTxt = 'No matching band';
+        cwSetText('cw-kpi-tier-sub', tierSubTxt);
+    } else if (empType === 'Supervisor') {
+        cwSetText('cw-kpi-tier', 'Team tiers');
+        cwSetText('cw-kpi-tier-sub', 'Based on team achievement');
+    } else {
+        cwSetText('cw-kpi-tier', 'Block pay');
+        cwSetText('cw-kpi-tier-sub', 'Merchandiser / support');
+    }
+
+    var salesSubEl = document.getElementById('cw-kpi-sales-sub');
+    if (empType === 'Support Staff') {
+        cwSetText('cw-kpi-sales', String(person.collectionAmount || 0));
+        if (salesSubEl) salesSubEl.textContent = 'Blocks';
+    } else {
+        cwSetText('cw-kpi-sales', formatCurrency(sales));
+        if (salesSubEl) {
+            if (momPct != null) {
+                var cl = momPct >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
+                var arr = momPct >= 0 ? '\u25b4' : '\u25bc';
+                salesSubEl.innerHTML = '<span class="cw-kpi-trend-lbl">vs last month</span><span class="' + cl + '">' + arr + '\u00a0' + Math.abs(momPct).toFixed(1) + '%</span>';
+            } else if (prevSales !== null && prevSales === 0 && sales > 0) salesSubEl.textContent = 'Up from RM 0 last month';
+            else salesSubEl.textContent = '';
+        }
+    }
+
+    if (empType === 'Sales') {
+        cwSetText('cw-kpi-rate', (sales > 0 && ratePct > 0) ? ratePct.toFixed(2) + '%' : (sales <= 0 ? '\u2014' : '0%'));
+        cwSetText('cw-kpi-rate-sub', 'Current tier rate');
+    } else if (empType === 'Supervisor') {
+        cwSetText('cw-kpi-rate', '\u2014');
+        cwSetText('cw-kpi-rate-sub', 'Fixed tier amounts');
+    } else {
+        var _mr = (window.appState.config.person_merchandiser_rates || {})[person.name];
+        if (_mr == null) _mr = parseFloat(window.appState.config.merchandiser_block_rate) || 10;
+        cwSetText('cw-kpi-rate', 'RM ' + parseFloat(_mr).toFixed(2));
+        cwSetText('cw-kpi-rate-sub', 'Per block');
+    }
+
+    var comm = parseFloat(person.commission) || 0;
+    var collBon = parseFloat(person.collectionIncentive) || 0;
+    var callBon = parseFloat(person.activeCallIncentive) || 0;
+    var qtrBon = parseFloat(person.quarterlyBonus) || 0;
+
+    var salaryRec = getSalaryForMonth(person.name, selMonth);
+    var salary = salaryRec.salary;
+    var allow = salaryRec.allowances;
+    var epfRate = salaryRec.epfRate;
+    var hp = allow.HP || 0, car = allow.CAR || 0, lf = allow['LOCAL FUEL'] || 0;
+    var of2 = allow['OUTSTATION FUEL'] || 0, hs = allow.HOUSING || 0, food = allow.FOOD || 0, oth = allow.OTHERS || 0;
+    var totalAllow = hp + car + lf + of2 + hs + food + oth;
+    var totalFixed = salary + totalAllow;
+    var totalFlexible = comm + collBon + callBon + qtrBon;
+    var totalInc = totalFixed + totalFlexible;
+    var epfAmt = totalInc * (epfRate / 100);
+    var grand = totalInc - epfAmt;
+
+    cwSetText('cw-kpi-proj', formatCurrency(totalInc));
+    cwSetText('cw-net-val', formatCurrency(grand));
+
+    var upEl = document.getElementById('cw-mock-updated');
+    if (upEl) {
+        upEl.textContent = 'Last updated: ' + new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+
+    var steps = '';
+    if (empType === 'Sales') {
+        if (sales > 0 && target > 0 && ratePct > 0) {
+            steps += '<li><span class="cw-step-lbl">Base commission (Sales \u00d7 rate)</span> \u2014 ' + formatCurrency(sales) + ' \u00d7 ' + ratePct.toFixed(2) + '% = <strong>' + formatCurrency(comm) + '</strong></li>';
+        } else {
+            steps += '<li><span class="cw-step-lbl">Base commission</span> \u2014 ' + formatCurrency(comm) + '</li>';
+        }
+    } else if (empType === 'Supervisor') {
+        steps += '<li><span class="cw-step-lbl">Team sales tier payout</span> \u2014 ' + formatCurrency(comm) + '</li>';
+    } else {
+        steps += '<li><span class="cw-step-lbl">Outlet / block earnings</span> \u2014 ' + formatCurrency(collBon) + '</li>';
+    }
+    if (empType !== 'Support Staff' && collBon > 0) steps += '<li><span class="cw-step-lbl">Incentive (collection)</span> \u2014 +' + formatCurrency(collBon) + '</li>';
+    if (callBon > 0) steps += '<li><span class="cw-step-lbl">Incentive (active call)</span> \u2014 +' + formatCurrency(callBon) + '</li>';
+    if (qtrBon > 0) steps += '<li><span class="cw-step-lbl">Other bonus (quarterly)</span> \u2014 +' + formatCurrency(qtrBon) + '</li>';
+    steps += '<li><span class="cw-step-lbl">EPF (' + epfRate + '% of gross)</span> \u2014 \u2212' + formatCurrency(epfAmt) + '</li>';
+    var st = document.getElementById('cw-steps');
+    if (st) st.innerHTML = steps;
+
+    var fl = document.getElementById('cw-formula-list');
+    if (fl) {
+        if (empType === 'Sales') {
+            fl.innerHTML = '<li>Gross = fixed pay + base commission + incentives</li><li>Net payable = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+        } else if (empType === 'Supervisor') {
+            fl.innerHTML = '<li>Team tiers set payout amounts from achievement</li><li>Net = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+        } else {
+            fl.innerHTML = '<li>Variable = blocks \u00d7 rate</li><li>Net = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+        }
+    }
+    var il = document.getElementById('cw-incentive-list');
+    if (il) {
+        var items = [];
+        if (empType !== 'Support Staff' && collBon > 0) items.push('Collection incentive \u2014 ' + formatCurrency(collBon));
+        if (callBon > 0) items.push('Active call incentive \u2014 ' + formatCurrency(callBon));
+        if (qtrBon > 0) items.push('Quarterly bonus \u2014 ' + formatCurrency(qtrBon));
+        if (items.length === 0 && empType === 'Support Staff' && collBon > 0) items.push('Block earnings \u2014 ' + formatCurrency(collBon));
+        if (items.length === 0) il.innerHTML = '<li class="cw-inc-muted">No variable incentives this month</li>';
+        else il.innerHTML = items.map(function(s) { return '<li>' + s + '</li>'; }).join('');
+    }
+
+    var insightEl = document.getElementById('cw-insight');
+    if (insightEl) {
+        var insight = '\u2014';
+        if (empType === 'Sales' && target > 0) {
+            var next = cwNextSalesTierMin(ach, rates);
+            if (next) {
+                var need = (next.min / 100) * target - sales;
+                if (need > 0) insight = 'You need about ' + formatCurrency(need) + ' more in sales to reach the next tier (' + ((next.rate || 0) * 100).toFixed(2) + '% rate).';
+                else insight = 'You are in the highest tier for configured bands.';
+            } else insight = 'You already meet or exceed the top achievement band.';
+        } else if (empType === 'Supervisor') {
+            insight = 'Supervisor pay uses team totals from Records and any unsaved rows in this workspace.';
+        } else insight = 'Edit collected outlets in Sales & target input to update block pay.';
+        insightEl.textContent = insight;
+    }
+
+    var tbl = document.getElementById('cw-tier-table');
+    if (tbl) {
+        if (empType === 'Sales' && rates.length) {
+            var sortedR = rates.slice().sort(function(a, b) { return a.min - b.min; });
+            var body = sortedR.map(function(t) {
+                var active = ach >= t.min && ach <= t.max;
+                var lab = t.label || (t.min + '% \u2013 ' + (t.max >= 999 ? '100%+' : t.max + '%'));
+                return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + lab + '</td><td>' + ((t.rate || 0) * 100).toFixed(2) + '%</td></tr>';
+            }).join('');
+            tbl.innerHTML = '<thead><tr><th>Achievement</th><th>Rate</th></tr></thead><tbody>' + body + '</tbody>';
+        } else if (empType === 'Supervisor') {
+            var _supCfg = window.appState.config;
+            var _saleT = (_supCfg.person_supervisor_sale_tiers && _supCfg.person_supervisor_sale_tiers[person.name]) || _supCfg.supervisor_sale_tiers || [];
+            var sortedS = _saleT.slice().sort(function(a, b) { return a.min - b.min; });
+            var body2 = sortedS.map(function(t) {
+                var active = ach >= t.min && ach <= t.max;
+                var rng = t.min + '\u2013' + (t.max >= 999 ? '\u221e' : t.max + '%');
+                return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + rng + '</td><td>' + formatCurrency(t.amt || 0) + '</td></tr>';
+            }).join('');
+            tbl.innerHTML = '<thead><tr><th>Team ach.</th><th>Payout (RM)</th></tr></thead><tbody>' + body2 + '</tbody>';
+        } else {
+            tbl.innerHTML = '<tbody><tr><td colspan="2" style="text-align:center;color:#64748b;padding:12px;">No percentage tiers \u2014 per-block rate in KPI</td></tr></tbody>';
+        }
+    }
+
+    var bar = document.getElementById('cw-tier-bar-fill');
+    var barLbl = document.getElementById('cw-tier-bar-lbl');
+    if (bar) bar.style.width = Math.min(Math.max(ach, 0), 100) + '%';
+    if (barLbl) barLbl.textContent = 'Your position: ' + ach.toFixed(1) + '% achievement';
+
+    var wrap = document.getElementById('cw-whatif-wrap');
+    if (wrap && rng) {
+        var readEl = document.getElementById('cw-whatif-readout');
+        if (empType !== 'Sales') {
+            wrap.classList.add('cw-whatif-disabled');
+            if (readEl) readEl.textContent = empType === 'Supervisor' ? 'What-if applies to sales commission roles.' : 'Edit blocks in Sales & target input.';
+        } else {
+            wrap.classList.remove('cw-whatif-disabled');
+            var wmax = Math.max(100000, Math.ceil(Math.max(sales, target, 1) * 1.35 / 10000) * 10000);
+            rng.max = String(wmax);
+            if (!rng.dataset.cwTouched) rng.value = String(Math.min(Math.max(0, sales), wmax));
+            window._cwWhatIfApply = function() {
+                var hSales = parseFloat(rng.value) || 0;
+                var hAch = target > 0 ? (hSales / target) * 100 : 0;
+                var hComm = calculateCommission(hSales, target, person.name);
+                var hFlex = hComm + collBon + callBon + qtrBon;
+                var hTotalInc = totalFixed + hFlex;
+                var hEpf = hTotalInc * (epfRate / 100);
+                var hGrand = hTotalInc - hEpf;
+                var tierTit = cwTierTitleFromAch(hAch, person.name);
+                if (readEl) {
+                    readEl.innerHTML = ''
+                        + '<div class="cw-wif-line">If sales = <strong>' + formatCurrency(hSales) + '</strong></div>'
+                        + '<div class="cw-wif-line">Achievement: <strong>' + hAch.toFixed(1) + '%</strong> (' + tierTit + ')</div>'
+                        + '<div class="cw-wif-line cw-wif-net">Net payable: ' + formatCurrency(hGrand) + '</div>';
+                }
+            };
+            window._cwWhatIfApply();
+        }
+    }
+}
+window.updateCalcWorkspace = updateCalcWorkspace;
 
 function promptAddPerson() {
     var existing = document.getElementById('add-person-modal');
@@ -6178,7 +6920,9 @@ function renderProjectionReport() {
     var personSelect = document.getElementById('proj-person-select');
     if (personSelect) {
         var configPeople = Object.keys(cfg.base_salaries || {}).filter(function(n){
-            return getEmployeeType(n) === 'Sales';
+            if (getEmployeeType(n) !== 'Sales') return false;
+            if (typeof isEmployeeActive === 'function' && !isEmployeeActive(n)) return false;
+            return true;
         });
         var existingNames = Array.from(personSelect.options).map(function(o){return o.value;}).filter(function(v){return v;});
         if (existingNames.join(',') !== configPeople.join(',')) {
@@ -7000,10 +7744,12 @@ function renderPeopleList() {
         var hasPersonal = window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[name];
         var empType = getEmployeeType(name);
         var tc = getRoleBadgeStyle(empType);
+        var active = (typeof isEmployeeActive === 'function') ? isEmployeeActive(name) : true;
         var item = document.createElement('div');
         item.className = 'people-list-row';
         item.setAttribute('data-type', empType);
         item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(90deg,'+tc.bg+' 0%,var(--paper) 40%);border:1px solid var(--line);border-left:3px solid '+tc.c+';border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s,opacity .15s;margin-bottom:8px;cursor:grab;';
+        if (!active) { item.style.opacity = '0.55'; item.style.filter = 'grayscale(0.6)'; }
         item.setAttribute('draggable', 'true');
         item.setAttribute('data-name', name);
         item.innerHTML =
@@ -7013,6 +7759,9 @@ function renderPeopleList() {
             + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'
             + '<div style="font-size:14px;font-weight:700;color:'+tc.c+';">'+name+'</div>'
             + '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">'+tc.icon+' '+empType+'</span>'
+            + (active
+                ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">● Active</span>'
+                : '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">○ Inactive</span>')
             + '</div>'
             + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
             + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()
@@ -7037,7 +7786,7 @@ function renderPeopleList() {
                 companies.forEach(function(c){ opts += '<option value="'+c+'"'+(empCompany===c?' selected':'')+'>🏢 '+c+'</option>'; });
                 return '<select id="company-select-'+i+'" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--line);font-size:11px;font-weight:600;cursor:pointer;background:#fff;font-family:Sora,sans-serif;">'+opts+'</select>';
             })()
-            + '<div style="display:flex;gap:6px;justify-content:flex-end;width:420px;" id="pi-btns-'+i+'"></div>';
+            + '<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap;width:520px;" id="pi-btns-'+i+'"></div>';
         container.appendChild(item);
         var typeSel = item.querySelector('#type-select-'+i);
         if (typeSel) typeSel.addEventListener('change', (function(n){ return function(e){ setEmployeeType(n, e.target.value); renderPeopleList(); showToast('✅', n+' type changed to '+e.target.value); };})(name));
@@ -7082,6 +7831,16 @@ function renderPeopleList() {
             btns.appendChild(bMR);
             btns.appendChild(spacer2);
         }
+
+        var bA = document.createElement('button');
+        bA.title = active ? 'Click to mark as resigned / inactive' : 'Click to reactivate';
+        bA.style.cssText = 'padding:7px 12px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;'
+            + (active
+                ? 'border:1.5px solid #86efac;background:#dcfce7;color:#166534;'
+                : 'border:1.5px solid #fecaca;background:#fee2e2;color:#b91c1c;');
+        bA.textContent = active ? '● Active' : '○ Inactive';
+        bA.addEventListener('click',(function(n, isActive){ return function(){ showEmployeeStatusDatePicker(n, isActive); };})(name, active));
+        btns.appendChild(bA);
 
         var bD = document.createElement('button');
         bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
@@ -7666,7 +8425,8 @@ function renderDashboard() {
         var salesByMonth = MONTHS.map(function(m) {
             var hEntry = findHistEntry(history, m, selectedYear);
             var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){return (p.name||'').toUpperCase()===name;}) : null;
-            var inDisplay = displayMonths.indexOf(m) !== -1;
+            var inDisplay = displayMonths.indexOf(m) !== -1
+                && (typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(name, m, selectedYear));
             if (empType === 'Sales') {
                 if (pd && (pd.sales>0 || pd.target>0)) {
                     if (inDisplay) {
@@ -7821,7 +8581,30 @@ function renderAnnualReport() {
     // Month selector
     var arMonthSel = document.getElementById('ar-month-select');
     var selectedMonth = arMonthSel ? arMonthSel.value : 'ALL';
-    var displayMonths = selectedMonth === 'ALL' ? MONTHS : MONTHS.filter(function(m){ return m === selectedMonth; });
+    var nowDate = new Date();
+    var displayMonths;
+    var rangeLabel = '';
+    if (selectedMonth === 'ALL') {
+        displayMonths = MONTHS;
+    } else if (selectedMonth === 'UPTODATE') {
+        // Up to date = JAN .. current month (only meaningful for the current year).
+        if (selectedYear < nowDate.getFullYear()) displayMonths = MONTHS;          // past year → full year
+        else if (selectedYear > nowDate.getFullYear()) displayMonths = [];          // future year → nothing yet
+        else displayMonths = MONTHS.slice(0, nowDate.getMonth() + 1);               // current year → up to this month
+    } else if (selectedMonth === 'RANGE') {
+        // Custom range: From month .. To month (inclusive). Auto-swap if reversed.
+        var fromSel = document.getElementById('ar-range-from');
+        var toSel = document.getElementById('ar-range-to');
+        var fromM = fromSel ? fromSel.value : 'JAN';
+        var toM = toSel ? toSel.value : 'DEC';
+        var fi = MONTHS.indexOf(fromM); if (fi < 0) fi = 0;
+        var ti = MONTHS.indexOf(toM);  if (ti < 0) ti = MONTHS.length - 1;
+        if (fi > ti) { var tmp = fi; fi = ti; ti = tmp; }
+        displayMonths = MONTHS.slice(fi, ti + 1);
+        rangeLabel = MONTHS[fi] + ' – ' + MONTHS[ti];
+    } else {
+        displayMonths = MONTHS.filter(function(m){ return m === selectedMonth; });
+    }
 
     // Group selector
     var arGroupSel = document.getElementById('ar-group-select');
@@ -7836,7 +8619,10 @@ function renderAnnualReport() {
 
     var subEl = document.getElementById('annual-sub');
     var groupLabel = selectedGroup === 'ALL' ? '' : ' · ' + selectedGroup;
-    var monthLabel = selectedMonth === 'ALL' ? 'Full Year' : selectedMonth;
+    var monthLabel = selectedMonth === 'ALL' ? 'Full Year'
+        : (selectedMonth === 'UPTODATE'
+            ? 'Up to date' + (displayMonths.length ? ' (\u2264 ' + displayMonths[displayMonths.length - 1] + ')' : '')
+            : (selectedMonth === 'RANGE' ? rangeLabel : selectedMonth));
     if (subEl) subEl.textContent = selectedYear + ' · ' + monthLabel + ' · ' + (selectedPerson === 'ALL' ? displayPeople.length + ' employees' : selectedPerson) + groupLabel;
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
@@ -7866,6 +8652,7 @@ function renderAnnualReport() {
             hEntry.data.forEach(function(pd) {
                 var nu = (pd.name||'').toUpperCase();
                 if (!peopleData[nu]) return;
+                if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(nu, m, selectedYear)) return;
                 var empType = getEmployeeType(nu);
                 if (empType === 'Sales') {
                     var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
@@ -7890,6 +8677,7 @@ function renderAnnualReport() {
         configPeople.forEach(function(name) {
             var empType = getEmployeeType(name);
             if (empType !== 'Supervisor') return;
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(name, m, selectedYear)) return;
             var team = _teamTotalsForMonth(m);
             if (team.target === 0) return; // No team data this month
             var teamAchM = team.target>0?(team.sales/team.target*100):0;
@@ -8060,6 +8848,15 @@ function renderAnnualReport() {
     body.innerHTML = html;
 }
 window.renderAnnualReport = renderAnnualReport;
+
+// Show/hide the From–To range dropdowns when the Month mode changes, then re-render.
+function onAnnualMonthModeChange() {
+    var sel = document.getElementById('ar-month-select');
+    var wrap = document.getElementById('ar-range-wrap');
+    if (wrap) wrap.style.display = (sel && sel.value === 'RANGE') ? 'flex' : 'none';
+    renderAnnualReport();
+}
+window.onAnnualMonthModeChange = onAnnualMonthModeChange;
 function printAnnualReport() {
     var yearSel = document.getElementById('annual-year-select');
     var year = yearSel ? yearSel.value : new Date().getFullYear();
@@ -8208,6 +9005,10 @@ function initEmployerCostSelectors() {
             opt.value = q.val; opt.textContent = q.label;
             mSel.appendChild(opt);
         });
+        // Custom range
+        var rangeOpt = document.createElement('option');
+        rangeOpt.value = 'RANGE'; rangeOpt.textContent = '\uD83D\uDCD0 Custom range\u2026';
+        mSel.appendChild(rangeOpt);
         // Individual months
         MONTHS.forEach(function(m) {
             var opt = document.createElement('option');
@@ -8254,13 +9055,29 @@ function renderEmployerCostReport() {
         Q4: ['OCT','NOV','DEC']
     };
     var filterMonths = null; // null = all months
-    if (selectedMonth !== 'ALL') {
+    if (selectedMonth === 'RANGE') {
+        // Custom range: From month .. To month (inclusive). Auto-swap if reversed.
+        var fromSel = document.getElementById('ec-range-from');
+        var toSel = document.getElementById('ec-range-to');
+        var fromM = fromSel ? fromSel.value : 'JAN';
+        var toM = toSel ? toSel.value : 'DEC';
+        var fi = MONTHS.indexOf(fromM); if (fi < 0) fi = 0;
+        var ti = MONTHS.indexOf(toM);  if (ti < 0) ti = MONTHS.length - 1;
+        if (fi > ti) { var tmp = fi; fi = ti; ti = tmp; }
+        filterMonths = MONTHS.slice(fi, ti + 1);
+    } else if (selectedMonth !== 'ALL') {
         if (quarterMap[selectedMonth]) {
             filterMonths = quarterMap[selectedMonth];
         } else {
             filterMonths = [selectedMonth];
         }
     }
+    // Human-readable label for the selected month scope (used in subtitle / cards).
+    var ecMonthLabel = (selectedMonth === 'ALL')
+        ? 'Full Year'
+        : (selectedMonth === 'RANGE'
+            ? (filterMonths.length ? filterMonths[0] + ' \u2013 ' + filterMonths[filterMonths.length - 1] : 'Range')
+            : selectedMonth);
 
     function isMonthIncluded(m) {
         if (!filterMonths) return true;
@@ -8298,6 +9115,7 @@ function renderEmployerCostReport() {
 
         MONTHS.forEach(function(m) {
             if (!isMonthIncluded(m)) return;
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(name, m, selectedYear)) return;
             var hEntry = findHistEntry(history, m, selectedYear);
             if (!hEntry || !hEntry.data) return;
 
@@ -8376,7 +9194,7 @@ function renderEmployerCostReport() {
     displayPeople.forEach(function(n) { displayTotalCost += allPeopleData[n].totalCost; displayTotalSales += allPeopleData[n].totalSales; });
 
     var sub = document.getElementById('annual-sub');
-    if (sub) sub.textContent = (selectedPerson === 'ALL' ? 'All Employees' : selectedPerson) + ' · ' + (selectedMonth === 'ALL' ? 'Full Year' : selectedMonth) + ' ' + selectedYear;
+    if (sub) sub.textContent = (selectedPerson === 'ALL' ? 'All Employees' : selectedPerson) + ' · ' + ecMonthLabel + ' ' + selectedYear;
 
     // Build HTML
     var html = '';
@@ -8409,7 +9227,7 @@ function renderEmployerCostReport() {
         var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
         html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;">';
         html += '<div><div style="font-size:15px;font-weight:800;color:#fff;">'+name+typeTag+'</div>';
-        html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">'+p.months+' months · '+(selectedMonth==='ALL'?'Full Year':selectedMonth)+' '+selectedYear+'</div></div>';
+        html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
         if (empType === 'Sales') {
             html += '<div style="text-align:right;"><div style="font-size:9px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Sales</div>';
             html += '<div style="font-size:16px;font-weight:800;color:#4ade80;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
@@ -8489,6 +9307,15 @@ function renderEmployerCostReport() {
     body.innerHTML = html;
 }
 window.renderEmployerCostReport = renderEmployerCostReport;
+
+// Show/hide the Expenses From–To range dropdowns when the Month mode changes, then re-render.
+function onEcMonthModeChange() {
+    var sel = document.getElementById('ec-month-select');
+    var wrap = document.getElementById('ec-range-wrap');
+    if (wrap) wrap.style.display = (sel && sel.value === 'RANGE') ? 'flex' : 'none';
+    renderEmployerCostReport();
+}
+window.onEcMonthModeChange = onEcMonthModeChange;
 
 // ==================== SUPERVISOR INCENTIVE MODAL ====================
 function showSupervisorIncentiveModal(personName) {
