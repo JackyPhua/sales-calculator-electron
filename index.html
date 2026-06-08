@@ -184,7 +184,8 @@
         }
         /* ── CALCULATION VIEW (refined workspace) ── */
         #view-quick .calc-toolbar-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
-        #view-quick .calc-toolbar-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
+        #view-quick .calc-toolbar-left{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;min-width:0;}
+        #view-quick .calc-toolbar-title{display:flex;flex-direction:column;gap:2px;min-width:0;}
         #view-quick .calc-kicker{font-size:9px;font-weight:700;color:var(--ink4);letter-spacing:.12em;text-transform:uppercase;}
         #view-quick .calc-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
         #view-quick .calc-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
@@ -522,10 +523,10 @@
     <!-- Toolbar -->
     <div class="toolbar calc-toolbar-wrap">
         <div class="calc-toolbar-left">
-            <span class="calc-kicker">Commission workspace</span>
-            <span class="calc-heading">Calculation</span>
-        </div>
-        <div class="calc-toolbar-right">
+            <div class="calc-toolbar-title">
+                <span class="calc-kicker">Commission workspace</span>
+                <span class="calc-heading">Calculation</span>
+            </div>
             <div class="calc-period-box">
                 <select id="report-month" aria-label="Month">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option>
@@ -546,6 +547,8 @@
                     <option value="Support Staff">🛠️ Support Staff</option>
                 </select>
             </div>
+        </div>
+        <div class="calc-toolbar-right">
             <button type="button" onclick="showBatchExportModal()" class="tbtn calc-batch-btn">Batch export</button>
         </div>
     </div>
@@ -659,7 +662,6 @@
                         <div class="cw-mock-tile">
                             <div class="cw-panel-hd">Incentives &amp; rules applied</div>
                             <ul id="cw-incentive-list" class="cw-bullets cw-inc-list"></ul>
-                            <a href="#" class="cw-mock-link" onclick="switchView('commission');return false;">View all rules &amp; incentives</a>
                         </div>
                         <div class="cw-mock-tile cw-mock-tile--insight" id="cw-panel-insight">
                             <div class="cw-panel-hd"><span class="cw-bulb" aria-hidden="true">💡</span>Smart insight</div>
@@ -976,7 +978,7 @@
                 <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
                     <div style="display:flex;justify-content:space-between;">
                         <span>Version</span>
-                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.7.2</span>
+                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.7.3</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;">
                         <span>Database</span>

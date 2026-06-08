@@ -1657,20 +1657,39 @@ function showEmployeeStatusDatePicker(personName, currentlyActive) {
     if (!personName) return;
     var makeActive = !currentlyActive;
     var now = new Date();
-    var defaultDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     var existingRaw = makeActive
         ? ((typeof getEmployeeStartYM === 'function' && getEmployeeStartYM(personName)) || '')
         : ((typeof getEmployeeEndYM === 'function' && getEmployeeEndYM(personName)) || '');
-    // A <input type="date"> only accepts full YYYY-MM-DD; legacy month-only values fall back to today.
-    var existing = /^\d{4}-\d{2}-\d{2}$/.test(existingRaw) ? existingRaw : defaultDate;
+    // Pre-fill from stored value (YYYY-MM-DD or legacy YYYY-MM); otherwise today.
+    var preY, preM, preD;
+    var fm = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(existingRaw);
+    if (fm) {
+        preY = parseInt(fm[1], 10);
+        preM = parseInt(fm[2], 10);
+        preD = fm[3] ? parseInt(fm[3], 10) : now.getDate();
+    } else {
+        preY = now.getFullYear(); preM = now.getMonth() + 1; preD = now.getDate();
+    }
 
     var headBg = makeActive ? 'linear-gradient(135deg,#065f46,#16a34a)' : 'linear-gradient(135deg,#7f1d1d,#dc2626)';
     var title  = makeActive ? '● Set Active' : '○ Set Inactive';
-    var lbl    = makeActive ? 'Active from (Join date)' : 'Inactive from (Resign date)';
+    var lbl    = makeActive ? 'Active from (Join date) — DD/MM/YYYY' : 'Inactive from (Resign date) — DD/MM/YYYY';
     var hint   = makeActive
         ? 'This person will appear in Records / Annual Report from this month onwards.'
         : 'This person will not appear in Records / Annual Report after this month. Past history is kept.';
     var accent = makeActive ? '#16a34a' : '#dc2626';
+
+    // Build DD / MM / YYYY option lists.
+    var dayOpts = '';
+    for (var d = 1; d <= 31; d++) { var dd = String(d).padStart(2, '0'); dayOpts += '<option value="' + dd + '"' + (d === preD ? ' selected' : '') + '>' + dd + '</option>'; }
+    var monOpts = '';
+    for (var mo = 1; mo <= 12; mo++) { var mm = String(mo).padStart(2, '0'); monOpts += '<option value="' + mm + '"' + (mo === preM ? ' selected' : '') + '>' + mm + '</option>'; }
+    var yrOpts = '';
+    var baseYr = now.getFullYear();
+    for (var y = baseYr - 6; y <= baseYr + 2; y++) { yrOpts += '<option value="' + y + '"' + (y === preY ? ' selected' : '') + '>' + y + '</option>'; }
+
+    var selCss = 'flex:1;padding:10px 8px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;text-align:center;cursor:pointer;';
+    var sepCss = 'font-size:16px;font-weight:700;color:var(--ink3);';
 
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
@@ -1683,7 +1702,13 @@ function showEmployeeStatusDatePicker(personName, currentlyActive) {
         + '<div style="font-size:12px;opacity:.7;margin-top:3px;">' + personName + '</div></div>'
         + '<div style="padding:20px 22px;">'
         + '<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px;">' + lbl + '</label>'
-        + '<input id="es-date" type="date" value="' + existing + '" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;">'
+        + '<div style="display:flex;align-items:center;gap:6px;">'
+        + '<select id="es-day" aria-label="Day" style="' + selCss + '">' + dayOpts + '</select>'
+        + '<span style="' + sepCss + '">/</span>'
+        + '<select id="es-mon" aria-label="Month" style="' + selCss + '">' + monOpts + '</select>'
+        + '<span style="' + sepCss + '">/</span>'
+        + '<select id="es-yr" aria-label="Year" style="' + selCss + ';flex:1.3;">' + yrOpts + '</select>'
+        + '</div>'
         + '<div style="font-size:11px;color:var(--ink3);margin-top:8px;line-height:1.5;">' + hint + '</div>'
         + '</div>'
         + '<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;">'
@@ -1694,7 +1719,13 @@ function showEmployeeStatusDatePicker(personName, currentlyActive) {
     document.body.appendChild(overlay);
     document.getElementById('es-cancel').addEventListener('click', function () { overlay.remove(); });
     document.getElementById('es-save').addEventListener('click', function () {
-        var dateVal = document.getElementById('es-date').value;
+        var dd = document.getElementById('es-day').value;
+        var mm = document.getElementById('es-mon').value;
+        var yy = document.getElementById('es-yr').value;
+        // Clamp the day to the chosen month's length (e.g. 31 Feb → 28/29).
+        var maxDay = new Date(parseInt(yy, 10), parseInt(mm, 10), 0).getDate();
+        if (parseInt(dd, 10) > maxDay) dd = String(maxDay).padStart(2, '0');
+        var dateVal = yy + '-' + mm + '-' + dd; // stored as YYYY-MM-DD
         overlay.remove();
         applyEmployeeStatus(personName, makeActive, dateVal);
     });
@@ -1717,13 +1748,53 @@ function applyEmployeeStatus(personName, makeActive, ym) {
     if (typeof saveConfig === 'function') saveConfig();
     renderPeopleList();
     if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+    // Display as DD/MM/YYYY in the confirmation toast.
+    var ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ym || '');
+    var nice = ymd ? (ymd[3] + '/' + ymd[2] + '/' + ymd[1]) : (ym || '');
     if (makeActive) {
-        showToast('✅', personName + ' set to Active' + (ym ? ' (from ' + ym + ')' : ''));
+        showToast('✅', personName + ' set to Active' + (nice ? ' (from ' + nice + ')' : ''));
     } else {
-        showToast('🚪', personName + ' set to Inactive' + (ym ? ' (resigned ' + ym + ')' : ''));
+        showToast('🚪', personName + ' set to Inactive' + (nice ? ' (resigned ' + nice + ')' : ''));
     }
 }
 window.applyEmployeeStatus = applyEmployeeStatus;
+
+// Require the manager password (same as Annual Report) before running a sensitive People action.
+function requirePeoplePassword(actionLabel, onSuccess) {
+    var correct = (window.appState && window.appState.config && window.appState.config.annual_password) || 'boss123';
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;box-sizing:border-box;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:14px;max-width:340px;width:100%;padding:24px;box-shadow:0 25px 60px rgba(8,15,26,.25);font-family:Sora,sans-serif;';
+    card.addEventListener('click', function (e) { e.stopPropagation(); });
+    card.innerHTML =
+        '<div style="font-size:15px;font-weight:800;color:var(--ink);margin-bottom:4px;">\uD83D\uDD12 Password required</div>'
+        + '<div style="font-size:12px;color:var(--ink3);margin-bottom:14px;">' + actionLabel + '</div>'
+        + '<input id="pp-input" type="password" placeholder="Password" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;text-align:center;background:var(--paper);color:var(--ink);">'
+        + '<div id="pp-err" style="font-size:12px;color:#dc2626;min-height:16px;margin:6px 0 10px;"></div>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="pp-cancel" style="padding:8px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink);">Cancel</button>'
+        + '<button id="pp-ok" style="padding:8px 18px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">Confirm</button>'
+        + '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    var input = document.getElementById('pp-input');
+    if (input) setTimeout(function () { input.focus(); }, 50);
+    function submit() {
+        if (input && input.value === correct) {
+            overlay.remove();
+            if (typeof onSuccess === 'function') onSuccess();
+        } else {
+            var err = document.getElementById('pp-err');
+            if (err) err.textContent = 'Incorrect password';
+            if (input) { input.value = ''; input.focus(); }
+        }
+    }
+    document.getElementById('pp-cancel').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('pp-ok').addEventListener('click', submit);
+    if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+}
+window.requirePeoplePassword = requirePeoplePassword;
 
 function deleteSalespersonConfig(personName) {
     if (!personName) return;
@@ -2529,8 +2600,8 @@ function renderPersonSidebar() {
     groups.forEach(function(group) {
         if (hasCompanies && group.company) {
             var hdr = document.createElement('div');
-            hdr.style.cssText = 'padding:6px 12px;font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;background:var(--sheet);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:4px;';
-            hdr.innerHTML = '\ud83c\udfe2 ' + group.company;
+            hdr.style.cssText = 'padding:7px 12px;font-size:10px;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.6px;line-height:1.3;background:var(--sheet);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;';
+            hdr.innerHTML = '<span style="font-size:11px;line-height:1;">\ud83c\udfe2</span><span>' + group.company + '</span>';
             list.appendChild(hdr);
         } else if (hasCompanies && !group.company) {
             var hdr2 = document.createElement('div');
@@ -4706,12 +4777,73 @@ function viewHistoryReport(index) {
 }
 
 function deleteHistoryReport(index) {
-    if (confirm('Are you sure you want to delete this history record?')) {
-        window.appState.config.reportHistory.splice(index, 1);
+    var history = window.appState.config.reportHistory || [];
+    var report = history[index];
+    if (!report) { showToast('\u26a0\ufe0f', 'Report not found'); return; }
+
+    var monthLbl = (typeof bareMonth === 'function') ? bareMonth(report.month) : (report.month || '');
+    var yearLbl  = (typeof keyYear === 'function') ? (keyYear(report.month) || '') : '';
+    var peopleNames = (report.data || []).map(function (p) { return p.name; }).filter(Boolean);
+    var correctPw = (window.appState.config && window.appState.config.annual_password) || 'boss123';
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;box-sizing:border-box;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:16px;max-width:380px;width:100%;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);font-family:Sora,sans-serif;';
+    card.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    var personOpts = '<option value="__ALL__">\u2014 Entire month (all people) \u2014</option>'
+        + peopleNames.map(function (n) { return '<option value="' + n.toUpperCase() + '">' + n + '</option>'; }).join('');
+
+    var inCss = 'width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;';
+    card.innerHTML =
+        '<div style="background:linear-gradient(135deg,#7f1d1d,#dc2626);padding:18px 22px;color:#fff;">'
+        + '<div style="font-size:16px;font-weight:800;">\ud83d\uddd1\ufe0f Delete record</div>'
+        + '<div style="font-size:12px;opacity:.8;margin-top:3px;">' + monthLbl + ' ' + yearLbl + '</div></div>'
+        + '<div style="padding:20px 22px;">'
+        + '<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px;">What to delete</label>'
+        + '<select id="del-target" style="' + inCss + 'cursor:pointer;margin-bottom:14px;">' + personOpts + '</select>'
+        + '<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:6px;">Password</label>'
+        + '<input id="del-pw" type="password" placeholder="Password" style="' + inCss + 'text-align:center;">'
+        + '<div id="del-err" style="font-size:12px;color:#dc2626;min-height:16px;margin-top:6px;"></div>'
+        + '<div style="font-size:11px;color:var(--ink3);line-height:1.5;">Deleting a single person only removes their data for this month. Other months are not affected.</div>'
+        + '</div>'
+        + '<div style="padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="del-cancel" style="padding:9px 18px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink);">Cancel</button>'
+        + '<button id="del-ok" style="padding:9px 22px;border:none;border-radius:var(--r);background:#dc2626;color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">Delete</button>'
+        + '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    var pwInput = document.getElementById('del-pw');
+    if (pwInput) setTimeout(function () { pwInput.focus(); }, 50);
+
+    function doDelete() {
+        if (!pwInput || pwInput.value !== correctPw) {
+            var err = document.getElementById('del-err');
+            if (err) err.textContent = 'Incorrect password';
+            if (pwInput) { pwInput.value = ''; pwInput.focus(); }
+            return;
+        }
+        var target = (document.getElementById('del-target') || {}).value || '__ALL__';
+        var curIndex = (window.appState.config.reportHistory || []).indexOf(report);
+        if (curIndex < 0) { overlay.remove(); showToast('\u26a0\ufe0f', 'Report not found'); return; }
+        if (target === '__ALL__') {
+            window.appState.config.reportHistory.splice(curIndex, 1);
+            showToast('\u2705', monthLbl + ' ' + yearLbl + ' deleted');
+        } else {
+            report.data = (report.data || []).filter(function (p) { return (p.name || '').toUpperCase() !== target; });
+            // If no one is left in this month, drop the empty month entry too.
+            if (report.data.length === 0) window.appState.config.reportHistory.splice(curIndex, 1);
+            showToast('\u2705', target + ' removed from ' + monthLbl + ' ' + yearLbl);
+        }
         saveConfig();
         loadQuickCalculateHistory();
-        showToast('✅', 'History record deleted');
+        overlay.remove();
     }
+
+    document.getElementById('del-cancel').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('del-ok').addEventListener('click', doDelete);
+    if (pwInput) pwInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doDelete(); });
 }
 
 // Show loading
@@ -5975,7 +6107,9 @@ function teamAllocationMonthKey() {
 function salesNamesForTeamAllocation(scope) {
     var cfg = window.appState.config;
     var raw = Object.keys(cfg.base_salaries || {}).filter(function(n) {
-        return getEmployeeType(n) === 'Sales';
+        if (getEmployeeType(n) !== 'Sales') return false;
+        if (typeof isEmployeeActive === 'function' && !isEmployeeActive(n)) return false;
+        return true;
     });
     raw.sort(function(a, b) { return String(a).localeCompare(String(b)); });
     var up = function(n) { return String(n).toUpperCase(); };
@@ -7839,13 +7973,13 @@ function renderPeopleList() {
                 ? 'border:1.5px solid #86efac;background:#dcfce7;color:#166534;'
                 : 'border:1.5px solid #fecaca;background:#fee2e2;color:#b91c1c;');
         bA.textContent = active ? '● Active' : '○ Inactive';
-        bA.addEventListener('click',(function(n, isActive){ return function(){ showEmployeeStatusDatePicker(n, isActive); };})(name, active));
+        bA.addEventListener('click',(function(n, isActive){ return function(){ requirePeoplePassword((isActive ? 'Set ' : 'Reactivate ') + n + ' \u2014 enter password to continue', function(){ showEmployeeStatusDatePicker(n, isActive); }); };})(name, active));
         btns.appendChild(bA);
 
         var bD = document.createElement('button');
         bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
         bD.textContent = '🗑️';
-        bD.addEventListener('click',(function(n){return function(){deleteSalespersonConfig(n);};})(name));
+        bD.addEventListener('click',(function(n){return function(){ requirePeoplePassword('Delete ' + n + ' \u2014 enter password to continue', function(){ deleteSalespersonConfig(n); }); };})(name));
         btns.appendChild(bD);
     });
 
@@ -8065,7 +8199,13 @@ function showCommissionModal(personName) {
     card.innerHTML=
         '<div style="background:linear-gradient(135deg,#0f172a,#4f46e5);padding:20px 24px;color:#fff;flex-shrink:0;">'
         +'<div style="font-size:17px;font-weight:800;letter-spacing:-.3px;">💰 Commission & Incentive'+badge+'</div>'
-        +'<div style="font-size:12px;opacity:.6;margin-top:3px;">'+personName+' — Edit to create personal override</div></div>'
+        +'<div style="font-size:12px;opacity:.6;margin-top:3px;">'+personName+' — Edit to create personal override</div>'
+        +'<div style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
+        +'<span style="font-size:11px;font-weight:600;opacity:.75;">Rate source</span>'
+        +'<select id="cm-rate-mode" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.14);color:#fff;font-size:12px;font-weight:700;font-family:Sora,sans-serif;cursor:pointer;outline:none;">'
+        +'<option value="company"'+(hasP?'':' selected')+' style="color:#0f172a;">🏢 Company Rate</option>'
+        +'<option value="personal"'+(hasP?' selected':'')+' style="color:#0f172a;">✦ Personal Rate</option>'
+        +'</select></div></div>'
         +'<div style="padding:16px 24px;overflow-y:auto;flex:1;">'
         // Monthly Commission
         +'<div style="background:var(--blue-l);border:1px solid #bae6fd;border-radius:var(--r);padding:14px;margin-bottom:12px;">'
@@ -8113,7 +8253,38 @@ function showCommissionModal(personName) {
     document.getElementById('cm-add-call').addEventListener('click',function(){addTempIncentive('call');});
     document.getElementById('cm-save-btn').addEventListener('click',function(){saveCommissionModal(personName);});
     document.getElementById('cm-cancel-btn').addEventListener('click',function(){modal.remove();});
+    var modeSel=document.getElementById('cm-rate-mode');
+    if(modeSel)modeSel.addEventListener('change',function(){setCommissionModalMode(personName,this.value);});
 }
+
+// Toggle the person between Company Rate (use global) and Personal Rate (own editable copy) from within the modal.
+function setCommissionModalMode(personName, mode){
+    var cfg=window.appState.config;
+    if(mode==='company'){
+        ['person_commission_rates','person_quarterly_incentive','person_collection_incentive','person_call_incentive'].forEach(function(k){
+            if(cfg[k]&&cfg[k][personName])delete cfg[k][personName];
+        });
+        saveConfig();
+        renderPeopleList();
+        showToast('\ud83c\udfe2', personName+' \u2192 Company Rate');
+    } else {
+        // Seed a personal copy from the current (company) values so it can be edited independently.
+        if(!cfg.person_commission_rates)cfg.person_commission_rates={};
+        if(!cfg.person_quarterly_incentive)cfg.person_quarterly_incentive={};
+        if(!cfg.person_collection_incentive)cfg.person_collection_incentive={};
+        if(!cfg.person_call_incentive)cfg.person_call_incentive={};
+        cfg.person_commission_rates[personName]=JSON.parse(JSON.stringify(window._tempRates||cfg.monthly_commission_rates||[]));
+        cfg.person_quarterly_incentive[personName]=JSON.parse(JSON.stringify(window._tempQtr||cfg.quarterly_incentive||[]));
+        cfg.person_collection_incentive[personName]=JSON.parse(JSON.stringify(window._tempColl||cfg.collection_incentive||[]));
+        cfg.person_call_incentive[personName]=JSON.parse(JSON.stringify(window._tempCall||cfg.active_call_incentive||[]));
+        saveConfig();
+        renderPeopleList();
+        showToast('\u2726', personName+' \u2192 Personal Rate');
+    }
+    // Reload the modal so the badge, dropdown and editor values reflect the new source.
+    showCommissionModal(personName);
+}
+window.setCommissionModalMode = setCommissionModalMode;
 
 function renderTempRates() {
     var wrap=document.getElementById('cm-tiers');if(!wrap)return;
