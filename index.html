@@ -38,6 +38,9 @@
         #app-body{max-width:1600px;margin:0 auto;padding:10px 20px;}
         .view-container{display:none;}
         .view-container.active{display:block;}
+        /* ── PAGE TITLE (top-left of each view) ── */
+        .page-title-block{display:flex;flex-direction:column;gap:2px;min-width:0;}
+        .page-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
         /* ── TOOLBAR ── */
         .toolbar{display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px;flex-wrap:wrap;}
         .tool-sep{width:1px;height:22px;background:var(--line);margin:0 2px;}
@@ -184,9 +187,8 @@
         }
         /* ── CALCULATION VIEW (refined workspace) ── */
         #view-quick .calc-toolbar-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
-        #view-quick .calc-toolbar-left{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;min-width:0;}
+        #view-quick .calc-toolbar-left{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0;}
         #view-quick .calc-toolbar-title{display:flex;flex-direction:column;gap:2px;min-width:0;}
-        #view-quick .calc-kicker{font-size:9px;font-weight:700;color:var(--ink4);letter-spacing:.12em;text-transform:uppercase;}
         #view-quick .calc-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
         #view-quick .calc-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
         #view-quick .calc-period-box{display:inline-flex;align-items:center;gap:0;flex-wrap:wrap;padding:6px 8px;background:var(--paper);border:1.5px solid var(--line);border-radius:10px;box-shadow:var(--sh);}
@@ -484,7 +486,10 @@
 
 <!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
 <div id="view-dashboard" class="view-container">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading">Team Dashboard</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div>
             <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Year</div>
             <select id="dashboard-year-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
@@ -524,7 +529,6 @@
     <div class="toolbar calc-toolbar-wrap">
         <div class="calc-toolbar-left">
             <div class="calc-toolbar-title">
-                <span class="calc-kicker">Commission workspace</span>
                 <span class="calc-heading">Calculation</span>
             </div>
             <div class="calc-period-box">
@@ -743,6 +747,9 @@
 
 <!-- ══════════════════ PEOPLE VIEW ══════════════════ -->
 <div id="view-people" class="view-container">
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading">Add Person</span>
+    </div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
         <input id="people-search" class="if" placeholder="🔍 Search by name..."
             style="flex:1;min-width:200px;"
@@ -760,8 +767,11 @@
 
 <!-- ══════════════════ PROJECTION REPORT VIEW ══════════════════ -->
 <div id="view-report" class="view-container" style="display:none;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading">Projection</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
             <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Person</div>
                 <select id="proj-person-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
@@ -807,8 +817,8 @@
 <!-- ══════════════════ HISTORY VIEW ══════════════════ -->
 <div id="view-history" class="view-container">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;">
-        <div>
-            <div style="font-size:18px;font-weight:800;letter-spacing:-.5px;">Report History</div>
+        <div class="page-title-block">
+            <span class="page-heading">Report History</span>
             <div id="history-sub" style="font-size:12px;color:var(--ink4);margin-top:2px;">Loading...</div>
         </div>
         <button onclick="loadQuickCalculateHistory()" class="tbtn">🔄 Refresh</button>
@@ -818,16 +828,16 @@
 
 <!-- ══════════════════ ANNUAL REPORT VIEW ══════════════════ -->
 <div id="view-annual" class="view-container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:center;gap:12px;">
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading" id="annual-page-title">Annual Report</span>
+        <div id="annual-sub" style="font-size:12px;color:var(--ink3);margin-top:2px;">Complete sales performance summary</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
             <div>
                 <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
                 <select id="annual-year-select" onchange="onAnnualViewChange()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
                 </select>
-            </div>
-            <div style="margin-top:18px;">
-                <div style="font-size:20px;font-weight:800;color:var(--ink);letter-spacing:-.5px;" id="annual-page-title">Annual Report</div>
-                <div id="annual-sub" style="font-size:12px;color:var(--ink3);margin-top:2px;">Complete sales performance summary</div>
             </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -951,6 +961,9 @@
     </div>
 </div>
 <div id="view-settings" class="view-container">
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading">Settings</span>
+    </div>
     <div class="settings-grid">
         <div class="set-card">
             <div class="set-title">🏢 Company Management</div>
@@ -978,7 +991,7 @@
                 <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
                     <div style="display:flex;justify-content:space-between;">
                         <span>Version</span>
-                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.7.3</span>
+                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.7.4</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;">
                         <span>Database</span>

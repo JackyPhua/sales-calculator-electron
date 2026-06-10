@@ -8661,8 +8661,7 @@ function renderDashboard() {
     });
     var medals = ['🥇','🥈','🥉'];
     var html = '';
-    html += '<div style="margin-bottom:20px;"><div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;">Team Dashboard</div>';
-    html += '<div style="font-size:13px;color:#64748b;margin-top:4px;">'+curYear+' Overview · '+configPeople.length+' salespeople</div></div>';
+    html += '<div style="margin-bottom:14px;font-size:13px;color:#64748b;">'+curYear+' Overview · '+configPeople.length+' salespeople</div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
     html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:16px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamTarget)+'</div></div>';
     html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
