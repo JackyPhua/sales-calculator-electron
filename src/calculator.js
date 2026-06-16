@@ -114,6 +114,180 @@ window.applyRoleColorsToCardHeader = applyRoleColorsToCardHeader;
 window.setEmployeeType = setEmployeeType;
 window.getTierAmt = getTierAmt;
 
+// ==================== EPF Third Schedule (KWSP) — Effective 1 Oct 2025 ====================
+// EPF contributions follow the official Third Schedule. The applicable Part is
+// resolved automatically from each employee's nationality status and age:
+//   Part A  Malaysian citizen / PR, under 60      (employer 13%/12%, employee 11%)
+//   Part C  PR / pre-1998 elector, age 60+        (employer 6.5%/6%, employee 5.5%)
+//   Part E  Malaysian citizen, age 60+            (employer 4%, employee 0%)
+//   Part F  Non-citizen (foreign worker)          (employer 2%, employee 2%)
+function getEmployeeDOB(name) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_dob) return '';
+    return cfg.employee_dob[(name || '').toUpperCase()] || '';
+}
+function setEmployeeDOB(name, val) {
+    if (!name) return;
+    var cfg = window.appState.config;
+    if (!cfg.employee_dob) cfg.employee_dob = {};
+    cfg.employee_dob[name.toUpperCase()] = val || '';
+}
+function getEmployeeNationality(name) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.employee_nationality) return 'CITIZEN';
+    return cfg.employee_nationality[(name || '').toUpperCase()] || 'CITIZEN';
+}
+function setEmployeeNationality(name, val) {
+    if (!name) return;
+    var cfg = window.appState.config;
+    if (!cfg.employee_nationality) cfg.employee_nationality = {};
+    cfg.employee_nationality[name.toUpperCase()] = val || 'CITIZEN';
+}
+
+function getEmployeeProfile(name) {
+    var cfg = window.appState && window.appState.config;
+    var nu = (name || '').toUpperCase();
+    if (!cfg || !cfg.employee_profiles) return { mykad: '', epfNo: '', bankAccount: '' };
+    var p = cfg.employee_profiles[nu] || {};
+    return {
+        mykad: p.mykad || '',
+        epfNo: p.epfNo || '',
+        bankAccount: p.bankAccount || ''
+    };
+}
+
+function setEmployeeProfile(name, data) {
+    if (!name) return;
+    var cfg = window.appState.config;
+    if (!cfg.employee_profiles) cfg.employee_profiles = {};
+    var nu = name.toUpperCase();
+    var cur = cfg.employee_profiles[nu] || {};
+    cfg.employee_profiles[nu] = Object.assign({}, cur, data || {});
+}
+window.getEmployeeProfile = getEmployeeProfile;
+window.setEmployeeProfile = setEmployeeProfile;
+
+// Age in whole years as at the 1st of the given report month.
+function epfAgeAtMonth(dob, bareM, year) {
+    if (!dob) return null;
+    var mm = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(dob);
+    if (!mm) return null;
+    var by = parseInt(mm[1], 10), bm = parseInt(mm[2], 10), bd = parseInt(mm[3] || '1', 10);
+    var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var mi = MONTHS.indexOf((bareM || '').toUpperCase());
+    var refY = parseInt(year, 10) || new Date().getFullYear();
+    var refM = (mi >= 0 ? mi : new Date().getMonth()) + 1;
+    var age = refY - by;
+    if (refM < bm || (refM === bm && bd > 1)) age--;
+    return age;
+}
+
+function resolveEpfPart(name, bareM, year) {
+    var nat = getEmployeeNationality(name);
+    var age = epfAgeAtMonth(getEmployeeDOB(name), bareM, year);
+    var is60 = (age != null && age >= 60);
+    if (nat === 'FOREIGNER') return 'F';
+    if (nat === 'PR') return is60 ? 'C' : 'A';
+    return is60 ? 'E' : 'A'; // CITIZEN (default)
+}
+
+// Round up to the next ringgit (statutory rounding), float-safe.
+function _epfCeil(x) { return Math.ceil(x - 1e-6); }
+
+// Statutory employee/employer contribution for given gross wages + Part.
+function epfScheduleAmount(wages, part) {
+    wages = parseFloat(wages) || 0;
+    if (wages <= 0) return { employee: 0, employer: 0 };
+    var erLow, eeLow, erHigh, eeHigh;
+    switch (part) {
+        case 'C': erLow = 0.065; eeLow = 0.055; erHigh = 0.06; eeHigh = 0.055; break;
+        case 'E': erLow = 0.04;  eeLow = 0;     erHigh = 0.04; eeHigh = 0;     break;
+        case 'F': return { employee: _epfCeil(wages * 0.02), employer: _epfCeil(wages * 0.02) };
+        case 'A':
+        default:  erLow = 0.13;  eeLow = 0.11;  erHigh = 0.12; eeHigh = 0.11;  break;
+    }
+    if (wages <= 10) return { employee: 0, employer: 0 };
+    var ceiling, er, ee;
+    if (wages <= 5000) {
+        ceiling = Math.ceil(wages / 20) * 20;
+        er = _epfCeil(ceiling * erLow);  ee = _epfCeil(ceiling * eeLow);
+    } else if (wages <= 20000) {
+        ceiling = Math.ceil(wages / 100) * 100;
+        er = _epfCeil(ceiling * erHigh); ee = _epfCeil(ceiling * eeHigh);
+    } else {
+        er = _epfCeil(wages * erHigh);   ee = _epfCeil(wages * eeHigh);
+    }
+    return { employee: ee, employer: er };
+}
+
+// Main entry: compute EPF for a person/month from gross wages.
+function computeEpf(name, wages, bareM, year) {
+    var part = resolveEpfPart(name, bareM, year);
+    var amt = epfScheduleAmount(wages, part);
+    var w = parseFloat(wages) || 0;
+    return {
+        employee: amt.employee,
+        employer: amt.employer,
+        part: part,
+        empPct: w > 0 ? amt.employee / w * 100 : 0,
+        erPct:  w > 0 ? amt.employer / w * 100 : 0
+    };
+}
+window.getEmployeeDOB = getEmployeeDOB;
+window.setEmployeeDOB = setEmployeeDOB;
+window.getEmployeeNationality = getEmployeeNationality;
+window.setEmployeeNationality = setEmployeeNationality;
+window.epfAgeAtMonth = epfAgeAtMonth;
+window.resolveEpfPart = resolveEpfPart;
+window.epfScheduleAmount = epfScheduleAmount;
+window.computeEpf = computeEpf;
+
+// ==================== EIS / SIP (Employment Insurance System, Act 800) ====================
+// Second Schedule: employee 0.2% + employer 0.2%, charged on the MID-POINT of each
+// RM100 wage band, capped at RM6,000 monthly wages (max RM11.90 per side).
+// Exempt: employees aged 60+ and non-citizens (foreign workers).
+function eisScheduleAmount(wages) {
+    var w = Math.min(parseFloat(wages) || 0, 6000);
+    if (w <= 0) return 0;
+    // Band = (X00.01 .. (X+1)00); the schedule charges 0.2% of the band mid-point.
+    var midpoint = (Math.ceil(w / 100) * 100) - 50;
+    return Math.round(midpoint * 0.002 * 100) / 100;
+}
+function computeEis(name, wages, bareM, year) {
+    var nat = getEmployeeNationality(name);
+    if (nat === 'FOREIGNER') return { employee: 0, employer: 0, exempt: true };
+    var age = epfAgeAtMonth(getEmployeeDOB(name), bareM, year);
+    if (age != null && age >= 60) return { employee: 0, employer: 0, exempt: true };
+    var amt = eisScheduleAmount(wages);
+    return { employee: amt, employer: amt, exempt: false };
+}
+window.eisScheduleAmount = eisScheduleAmount;
+window.computeEis = computeEis;
+
+// ==================== SOCSO / PERKESO (Act 4, First Schedule) ====================
+// Charged on the MID-POINT of each RM100 wage band, capped at RM6,000.
+//   Category 1 (under 60, local/PR): employer 1.75%, employee 0.5%
+//   Category 2 (age 60+, or foreign workers): employer 1.25%, employee 0%
+// Amounts are rounded to the nearest 5 sen.
+function _socsoRound5(x) { return Math.round(x * 20 + 1e-9) / 20; }
+function socsoCategory(name, bareM, year) {
+    var age = epfAgeAtMonth(getEmployeeDOB(name), bareM, year);
+    if (age != null && age >= 60) return 2;
+    if (getEmployeeNationality(name) === 'FOREIGNER') return 2;
+    return 1;
+}
+function computeSocso(name, wages, bareM, year) {
+    var cat = socsoCategory(name, bareM, year);
+    var w = Math.min(parseFloat(wages) || 0, 6000);
+    if (w <= 0) return { employee: 0, employer: 0, cat: cat };
+    var mid = (Math.ceil(w / 100) * 100) - 50;
+    var employer = _socsoRound5(mid * (cat === 1 ? 0.0175 : 0.0125));
+    var employee = cat === 1 ? _socsoRound5(mid * 0.005) : 0;
+    return { employee: employee, employer: employer, cat: cat };
+}
+window.socsoCategory = socsoCategory;
+window.computeSocso = computeSocso;
+
 // ==================== Company Helpers ====================
 function getEmployeeCompany(name) {
     if (!name) return '';
@@ -667,6 +841,9 @@ function ensureConfigStructure() {
         'deductionRates',
         'employer_epf_rates',
         'employee_types',
+        'employee_dob',
+        'employee_nationality',
+        'employee_profiles',
         'companies',
         'employee_companies',
         'supervisor_sale_tiers',
@@ -733,6 +910,9 @@ function getDefaultConfig() {
         deductionRates: {},
         employer_epf_rates: {},
         employee_types: {},
+        employee_dob: {},
+        employee_nationality: {},
+        employee_profiles: {},
         companies: [],
         employee_companies: {},
         supervisor_sale_tiers: [
@@ -1841,7 +2021,8 @@ function deleteSalespersonConfig(personName) {
         var cfg = window.appState.config;
         ['base_salaries','allowances','deductions','deductionRates','earnings',
          'active_call_targets','person_commission_rates','person_quarterly_incentive',
-         'person_collection_incentive','person_call_incentive'].forEach(function(k) {
+         'person_collection_incentive','person_call_incentive','employee_profiles',
+         'employee_dob','employee_nationality'].forEach(function(k) {
             if (cfg[k] && cfg[k][nameUpper]) delete cfg[k][nameUpper];
         });
         saveConfig();
@@ -2975,11 +3156,16 @@ function renderSalaryConfigs(selectedName) {
         const salary = window.appState.config.base_salaries[nameUpper] || 0;
         const allowances = window.appState.config.allowances[nameUpper] || {};
         const deductions = window.appState.config.deductions[nameUpper] || {};
-        const epfRate = (window.appState.config.deductionRates && window.appState.config.deductionRates[nameUpper] && window.appState.config.deductionRates[nameUpper].EPF_RATE) || 11;
-        
         const totalIncome = salary + Object.values(allowances).reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
-        const epfAmount = Math.round(totalIncome * (epfRate / 100) * 100) / 100;
-        const socsoAmount = Math.round(totalIncome * 0.005 * 100) / 100;
+        const _scMon = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][new Date().getMonth()];
+        const _scYear = String(new Date().getFullYear());
+        const _scEpf = (typeof computeEpf === 'function') ? computeEpf(nameUpper, totalIncome, _scMon, _scYear) : { employee: Math.round(totalIncome*0.11*100)/100, empPct: 11 };
+        const epfRate = (_scEpf.empPct != null) ? Math.round(_scEpf.empPct * 100) / 100 : 11;
+        const epfAmount = Math.round(_scEpf.employee * 100) / 100;
+        const _scSocso = (typeof computeSocso === 'function') ? computeSocso(nameUpper, totalIncome, _scMon, _scYear) : { employee: Math.round(totalIncome*0.005*100)/100 };
+        const socsoAmount = Math.round(_scSocso.employee * 100) / 100;
+        const _scEis = (typeof computeEis === 'function') ? computeEis(nameUpper, totalIncome, _scMon, _scYear) : { employee: 0 };
+        const eisAmount = Math.round(_scEis.employee * 100) / 100;
         
         return `
             <div class="border border-gray-300 rounded-lg p-4 mb-4 bg-white">
@@ -3018,12 +3204,12 @@ function renderSalaryConfigs(selectedName) {
                     <label class="block mb-2">Deductions</label>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="text-xs">EPF Rate (%)</label>
+                            <label class="text-xs">EPF Rate (auto %)</label>
                             <input type="number" 
                                    value="${epfRate}" 
-                                   step="0.1" 
-                                   onchange="updateEPFRate('${name}', this.value)" 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded">
+                                   readonly 
+                                   title="Auto from EPF Third Schedule (set DOB / nationality in Salary Setup)"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded bg-gray-100">
                         </div>
                         <div>
                             <label class="text-xs">EPF Amount (RM)</label>
@@ -3033,7 +3219,7 @@ function renderSalaryConfigs(selectedName) {
                                    class="w-full px-3 py-2 border border-gray-300 rounded bg-gray-100">
                         </div>
                         <div>
-                            <label class="text-xs">SOCSO (RM)</label>
+                            <label class="text-xs">SOCSO (RM, auto)</label>
                             <input type="number" 
                                    value="${socsoAmount}" 
                                    readonly 
@@ -3047,11 +3233,12 @@ function renderSalaryConfigs(selectedName) {
                                    class="w-full px-3 py-2 border border-gray-300 rounded">
                         </div>
                         <div>
-                            <label class="text-xs">EIS (RM)</label>
+                            <label class="text-xs">EIS (RM, auto 0.2%)</label>
                             <input type="number" 
-                                   value="${deductions.EIS || 0}" 
-                                   onchange="updateDeduction('${name}', 'EIS', this.value)" 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded">
+                                   value="${eisAmount}" 
+                                   readonly 
+                                   title="Auto: employee 0.2%, capped RM6,000; exempt 60+ / foreigners"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded bg-gray-100">
                         </div>
                     </div>
                 </div>
@@ -3061,7 +3248,7 @@ function renderSalaryConfigs(selectedName) {
 }
 
 // Add new salesperson
-function addNewPerson(nameOverride, typeOverride) {
+function addNewPerson(nameOverride, typeOverride, profileOverride) {
     var nameVal = nameOverride;
     if (!nameVal) {
         var ni = document.getElementById('new-person-name');
@@ -3082,6 +3269,9 @@ function addNewPerson(nameOverride, typeOverride) {
     window.appState.config.deductionRates[nameUpper]  = { EPF_RATE:11 };
     // Save employee type
     if (typeOverride) setEmployeeType(nameUpper, typeOverride);
+    if (profileOverride && typeof setEmployeeProfile === 'function') {
+        setEmployeeProfile(nameUpper, profileOverride);
+    }
     saveConfig();
     renderPeopleList();
     // Clear search input so it's ready for next use
@@ -4726,8 +4916,14 @@ function viewHistoryReport(index) {
 
         var totalFixed  = salary + totalAllow;
         var totalIncome = totalFixed + totalComm;
-        var epfAmt      = Math.round(totalIncome * (epfRate/100) * 100) / 100;
-        var grandTotal  = totalIncome - epfAmt;
+        var _hvEpf      = (typeof computeEpf === 'function') ? computeEpf(p.name, totalIncome, _hvBareM, _hvYear) : { employee: Math.round(totalIncome*(epfRate/100)*100)/100, empPct: epfRate };
+        var epfAmt      = Math.round(_hvEpf.employee * 100) / 100;
+        var epfPctLabel = (_hvEpf.empPct != null) ? _hvEpf.empPct.toFixed(1) : epfRate;
+        var _hvSocso    = (typeof computeSocso === 'function') ? computeSocso(p.name, totalIncome, _hvBareM, _hvYear) : { employee: 0 };
+        var socsoAmt    = Math.round(_hvSocso.employee * 100) / 100;
+        var _hvEis      = (typeof computeEis === 'function') ? computeEis(p.name, totalIncome, _hvBareM, _hvYear) : { employee: 0 };
+        var eisAmt      = Math.round(_hvEis.employee * 100) / 100;
+        var grandTotal  = totalIncome - epfAmt - socsoAmt - eisAmt;
 
         return '<div id="hv-person-'+pIdx+'" style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
             + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
@@ -4737,7 +4933,9 @@ function viewHistoryReport(index) {
             + '<div style="color:#6b7280;">Base Salary</div><div style="text-align:right;">' + formatCurrency(salary) + '</div>'
             + detailRows
             + '<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
-            + '<div style="color:#6b7280;">EPF (' + epfRate + '%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(epfAmt) + '</div>'
+            + '<div style="color:#6b7280;">EPF (' + epfPctLabel + '%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(epfAmt) + '</div>'
+            + (socsoAmt > 0 ? '<div style="color:#6b7280;">SOCSO (0.5%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(socsoAmt) + '</div>' : '')
+            + (eisAmt > 0 ? '<div style="color:#6b7280;">EIS (0.2%)</div><div style="text-align:right;color:#dc2626;">- ' + formatCurrency(eisAmt) + '</div>' : '')
             + '<div style="font-weight:700;color:#111;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">' + formatCurrency(grandTotal) + '</div>'
             + '</div></div>';
     }).join('');
@@ -4962,6 +5160,7 @@ function loadQuickCalculateHistory() {
             + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
             + '<button onclick="viewHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
             + '<button onclick="openHistoryExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
+            + '<button onclick="printPayslipsFromHistory(' + realIndex + ')" class="px-3 py-1 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm">📄 Payslip</button>'
             + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">🗑️</button>'
             + '</div></div></div>';
     }).join('');
@@ -5009,8 +5208,15 @@ function updateLivePayslip() {
     var totalFixed = salary + totalAllow;
     var totalFlexible = comm + collBon + callBon + qtrBon;
     var totalInc   = totalFixed + totalFlexible;
-    var epfAmt     = totalInc * (epfRate / 100);
-    var grand      = totalInc - epfAmt;
+    var _psYearE   = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+    var _epfRes    = (typeof computeEpf === 'function') ? computeEpf(person.name, totalInc, curMonth, _psYearE) : { employee: totalInc*(epfRate/100), empPct: epfRate };
+    var epfAmt     = _epfRes.employee;
+    var epfPctLabel= (_epfRes.empPct != null) ? _epfRes.empPct.toFixed(1) : epfRate;
+    var _socsoRes  = (typeof computeSocso === 'function') ? computeSocso(person.name, totalInc, curMonth, _psYearE) : { employee: 0 };
+    var socsoAmt   = _socsoRes.employee;
+    var _eisRes    = (typeof computeEis === 'function') ? computeEis(person.name, totalInc, curMonth, _psYearE) : { employee: 0 };
+    var eisAmt     = _eisRes.employee;
+    var grand      = totalInc - epfAmt - socsoAmt - eisAmt;
     var achColor   = ach>=100 ? '#1D9E75' : ach>=90 ? '#BA7517' : '#E24B4A';
     var g = function(id){ return document.getElementById(id); };
     if(g('ps-title'))   g('ps-title').textContent   = person.name + ' — SALARY REPORT';
@@ -5049,7 +5255,21 @@ function updateLivePayslip() {
     }
     function erow(v){
         return '<tr style="border-top:0.5px solid var(--line);">'
-            +'<td style="padding:4px 10px;color:var(--ink3);">EPF '+epfRate+'%</td>'
+            +'<td style="padding:4px 10px;color:var(--ink3);">EPF '+epfPctLabel+'%</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+    }
+    function eisrow(v){
+        return '<tr style="border-top:0.5px solid var(--line);">'
+            +'<td style="padding:4px 10px;color:var(--ink3);">EIS 0.2%</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
+            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+    }
+    function socsorow(v){
+        return '<tr style="border-top:0.5px solid var(--line);">'
+            +'<td style="padding:4px 10px;color:var(--ink3);">SOCSO 0.5%</td>'
             +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
             +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
             +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
@@ -5070,6 +5290,8 @@ function updateLivePayslip() {
           + row('TOTAL FLEXIBLE INCOME', totalFlexible, false, true)
           + row('GRAND TOTAL',         totalInc, false, true)
           + erow(epfAmt);
+    if (socsoAmt > 0) html += socsorow(socsoAmt);
+    if (eisAmt > 0) html += eisrow(eisAmt);
     if(g('ps-body')) g('ps-body').innerHTML = html;
 }
 window.updateLivePayslip = updateLivePayslip;
@@ -5381,8 +5603,15 @@ function updateCalcWorkspace() {
     var totalFixed = salary + totalAllow;
     var totalFlexible = comm + collBon + callBon + qtrBon;
     var totalInc = totalFixed + totalFlexible;
-    var epfAmt = totalInc * (epfRate / 100);
-    var grand = totalInc - epfAmt;
+    var _cwYearE = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+    var _cwEpf = (typeof computeEpf === 'function') ? computeEpf(person.name, totalInc, selMonth, _cwYearE) : { employee: totalInc*(epfRate/100), empPct: epfRate };
+    var epfAmt = _cwEpf.employee;
+    var epfPctLabel = (_cwEpf.empPct != null) ? _cwEpf.empPct.toFixed(1) : epfRate;
+    var _cwSocso = (typeof computeSocso === 'function') ? computeSocso(person.name, totalInc, selMonth, _cwYearE) : { employee: 0 };
+    var socsoAmt = _cwSocso.employee;
+    var _cwEis = (typeof computeEis === 'function') ? computeEis(person.name, totalInc, selMonth, _cwYearE) : { employee: 0 };
+    var eisAmt = _cwEis.employee;
+    var grand = totalInc - epfAmt - socsoAmt - eisAmt;
 
     cwSetText('cw-kpi-proj', formatCurrency(totalInc));
     cwSetText('cw-net-val', formatCurrency(grand));
@@ -5407,18 +5636,20 @@ function updateCalcWorkspace() {
     if (empType !== 'Support Staff' && collBon > 0) steps += '<li><span class="cw-step-lbl">Incentive (collection)</span> \u2014 +' + formatCurrency(collBon) + '</li>';
     if (callBon > 0) steps += '<li><span class="cw-step-lbl">Incentive (active call)</span> \u2014 +' + formatCurrency(callBon) + '</li>';
     if (qtrBon > 0) steps += '<li><span class="cw-step-lbl">Other bonus (quarterly)</span> \u2014 +' + formatCurrency(qtrBon) + '</li>';
-    steps += '<li><span class="cw-step-lbl">EPF (' + epfRate + '% of gross)</span> \u2014 \u2212' + formatCurrency(epfAmt) + '</li>';
+    steps += '<li><span class="cw-step-lbl">EPF (' + epfPctLabel + '% of gross)</span> \u2014 \u2212' + formatCurrency(epfAmt) + '</li>';
+    if (socsoAmt > 0) steps += '<li><span class="cw-step-lbl">SOCSO (0.5% of gross)</span> \u2014 \u2212' + formatCurrency(socsoAmt) + '</li>';
+    if (eisAmt > 0) steps += '<li><span class="cw-step-lbl">EIS (0.2% of gross)</span> \u2014 \u2212' + formatCurrency(eisAmt) + '</li>';
     var st = document.getElementById('cw-steps');
     if (st) st.innerHTML = steps;
 
     var fl = document.getElementById('cw-formula-list');
     if (fl) {
         if (empType === 'Sales') {
-            fl.innerHTML = '<li>Gross = fixed pay + base commission + incentives</li><li>Net payable = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+            fl.innerHTML = '<li>Gross = fixed pay + base commission + incentives</li><li>Net payable = gross \u2212 employee EPF (' + epfPctLabel + '%)</li>';
         } else if (empType === 'Supervisor') {
-            fl.innerHTML = '<li>Team tiers set payout amounts from achievement</li><li>Net = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+            fl.innerHTML = '<li>Team tiers set payout amounts from achievement</li><li>Net = gross \u2212 employee EPF (' + epfPctLabel + '%)</li>';
         } else {
-            fl.innerHTML = '<li>Variable = blocks \u00d7 rate</li><li>Net = gross \u2212 employee EPF (' + epfRate + '%)</li>';
+            fl.innerHTML = '<li>Variable = blocks \u00d7 rate</li><li>Net = gross \u2212 employee EPF (' + epfPctLabel + '%)</li>';
         }
     }
     var il = document.getElementById('cw-incentive-list');
@@ -5495,8 +5726,10 @@ function updateCalcWorkspace() {
                 var hComm = calculateCommission(hSales, target, person.name);
                 var hFlex = hComm + collBon + callBon + qtrBon;
                 var hTotalInc = totalFixed + hFlex;
-                var hEpf = hTotalInc * (epfRate / 100);
-                var hGrand = hTotalInc - hEpf;
+                var hEpf = (typeof computeEpf === 'function') ? computeEpf(person.name, hTotalInc, selMonth, _cwYearE).employee : hTotalInc * (epfRate / 100);
+                var hEis = (typeof computeEis === 'function') ? computeEis(person.name, hTotalInc, selMonth, _cwYearE).employee : 0;
+                var hSocso = (typeof computeSocso === 'function') ? computeSocso(person.name, hTotalInc, selMonth, _cwYearE).employee : 0;
+                var hGrand = hTotalInc - hEpf - hSocso - hEis;
                 var tierTit = cwTierTitleFromAch(hAch, person.name);
                 if (readEl) {
                     readEl.innerHTML = ''
@@ -5522,12 +5755,12 @@ function promptAddPerson() {
 
     // Build card - stops propagation so clicks inside don't close modal
     var card = document.createElement('div');
-    card.style.cssText = 'background:#fff;border-radius:16px;width:380px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;font-family:sans-serif;';
+    card.style.cssText = 'background:#fff;border-radius:16px;width:420px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;font-family:sans-serif;';
 
     // Header
     var hdr = document.createElement('div');
     hdr.style.cssText = 'background:#1e3a8a;padding:20px 24px;color:#fff;';
-    hdr.innerHTML = '<div style="font-size:16px;font-weight:700;">Add New Person</div><div style="font-size:12px;opacity:.7;margin-top:2px;">Enter name to get started</div>';
+    hdr.innerHTML = '<div style="font-size:16px;font-weight:700;">Add New Person</div><div style="font-size:12px;opacity:.7;margin-top:2px;">Enter employee details to get started</div>';
     card.appendChild(hdr);
 
     // Body
@@ -5561,6 +5794,26 @@ function promptAddPerson() {
     typeSel.style.cssText = 'display:block;width:100%;padding:10px 14px;border:2px solid #d1d5db;border-radius:8px;font-size:15px;outline:none;box-sizing:border-box;color:#111;background:#fff;cursor:pointer;';
     typeSel.innerHTML = '<option value="Sales">💼 Sales</option><option value="Supervisor">👔 Supervisor</option><option value="Support Staff">🛠️ Support Staff</option>';
     body.appendChild(typeSel);
+
+    function mkProfileField(id, labelText, placeholder) {
+        var pl = document.createElement('label');
+        pl.style.cssText = 'display:block;font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:14px;';
+        pl.textContent = labelText;
+        body.appendChild(pl);
+        var field = document.createElement('input');
+        field.id = id;
+        field.type = 'text';
+        field.placeholder = placeholder;
+        field.style.cssText = 'display:block;width:100%;padding:10px 14px;border:2px solid #d1d5db;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;color:#111;background:#fff;';
+        field.addEventListener('focus', function() { this.style.borderColor = '#3b82f6'; });
+        field.addEventListener('blur', function() { this.style.borderColor = '#d1d5db'; });
+        body.appendChild(field);
+        return field;
+    }
+
+    mkProfileField('add-person-mykad', 'MyKad No / Passport No', 'e.g. 900101-01-1234');
+    mkProfileField('add-person-epf', 'EPF Number', 'e.g. 12345678');
+    mkProfileField('add-person-bank', 'Bank Account Number', 'e.g. 1234567890');
 
     // Company selector (only if companies exist)
     var companies = (window.appState.config.companies || []);
@@ -5611,8 +5864,13 @@ function promptAddPerson() {
         }
         var selectedType = typeSel.value || 'Sales';
         var selectedCompany = compSel ? compSel.value : '';
+        var profile = {
+            mykad: ((document.getElementById('add-person-mykad') || {}).value || '').trim(),
+            epfNo: ((document.getElementById('add-person-epf') || {}).value || '').trim(),
+            bankAccount: ((document.getElementById('add-person-bank') || {}).value || '').trim()
+        };
         overlay.remove();
-        addNewPerson(name, selectedType);
+        addNewPerson(name, selectedType, profile);
         if (selectedCompany) {
             setEmployeeCompany(name, selectedCompany);
             saveConfig();
@@ -5686,6 +5944,213 @@ function filterByGroup() {
     }
 }
 
+function buildHistoryExportPeople(report) {
+    var cfg = window.appState.config;
+    var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
+    var rates = (cfg.monthly_commission_rates && cfg.monthly_commission_rates.length > 0) ? cfg.monthly_commission_rates : defRates;
+    var monthUpper = bareMonth(report.month || '').toUpperCase();
+    var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(monthUpper) !== -1;
+    function calcInc(pct, tiers) {
+        if (!tiers || !tiers.length) return 0;
+        var s = tiers.slice().sort(function(a,b){ return b.min - a.min; });
+        for (var i = 0; i < s.length; i++) if (pct >= s[i].min) return s[i].incentive || 0;
+        return 0;
+    }
+
+    var teamSales = 0, teamTarget = 0, teamColl = 0, teamCollTgt = 0, teamCall = 0, teamCallTgt = 0;
+    (report.data || []).forEach(function(p) {
+        if (getEmployeeType(p.name) !== 'Sales') return;
+        teamSales += parseFloat(p.sales) || 0;
+        teamTarget += parseFloat(p.target) || 0;
+        teamColl += parseFloat(p.collectionAmount) || 0;
+        teamCollTgt += parseFloat(p.collectionTarget) || 0;
+        teamCall += parseFloat(p.callActual) || 0;
+        teamCallTgt += parseFloat(p.callTarget) || 0;
+    });
+    var teamAch = teamTarget > 0 ? (teamSales / teamTarget * 100) : 0;
+    var teamCollAch = teamCollTgt > 0 ? (teamColl / teamCollTgt * 100) : 0;
+    var teamCallAch = teamCallTgt > 0 ? (teamCall / teamCallTgt * 100) : 0;
+
+    var activePeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
+    var reportData = (report.data || []).filter(function(p) {
+        return activePeople.indexOf((p.name || '').toUpperCase()) !== -1;
+    });
+
+    var salesData = [], supervisorData = [], merchandiserData = [];
+    reportData.forEach(function(p) {
+        var nu = (p.name || '').toUpperCase();
+        var empType = getEmployeeType(p.name);
+        var salRec = getSalaryForMonth(p.name, report.month);
+        var salary = salRec.salary;
+        var allowances = salRec.allowances;
+        var epfRate = salRec.epfRate;
+
+        if (empType === 'Sales') {
+            var target = parseFloat(p.target) || 0, sales = parseFloat(p.sales) || 0;
+            var collTgt = parseFloat(p.collectionTarget) || 0, collAmt = parseFloat(p.collectionAmount) || 0;
+            var callTgt = parseFloat(p.callTarget) || 0, callAct = parseFloat(p.callActual) || 0;
+            var ach = target > 0 ? (sales / target * 100) : 0;
+            var pRates = (cfg.person_commission_rates && cfg.person_commission_rates[nu]) || rates;
+            var commission = 0, commissionRate = 0;
+            if (target > 0 && sales > 0) {
+                for (var i = 0; i < pRates.length; i++) {
+                    if (ach >= pRates[i].min && ach <= pRates[i].max) {
+                        commission = sales * (pRates[i].rate || 0);
+                        commissionRate = pRates[i].rate || 0;
+                        break;
+                    }
+                }
+            }
+            var collI = calcInc(collTgt > 0 ? collAmt / collTgt * 100 : 0, (cfg.person_collection_incentive && cfg.person_collection_incentive[nu]) || cfg.collection_incentive || []);
+            var callI = calcInc(callTgt > 0 ? callAct / callTgt * 100 : 0, (cfg.person_call_incentive && cfg.person_call_incentive[nu]) || cfg.active_call_incentive || []);
+            var qtrI = isQtr ? calcInc(ach, (cfg.person_quarterly_incentive && cfg.person_quarterly_incentive[nu]) || cfg.quarterly_incentive || []) : 0;
+            salesData.push({ name: p.name, type: 'Sales', salary: salary, allowances: allowances, epfRate: epfRate, sales: sales, target: target, achievement: ach,
+                commission: commission, commissionRate: commissionRate, collectionIncentive: collI, activeCallIncentive: callI, quarterlyBonus: qtrI,
+                totalCommission: commission + collI + callI + qtrI, collectionTarget: collTgt, collectionAmount: collAmt,
+                callTarget: callTgt, callActual: callAct, quarterlySales: 0, quarterlyTarget: 0 });
+        } else if (empType === 'Supervisor') {
+            var saleT = (cfg.person_supervisor_sale_tiers && cfg.person_supervisor_sale_tiers[p.name]) || cfg.supervisor_sale_tiers || [];
+            var collT = (cfg.person_supervisor_coll_tiers && cfg.person_supervisor_coll_tiers[p.name]) || cfg.supervisor_coll_tiers || [];
+            var callT = (cfg.person_supervisor_call_tiers && cfg.person_supervisor_call_tiers[p.name]) || cfg.supervisor_call_tiers || [];
+            var qtrT  = (cfg.person_supervisor_qtr_tiers && cfg.person_supervisor_qtr_tiers[p.name]) || cfg.supervisor_qtr_tiers || [];
+            var saleInc = getTierAmt(saleT, teamAch);
+            var collInc = getTierAmt(collT, teamCollAch);
+            var callInc = getTierAmt(callT, teamCallAch);
+            var qtrInc  = isQtr ? getTierAmt(qtrT, teamAch) : 0;
+            supervisorData.push({ name: p.name, type: 'Supervisor', salary: salary, allowances: allowances, epfRate: epfRate,
+                sales: teamSales, target: teamTarget, achievement: teamAch, commission: saleInc, commissionRate: 0,
+                collectionIncentive: collInc, activeCallIncentive: callInc, quarterlyBonus: qtrInc,
+                totalCommission: saleInc + collInc + callInc + qtrInc,
+                collectionTarget: teamCollTgt, collectionAmount: teamColl, callTarget: teamCallTgt, callActual: teamCall,
+                quarterlySales: 0, quarterlyTarget: 0 });
+        } else if (empType === 'Support Staff') {
+            var blocks = parseFloat(p.collectionAmount) || 0;
+            var rate = (cfg.person_merchandiser_rates && cfg.person_merchandiser_rates[p.name] != null)
+                ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                : (parseFloat(cfg.merchandiser_block_rate) || 10);
+            var blockIncentive = blocks * rate;
+            merchandiserData.push({ name: p.name, type: 'Support Staff', salary: salary, allowances: allowances, epfRate: epfRate,
+                blocks: blocks, blockRate: rate, blockIncentive: blockIncentive, totalCommission: blockIncentive,
+                commission: 0, commissionRate: 0, collectionIncentive: 0, activeCallIncentive: 0, quarterlyBonus: 0,
+                sales: 0, target: 0, achievement: 0 });
+        }
+    });
+
+    return salesData.concat(supervisorData).concat(merchandiserData);
+}
+window.buildHistoryExportPeople = buildHistoryExportPeople;
+
+function enrichPersonForPayslip(person, report) {
+    var cfg = window.appState.config;
+    var nu = (person.name || '').toUpperCase();
+    var bareM = bareMonth(report.month || '');
+    var year = keyYear(report.month) || String(new Date().getFullYear());
+    var allowances = person.allowances || {};
+    var allowSum = Object.keys(allowances).reduce(function(s, k) { return s + (parseFloat(allowances[k]) || 0); }, 0);
+    var salary = parseFloat(person.salary) || 0;
+    var totalFixed = salary + allowSum;
+    var empType = person.type || getEmployeeType(person.name);
+    var commission = parseFloat(person.commission) || 0;
+    var collI = parseFloat(person.collectionIncentive) || 0;
+    var callI = parseFloat(person.activeCallIncentive) || 0;
+    var qtrI = parseFloat(person.quarterlyBonus) || 0;
+    var blockI = parseFloat(person.blockIncentive) || 0;
+    var bonus = collI + callI + qtrI;
+    var flexIncome = empType === 'Support Staff' ? blockI : commission + bonus;
+    var totalGross = totalFixed + flexIncome;
+    var epf = (typeof computeEpf === 'function') ? computeEpf(person.name, totalGross, bareM, year) : { employee: 0, employer: 0 };
+    var socso = (typeof computeSocso === 'function') ? computeSocso(person.name, totalGross, bareM, year) : { employee: 0, employer: 0 };
+    var eis = (typeof computeEis === 'function') ? computeEis(person.name, totalGross, bareM, year) : { employee: 0, employer: 0 };
+    var profile = (cfg.employee_profiles && cfg.employee_profiles[nu]) || {};
+    var joinRaw = getEmployeeStartYM(person.name) || '';
+    var joinDate = joinRaw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(joinRaw)) {
+        var jp = joinRaw.split('-');
+        joinDate = jp[2] + '/' + jp[1] + '/' + jp[0];
+    }
+    return Object.assign({}, person, {
+        type: empType,
+        bonus: bonus,
+        totalGross: totalGross,
+        epfEmployee: Math.round((epf.employee || 0) * 100) / 100,
+        epfEmployer: Math.round((epf.employer || 0) * 100) / 100,
+        socsoEmployee: Math.round((socso.employee || 0) * 100) / 100,
+        socsoEmployer: Math.round((socso.employer || 0) * 100) / 100,
+        eisEmployee: Math.round((eis.employee || 0) * 100) / 100,
+        eisEmployer: Math.round((eis.employer || 0) * 100) / 100,
+        netSalary: Math.round((totalGross - (epf.employee || 0) - (socso.employee || 0) - (eis.employee || 0)) * 100) / 100,
+        joinDate: joinDate,
+        position: profile.position || empType,
+        mykad: profile.mykad || '',
+        epfNo: profile.epfNo || '',
+        bankAccount: profile.bankAccount || ''
+    });
+}
+
+function printPayslipsFromHistory(index) {
+    var report = (window.appState.config.reportHistory || [])[index];
+    if (!report) return;
+    var people = buildHistoryExportPeople(report);
+    if (!people.length) { showToast('⚠️', 'No employees found for this month'); return; }
+
+    var existing = document.getElementById('payslip-print-modal');
+    if (existing) existing.remove();
+
+    var monthLabel = (bareMonth(report.month || '') + ' ' + (keyYear(report.month) || '')).trim();
+    var overlay = document.createElement('div');
+    overlay.id = 'payslip-print-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:16px;max-width:420px;width:100%;padding:24px;box-shadow:0 25px 60px rgba(0,0,0,.25);';
+    box.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:4px;">📄 Print Payslip</div>'
+        + '<div style="font-size:13px;color:#64748b;margin-bottom:16px;">' + monthLabel + ' — select employees</div>'
+        + '<div id="payslip-person-list" style="max-height:280px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:10px;padding:8px 12px;margin-bottom:16px;"></div>'
+        + '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+        + '<button id="payslip-cancel-btn" style="padding:8px 16px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">Cancel</button>'
+        + '<button id="payslip-all-btn" style="padding:8px 16px;border:none;border-radius:8px;background:#6366f1;color:#fff;cursor:pointer;font-weight:600;">Print All</button>'
+        + '<button id="payslip-go-btn" style="padding:8px 16px;border:none;border-radius:8px;background:#059669;color:#fff;cursor:pointer;font-weight:600;">Print Selected</button>'
+        + '</div>';
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    var listEl = box.querySelector('#payslip-person-list');
+    listEl.innerHTML = people.map(function(p, i) {
+        return '<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f1f5f9;cursor:pointer;">'
+            + '<input type="checkbox" class="payslip-chk" data-idx="' + i + '" checked>'
+            + '<span style="font-size:14px;font-weight:500;">' + (p.name || '—') + '</span>'
+            + '<span style="font-size:11px;color:#94a3b8;margin-left:auto;">' + (p.type || '') + '</span>'
+            + '</label>';
+    }).join('');
+
+    function runPrint(selected) {
+        if (!selected.length) { showToast('⚠️', 'Please select at least one employee'); return; }
+        overlay.remove();
+        showToast('⏳', 'Generating payslips...');
+        var payload = selected.map(function(p) { return enrichPersonForPayslip(p, report); });
+        window.electronAPI.generatePayslips({
+            salespeople: payload,
+            config: window.appState.config,
+            month: report.month
+        }).then(function(result) {
+            if (result.success) showToast('✅', 'Payslip Excel opened — ready to print');
+            else showToast('❌', result.error || 'Failed to generate payslip');
+        }).catch(function(e) { showToast('❌', e.message); });
+    }
+
+    box.querySelector('#payslip-cancel-btn').onclick = function() { overlay.remove(); };
+    box.querySelector('#payslip-all-btn').onclick = function() { runPrint(people.slice()); };
+    box.querySelector('#payslip-go-btn').onclick = function() {
+        var idxs = Array.prototype.slice.call(box.querySelectorAll('.payslip-chk'))
+            .filter(function(c){ return c.checked; })
+            .map(function(c){ return parseInt(c.getAttribute('data-idx'), 10); });
+        runPrint(idxs.map(function(i){ return people[i]; }).filter(Boolean));
+    };
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+}
+window.printPayslipsFromHistory = printPayslipsFromHistory;
+
 function openHistoryExcel(index) {
     // Same commission calculation as reExportHistory, but opens directly instead of saving
     var report = (window.appState.config.reportHistory||[])[index];
@@ -5693,88 +6158,7 @@ function openHistoryExcel(index) {
     showToast('⏳', 'Opening Excel...');
     try {
         var cfg = window.appState.config;
-        var defRates = [{min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},{min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}];
-        var rates = (cfg.monthly_commission_rates&&cfg.monthly_commission_rates.length>0)?cfg.monthly_commission_rates:defRates;
-        var monthUpper = (report.month||'').toUpperCase();
-        var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(monthUpper) !== -1;
-        function calcInc(pct,tiers){if(!tiers||!tiers.length)return 0;var s=tiers.slice().sort(function(a,b){return b.min-a.min;});for(var i=0;i<s.length;i++)if(pct>=s[i].min)return s[i].incentive||0;return 0;}
-
-        // Compute team totals for the month (Sales only) for Supervisor incentives
-        var teamSales = 0, teamTarget = 0, teamColl = 0, teamCollTgt = 0, teamCall = 0, teamCallTgt = 0;
-        (report.data||[]).forEach(function(p){
-            if (getEmployeeType(p.name) !== 'Sales') return;
-            teamSales += parseFloat(p.sales)||0;
-            teamTarget += parseFloat(p.target)||0;
-            teamColl += parseFloat(p.collectionAmount)||0;
-            teamCollTgt += parseFloat(p.collectionTarget)||0;
-            teamCall += parseFloat(p.callActual)||0;
-            teamCallTgt += parseFloat(p.callTarget)||0;
-        });
-        var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
-        var teamCollAch = teamCollTgt>0?(teamColl/teamCollTgt*100):0;
-        var teamCallAch = teamCallTgt>0?(teamCall/teamCallTgt*100):0;
-
-        // Filter out people who have been deleted from config
-        var activePeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
-        var reportData = (report.data||[]).filter(function(p){
-            return activePeople.indexOf((p.name||'').toUpperCase()) !== -1;
-        });
-
-        // Separate by type
-        var salesData = [], supervisorData = [], merchandiserData = [];
-        reportData.forEach(function(p){
-            var nu=(p.name||'').toUpperCase();
-            var empType = getEmployeeType(p.name);
-            var salRec = getSalaryForMonth(p.name, report.month);
-            var salary    = salRec.salary;
-            var allowances= salRec.allowances;
-            var epfRate   = salRec.epfRate;
-
-            if (empType === 'Sales') {
-                var target=parseFloat(p.target)||0,sales=parseFloat(p.sales)||0;
-                var collTgt=parseFloat(p.collectionTarget)||0,collAmt=parseFloat(p.collectionAmount)||0;
-                var callTgt=parseFloat(p.callTarget)||0,callAct=parseFloat(p.callActual)||0;
-                var ach=target>0?(sales/target*100):0;
-                var pRates=(cfg.person_commission_rates&&cfg.person_commission_rates[nu])||rates;
-                var commission=0;
-                if(target>0&&sales>0)for(var i=0;i<pRates.length;i++)if(ach>=pRates[i].min&&ach<=pRates[i].max){commission=sales*(pRates[i].rate||0);break;}
-                var collI=calcInc(collTgt>0?collAmt/collTgt*100:0,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
-                var callI=calcInc(callTgt>0?callAct/callTgt*100:0,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
-                var qtrI=isQtr?calcInc(ach,(cfg.person_quarterly_incentive&&cfg.person_quarterly_incentive[nu])||cfg.quarterly_incentive||[]):0;
-                salesData.push({name:p.name,type:'Sales',salary:salary,allowances:allowances,epfRate:epfRate,sales:sales,target:target,achievement:ach,
-                    commission:commission,collectionIncentive:collI,activeCallIncentive:callI,quarterlyBonus:qtrI,
-                    totalCommission:commission+collI+callI+qtrI,collectionTarget:collTgt,collectionAmount:collAmt,
-                    callTarget:callTgt,callActual:callAct,quarterlySales:0,quarterlyTarget:0});
-            } else if (empType === 'Supervisor') {
-                // Use team totals and tier config
-                var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
-                var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
-                var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
-                var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
-                var saleInc = getTierAmt(saleT, teamAch);
-                var collInc = getTierAmt(collT, teamCollAch);
-                var callInc = getTierAmt(callT, teamCallAch);
-                var qtrInc  = isQtr ? getTierAmt(qtrT, teamAch) : 0;
-                // Shape like Sales but using team values
-                supervisorData.push({name:p.name,type:'Supervisor',salary:salary,allowances:allowances,epfRate:epfRate,
-                    sales:teamSales,target:teamTarget,achievement:teamAch,
-                    commission:saleInc,collectionIncentive:collInc,activeCallIncentive:callInc,quarterlyBonus:qtrInc,
-                    totalCommission:saleInc+collInc+callInc+qtrInc,
-                    collectionTarget:teamCollTgt,collectionAmount:teamColl,callTarget:teamCallTgt,callActual:teamCall,
-                    quarterlySales:0,quarterlyTarget:0});
-            } else if (empType === 'Support Staff') {
-                var blocks = parseFloat(p.collectionAmount)||0;
-                var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
-                    ? parseFloat(cfg.person_merchandiser_rates[p.name])
-                    : (parseFloat(cfg.merchandiser_block_rate)||10);
-                var blockIncentive = blocks * rate;
-                merchandiserData.push({name:p.name,type:'Support Staff',salary:salary,allowances:allowances,epfRate:epfRate,
-                    blocks:blocks,blockRate:rate,blockIncentive:blockIncentive,totalCommission:blockIncentive});
-            }
-        });
-
-        // Combine: Sales first, then Supervisors (same table structure), then Merchandisers
-        var combinedData = salesData.concat(supervisorData).concat(merchandiserData);
+        var combinedData = buildHistoryExportPeople(report);
 
         window.electronAPI.openExcelPreview({salespeople:combinedData, config:cfg, month:report.month})
             .then(function(result){
@@ -7189,7 +7573,10 @@ function renderProjectionReport() {
         var cInc = getCallInc(cp);
         var collInc = calculateIncentive(collAchPct || 0, collTiers);
         var tot  = fixedIncome + comm + cInc + collInc;
-        return { income: tot*(1-epfRate), comm, rate, cInc, collInc, sp, cp, collAch: collAchPct || 0, tot };
+        var _epfDed = (typeof computeEpf === 'function') ? computeEpf(personName, tot, month, year).employee : tot*epfRate;
+        var _eisDed = (typeof computeEis === 'function') ? computeEis(personName, tot, month, year).employee : 0;
+        var _socsoDed = (typeof computeSocso === 'function') ? computeSocso(personName, tot, month, year).employee : 0;
+        return { income: tot - _epfDed - _socsoDed - _eisDed, comm, rate, cInc, collInc, sp, cp, collAch: collAchPct || 0, tot };
     }
     function fmt(n){ return 'RM ' + n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function fmtN(n){ return n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -7512,10 +7899,17 @@ function showPayslipPreview(index) {
     var qtrBonus    = person.quarterlyBonus      || 0;
     var totalComm   = commission + collBonus + callBonus + qtrBonus;
 
-    // EPF & grand total
+    // EPF & grand total — follows the statutory Third Schedule
     var totalIncome = totalFixed + totalComm;
-    var epfAmt      = Math.round(totalIncome * (epfRate/100) * 100) / 100;
-    var grandTotal  = totalIncome - epfAmt;
+    var _ppYear = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+    var _ppEpf  = (typeof computeEpf === 'function') ? computeEpf(person.name, totalIncome, month, _ppYear) : { employee: Math.round(totalIncome*(epfRate/100)*100)/100, empPct: epfRate };
+    var epfAmt      = Math.round(_ppEpf.employee * 100) / 100;
+    epfRate         = (_ppEpf.empPct != null) ? _ppEpf.empPct.toFixed(1) : epfRate;
+    var _ppSocso = (typeof computeSocso === 'function') ? computeSocso(person.name, totalIncome, month, _ppYear) : { employee: 0 };
+    var socsoAmt    = Math.round(_ppSocso.employee * 100) / 100;
+    var _ppEis  = (typeof computeEis === 'function') ? computeEis(person.name, totalIncome, month, _ppYear) : { employee: 0 };
+    var eisAmt      = Math.round(_ppEis.employee * 100) / 100;
+    var grandTotal  = totalIncome - epfAmt - socsoAmt - eisAmt;
 
     var fmt = function(n) { return 'RM ' + parseFloat(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
@@ -7616,6 +8010,14 @@ function showPayslipPreview(index) {
                         <td style="padding:6px 12px 6px 24px;color:#dc2626;">EPF (${epfRate}%)</td>
                         <td style="padding:6px 24px 6px 12px;text-align:right;color:#dc2626;">— ${fmt(epfAmt)}</td>
                     </tr>
+                    ${socsoAmt > 0 ? `<tr style="background:#fef2f2;">
+                        <td style="padding:6px 12px 6px 24px;color:#dc2626;">SOCSO (0.5%)</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;color:#dc2626;">— ${fmt(socsoAmt)}</td>
+                    </tr>` : ''}
+                    ${eisAmt > 0 ? `<tr style="background:#fef2f2;">
+                        <td style="padding:6px 12px 6px 24px;color:#dc2626;">EIS (0.2%)</td>
+                        <td style="padding:6px 24px 6px 12px;text-align:right;color:#dc2626;">— ${fmt(eisAmt)}</td>
+                    </tr>` : ''}
                 </table>
 
                 <!-- Grand Total -->
@@ -7765,14 +8167,24 @@ function printHistoryReport(index) {
         }
 
         var totalIncome = totalFixed + totalComm;
-        var epf = totalIncome * epfRate / 100;
-        var grandTotal = totalIncome - epf;
+        var _phBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : month;
+        var _phYear  = (typeof keyYear === 'function') ? (keyYear(report.month) || new Date().getFullYear()) : new Date().getFullYear();
+        var _phEpf   = (typeof computeEpf === 'function') ? computeEpf(name, totalIncome, _phBareM, _phYear) : { employee: totalIncome*epfRate/100, empPct: epfRate };
+        var epf = _phEpf.employee;
+        var epfPctLabel = (_phEpf.empPct != null) ? _phEpf.empPct.toFixed(1) : epfRate;
+        var _phSocso = (typeof computeSocso === 'function') ? computeSocso(name, totalIncome, _phBareM, _phYear) : { employee: 0 };
+        var socso = _phSocso.employee;
+        var _phEis = (typeof computeEis === 'function') ? computeEis(name, totalIncome, _phBareM, _phYear) : { employee: 0 };
+        var eis = _phEis.employee;
+        var grandTotal = totalIncome - epf - socso - eis;
 
         html += '<div style="page-break-inside:avoid;border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:16px;">';
         html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+typeLabel+' — '+month+' 2026</h3>';
         html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
         html += detailRows;
-        html += '<tr><td style="padding:6px 10px;color:#dc2626;">EPF '+epfRate+'%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(epf)+'</td></tr>';
+        html += '<tr><td style="padding:6px 10px;color:#dc2626;">EPF '+epfPctLabel+'%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(epf)+'</td></tr>';
+        if (socso > 0) html += '<tr><td style="padding:6px 10px;color:#dc2626;">SOCSO 0.5%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(socso)+'</td></tr>';
+        if (eis > 0) html += '<tr><td style="padding:6px 10px;color:#dc2626;">EIS 0.2%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(eis)+'</td></tr>';
         html += '<tr style="background:#0f172a;color:#fff;"><td style="padding:8px 10px;font-weight:700;">Grand Total Payable</td><td style="padding:8px 10px;text-align:right;font-weight:800;font-size:14px;color:#fbbf24;">'+formatCurrency(grandTotal)+'</td></tr>';
         html += '</table></div>';
     });
@@ -8036,6 +8448,10 @@ function showSalaryModal(personName) {
     var allow    = cur.allowances;
     var epfRate  = cur.epfRate;
     var employerEpfRate = (window.appState.config.employer_epf_rates && window.appState.config.employer_epf_rates[personName]) || 13;
+    var empDob = (typeof getEmployeeDOB === 'function') ? getEmployeeDOB(personName) : '';
+    var empNat = (typeof getEmployeeNationality === 'function') ? getEmployeeNationality(personName) : 'CITIZEN';
+    var empProfile = (typeof getEmployeeProfile === 'function') ? getEmployeeProfile(personName) : { mykad: '', epfNo: '', bankAccount: '' };
+    function natOpt(v,l){ return '<option value="'+v+'"'+(empNat===v?' selected':'')+'>'+l+'</option>'; }
     // Default effectiveFrom = current month
     var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var now = new Date();
@@ -8045,6 +8461,11 @@ function showSalaryModal(personName) {
         return '<div style="'+(half?'':'')+'margin-bottom:10px;">'
             +'<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">'+lbl+'</label>'
             +'<input id="sm-'+id+'" type="number" value="'+val+'" style="'+IS+'"></div>';
+    }
+    function makeTextRow(lbl, id, val) {
+        return '<div style="margin-bottom:10px;">'
+            +'<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">'+lbl+'</label>'
+            +'<input id="sm-'+id+'" type="text" value="'+(val||'').replace(/"/g,'&quot;')+'" style="'+IS+'"></div>';
     }
     var modal=document.createElement('div');
     modal.id='salary-setup-modal';
@@ -8057,6 +8478,12 @@ function showSalaryModal(personName) {
         +'<div style="font-size:17px;font-weight:800;letter-spacing:-.3px;">💵 Salary Setup</div>'
         +'<div style="font-size:12px;opacity:.6;margin-top:3px;">'+personName+'</div></div>'
         +'<div style="padding:20px 24px;overflow-y:auto;flex:1;">'
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Employee Details</div>'
+        +makeTextRow('MyKad No / Passport No','mykad',empProfile.mykad)
+        +makeTextRow('EPF Number','epfno',empProfile.epfNo)
+        +makeTextRow('Bank Account Number','bank',empProfile.bankAccount)
+        +'</div>'
         +'<div style="background:var(--em-l);border:1px solid #a7f3d0;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
         +'<div style="font-size:10px;font-weight:700;color:#065f46;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Base Salary</div>'
         +makeRow('Base Salary (RM)','base',salary)+'</div>'
@@ -8068,11 +8495,15 @@ function showSalaryModal(personName) {
         +makeRow('Housing','HOUSING',allow.HOUSING||0,true)+makeRow('Food','FOOD',allow.FOOD||0,true)
         +'</div>'+makeRow('Others','OTHERS',allow.OTHERS||0)+'</div>'
         +'<div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:var(--r);padding:14px;">'
-        +'<div style="font-size:10px;font-weight:700;color:#be123c;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Employer Contribution</div>'
-        +makeRow('Employer EPF Rate (%)','employer-epf',employerEpfRate)+'</div>'
-        +'<div style="background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:10px;">'
-        +'<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Deduction</div>'
-        +makeRow('EPF Rate (%)','epf',epfRate)+'</div>'
+        +'<div style="font-size:10px;font-weight:700;color:#be123c;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">EPF (KWSP) — auto rate</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+        +'<div><label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">Date of Birth</label>'
+        +'<input id="sm-dob" type="date" value="'+empDob+'" style="'+IS+'"></div>'
+        +'<div><label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">Nationality</label>'
+        +'<select id="sm-nationality" style="'+IS+'">'+natOpt('CITIZEN','Malaysian Citizen')+natOpt('PR','Permanent Resident')+natOpt('FOREIGNER','Foreigner')+'</select></div>'
+        +'</div>'
+        +'<div style="font-size:11px;color:#be123c;margin-top:8px;line-height:1.5;">EPF follows the official Third Schedule (eff. 1 Oct 2025). The rate is chosen automatically from age &amp; nationality — Citizen &lt;60: 11%/13%; Citizen 60+: 0%/4%; PR 60+: 5.5%/6.5%; Foreigner: 2%/2%.</div>'
+        +'</div>'
         +'<div style="background:#fefce8;border:1px solid #fde68a;border-radius:var(--r);padding:14px;margin-top:10px;">'
         +'<div style="font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Effective From</div>'
         +'<input id="sm-effective" type="month" value="'+defaultEffective+'" style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;">'
@@ -8100,8 +8531,22 @@ function saveSalaryModal(personName) {
     var hs=parseFloat(document.getElementById('sm-HOUSING').value)||0;
     var food=parseFloat(document.getElementById('sm-FOOD').value)||0;
     var oth=parseFloat(document.getElementById('sm-OTHERS').value)||0;
-    var epfR=parseFloat(document.getElementById('sm-epf').value)||11;
-    var employerEpfR=parseFloat(document.getElementById('sm-employer-epf').value)||13;
+    var _epfEl=document.getElementById('sm-epf');
+    var _empEpfEl=document.getElementById('sm-employer-epf');
+    var epfR=_epfEl?(parseFloat(_epfEl.value)||11):11;
+    var employerEpfR=_empEpfEl?(parseFloat(_empEpfEl.value)||13):13;
+    // EPF now follows the statutory Third Schedule, derived from DOB + nationality.
+    var dobEl=document.getElementById('sm-dob');
+    var natEl=document.getElementById('sm-nationality');
+    if (typeof setEmployeeDOB === 'function') setEmployeeDOB(personName, dobEl?dobEl.value:'');
+    if (typeof setEmployeeNationality === 'function') setEmployeeNationality(personName, natEl?natEl.value:'CITIZEN');
+    if (typeof setEmployeeProfile === 'function') {
+        setEmployeeProfile(personName, {
+            mykad: ((document.getElementById('sm-mykad') || {}).value || '').trim(),
+            epfNo: ((document.getElementById('sm-epfno') || {}).value || '').trim(),
+            bankAccount: ((document.getElementById('sm-bank') || {}).value || '').trim()
+        });
+    }
     var effectiveEl = document.getElementById('sm-effective');
     var effective = effectiveEl ? effectiveEl.value : (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
 
@@ -9282,6 +9727,9 @@ function renderEmployerCostReport() {
         var employerEpfRate = (cfg.employer_epf_rates && cfg.employer_epf_rates[name]) || 13;
         var months = 0, totalSales = 0, totalTarget = 0, totalSalary = 0, totalAllow = 0;
         var totalComm = 0, totalCollInc = 0, totalCallInc = 0, totalQtrBonus = 0;
+        var totalEmployerEpf = 0; // accumulated per month (Third Schedule is non-linear)
+        var totalEmployerEis = 0; // accumulated per month (capped at RM6,000)
+        var totalEmployerSocso = 0; // accumulated per month (band-based)
 
         MONTHS.forEach(function(m) {
             if (!isMonthIncluded(m)) return;
@@ -9306,6 +9754,10 @@ function renderEmployerCostReport() {
                 var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(m)!==-1;
                 var qtrI = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(name)) : 0;
                 totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
+                var _mgS = salary + allowances + comm + collI + callI + qtrI;
+                totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgS, m, selectedYear).employer : _mgS * employerEpfRate / 100;
+                totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgS, m, selectedYear).employer : 0;
+                totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgS, m, selectedYear).employer : 0;
             } else if (empType === 'Supervisor') {
                 // Supervisor earns from team every month (if team has data)
                 var team = _teamTotalsForMonth(m);
@@ -9317,10 +9769,15 @@ function renderEmployerCostReport() {
                 var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[name])||cfg.supervisor_coll_tiers||[];
                 var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[name])||cfg.supervisor_call_tiers||[];
                 var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[name])||cfg.supervisor_qtr_tiers||[];
-                totalComm += getTierAmt(saleT, teamAchM);
-                totalCollInc += getTierAmt(collT, team.collAch);
-                totalCallInc += getTierAmt(callT, team.callAch);
-                if (['MAR','JUN','SEP','DEC'].indexOf(m)!==-1) totalQtrBonus += getTierAmt(qtrT, teamAchM);
+                var _svSale = getTierAmt(saleT, teamAchM);
+                var _svColl = getTierAmt(collT, team.collAch);
+                var _svCall = getTierAmt(callT, team.callAch);
+                var _svQtr  = (['MAR','JUN','SEP','DEC'].indexOf(m)!==-1) ? getTierAmt(qtrT, teamAchM) : 0;
+                totalComm += _svSale; totalCollInc += _svColl; totalCallInc += _svCall; totalQtrBonus += _svQtr;
+                var _mgV = salary + allowances + _svSale + _svColl + _svCall + _svQtr;
+                totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgV, m, selectedYear).employer : _mgV * employerEpfRate / 100;
+                totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgV, m, selectedYear).employer : 0;
+                totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgV, m, selectedYear).employer : 0;
             } else if (empType === 'Support Staff') {
                 var pd = hEntry.data.find(function(d){return (d.name||'').toUpperCase()===name;});
                 if (!pd || !(parseFloat(pd.collectionAmount)||0)) return;
@@ -9331,16 +9788,23 @@ function renderEmployerCostReport() {
                     ? parseFloat(cfg.person_merchandiser_rates[name])
                     : (parseFloat(cfg.merchandiser_block_rate)||10);
                 // Put merchandiser incentive into totalComm field (reused for display consistency)
-                totalComm += blocks * rate;
+                var _blkInc = blocks * rate;
+                totalComm += _blkInc;
+                var _mgB = salary + allowances + _blkInc;
+                totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgB, m, selectedYear).employer : _mgB * employerEpfRate / 100;
+                totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgB, m, selectedYear).employer : 0;
+                totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgB, m, selectedYear).employer : 0;
             }
         });
 
         var totalIncentive = totalCollInc + totalCallInc + totalQtrBonus;
         var totalPay = totalSalary + totalAllow + totalComm + totalIncentive;
-        var employerEpf = totalPay * employerEpfRate / 100;
-        var totalCost = totalPay + employerEpf;
+        var employerEpf = totalEmployerEpf;
+        var employerEis = totalEmployerEis;
+        var employerSocso = totalEmployerSocso;
+        var totalCost = totalPay + employerEpf + employerEis + employerSocso;
 
-        allPeopleData[name] = { name:name, type:empType, months:months, totalSales:totalSales, totalTarget:totalTarget, totalSalary:totalSalary, totalAllow:totalAllow, totalComm:totalComm, totalCollInc:totalCollInc, totalCallInc:totalCallInc, totalQtrBonus:totalQtrBonus, totalIncentive:totalIncentive, totalPay:totalPay, employerEpf:employerEpf, totalCost:totalCost, epfRate:employerEpfRate };
+        allPeopleData[name] = { name:name, type:empType, months:months, totalSales:totalSales, totalTarget:totalTarget, totalSalary:totalSalary, totalAllow:totalAllow, totalComm:totalComm, totalCollInc:totalCollInc, totalCallInc:totalCallInc, totalQtrBonus:totalQtrBonus, totalIncentive:totalIncentive, totalPay:totalPay, employerEpf:employerEpf, employerEis:employerEis, employerSocso:employerSocso, totalCost:totalCost, epfRate:employerEpfRate };
     });
 
     // Team totals (always all people for TEAM%)
@@ -9459,9 +9923,13 @@ function renderEmployerCostReport() {
 
         // Employer EPF
         if (hasIndv) {
-            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer SOCSO</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerSocso)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EIS (0.2%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEis)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,teamSales)+'</td></tr>';
         } else {
-            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF ('+p.epfRate+'%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer SOCSO</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerSocso)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EIS (0.2%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEis)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,teamSales)+'</td></tr>';
         }
 
         // Total Cost

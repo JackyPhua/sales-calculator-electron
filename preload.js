@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // ========== SQLite DB ==========
     openExcelPreview: (data) => ipcRenderer.invoke('open-excel-preview', data),
+    generatePayslips: (data) => ipcRenderer.invoke('generate-payslips', data),
     dbSave:   (key, value) => ipcRenderer.invoke('db-save', key, value),
     dbLoad:   (key)        => ipcRenderer.invoke('db-load', key),
     dbDelete: (key)        => ipcRenderer.invoke('db-delete', key),

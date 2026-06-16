@@ -363,6 +363,31 @@ ipcMain.handle('open-excel-preview', async (event, data) => {
     }
 });
 
+ipcMain.handle('generate-payslips', async (event, data) => {
+    try {
+        const people = (data && data.salespeople) || [];
+        if (!people.length) return { success: false, error: 'No employees selected' };
+
+        const os = require('os');
+        const monthLabel = (data.month || 'Payslip').replace(/[^\w-]/g, '_');
+        const tempPath = path.join(os.tmpdir(), 'Payslips_' + monthLabel + '_' + Date.now() + '.xlsx');
+
+        const workbook = new ExcelJS.Workbook();
+        for (const person of people) {
+            const sheetName = (person.name || 'Employee').substring(0, 31);
+            const sheet = workbook.addWorksheet(sheetName);
+            await createPayslipSheet(sheet, person, data.config, data.month);
+        }
+
+        await workbook.xlsx.writeFile(tempPath);
+        await shell.openPath(tempPath);
+        return { success: true, path: tempPath };
+    } catch (error) {
+        console.error('generate-payslips error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 // ── Projection Report Excel ──────────────────────────────────────────────
 ipcMain.handle('export-projection-excel', async (event, data) => {
     try {
@@ -1548,6 +1573,354 @@ ipcMain.handle('get-app-version', () => {
 
 // ========== Helper Functions ==========
 
+// EPF Third Schedule (KWSP) — Effective 1 Oct 2025. Mirror of the renderer engine
+// so Excel exports use the exact statutory contribution amounts.
+function _epfCeilMain(x) { return Math.ceil(x - 1e-6); }
+function _epfPartMain(config, nameUpper, month) {
+    var nat = (config && config.employee_nationality && config.employee_nationality[nameUpper]) || 'CITIZEN';
+    var dob = (config && config.employee_dob && config.employee_dob[nameUpper]) || '';
+    var is60 = false;
+    var mm = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(dob || '');
+    if (mm) {
+        var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        var bareM = (month || '').toUpperCase().split('-')[0];
+        var mi = MONTHS.indexOf(bareM);
+        var ymMatch = /(\d{4})/.exec(month || '');
+        var refY = ymMatch ? parseInt(ymMatch[1], 10) : new Date().getFullYear();
+        var refM = (mi >= 0 ? mi : new Date().getMonth()) + 1;
+        var by = parseInt(mm[1], 10), bm = parseInt(mm[2], 10), bd = parseInt(mm[3] || '1', 10);
+        var age = refY - by;
+        if (refM < bm || (refM === bm && bd > 1)) age--;
+        is60 = age >= 60;
+    }
+    if (nat === 'FOREIGNER') return 'F';
+    if (nat === 'PR') return is60 ? 'C' : 'A';
+    return is60 ? 'E' : 'A';
+}
+function computeEpfMain(config, nameUpper, wages, month) {
+    wages = parseFloat(wages) || 0;
+    if (wages <= 0) return { employee: 0, employer: 0, empPct: 0 };
+    var part = _epfPartMain(config, nameUpper, month);
+    var erLow, eeLow, erHigh, eeHigh;
+    switch (part) {
+        case 'C': erLow = 0.065; eeLow = 0.055; erHigh = 0.06; eeHigh = 0.055; break;
+        case 'E': erLow = 0.04;  eeLow = 0;     erHigh = 0.04; eeHigh = 0;     break;
+        case 'F': {
+            var fe = _epfCeilMain(wages * 0.02);
+            return { employee: fe, employer: fe, empPct: wages > 0 ? fe / wages * 100 : 0 };
+        }
+        case 'A':
+        default:  erLow = 0.13;  eeLow = 0.11;  erHigh = 0.12; eeHigh = 0.11;  break;
+    }
+    if (wages <= 10) return { employee: 0, employer: 0, empPct: 0 };
+    var ceiling, er, ee;
+    if (wages <= 5000) {
+        ceiling = Math.ceil(wages / 20) * 20;
+        er = _epfCeilMain(ceiling * erLow);  ee = _epfCeilMain(ceiling * eeLow);
+    } else if (wages <= 20000) {
+        ceiling = Math.ceil(wages / 100) * 100;
+        er = _epfCeilMain(ceiling * erHigh); ee = _epfCeilMain(ceiling * eeHigh);
+    } else {
+        er = _epfCeilMain(wages * erHigh);   ee = _epfCeilMain(wages * eeHigh);
+    }
+    return { employee: ee, employer: er, empPct: wages > 0 ? ee / wages * 100 : 0 };
+}
+
+// EIS / SIP (Act 800) Second Schedule: 0.2% of each RM100 band mid-point, cap RM6,000.
+// Exempt 60+ / foreigners.
+function computeEisMain(config, nameUpper, wages, month) {
+    var nat = (config && config.employee_nationality && config.employee_nationality[nameUpper]) || 'CITIZEN';
+    if (nat === 'FOREIGNER') return { employee: 0, employer: 0 };
+    // Reuse the age resolver: Part E/C imply age 60+, which is EIS-exempt.
+    var part = _epfPartMain(config, nameUpper, month);
+    if (part === 'E' || part === 'C') return { employee: 0, employer: 0 };
+    var w = Math.min(parseFloat(wages) || 0, 6000);
+    if (w <= 0) return { employee: 0, employer: 0 };
+    var midpoint = (Math.ceil(w / 100) * 100) - 50;
+    var amt = Math.round(midpoint * 0.002 * 100) / 100;
+    return { employee: amt, employer: amt };
+}
+
+// SOCSO / PERKESO (Act 4) First Schedule: 0.2% bands cap RM6,000, rounded to 5 sen.
+//   Category 1 (under 60, local/PR): employer 1.75%, employee 0.5%
+//   Category 2 (age 60+, or foreign workers): employer 1.25%, employee 0%
+function computeSocsoMain(config, nameUpper, wages, month) {
+    var nat = (config && config.employee_nationality && config.employee_nationality[nameUpper]) || 'CITIZEN';
+    var part = _epfPartMain(config, nameUpper, month);
+    var is60 = (part === 'E' || part === 'C');
+    var cat = (is60 || nat === 'FOREIGNER') ? 2 : 1;
+    var w = Math.min(parseFloat(wages) || 0, 6000);
+    if (w <= 0) return { employee: 0, employer: 0 };
+    var mid = (Math.ceil(w / 100) * 100) - 50;
+    var employer = Math.round(mid * (cat === 1 ? 0.0175 : 0.0125) * 20 + 1e-9) / 20;
+    var employee = cat === 1 ? Math.round(mid * 0.005 * 20 + 1e-9) / 20 : 0;
+    return { employee: employee, employer: employer };
+}
+
+const PAYSLIP_COMPANY_DEFAULT = {
+    name: 'IMPEX GEMILANG SDN BHD',
+    address: 'TB 16919, UNIPARK KM 6, JALAN UTARA, 91000 TAWAU, SABAH',
+    tel: '013-883 6026',
+    fax: '089-746026'
+};
+const PAYSLIP_MONTH_NAMES = {
+    JAN: 'JANUARY', FEB: 'FEBRUARY', MAR: 'MARCH', APR: 'APRIL',
+    MAY: 'MAY', JUN: 'JUNE', JUL: 'JULY', AUG: 'AUGUST',
+    SEP: 'SEPTEMBER', OCT: 'OCTOBER', NOV: 'NOVEMBER', DEC: 'DECEMBER'
+};
+
+function _payslipBareMonth(month) {
+    var m = (month || '').toUpperCase();
+    var i = m.indexOf('-');
+    return i >= 0 ? m.substring(0, i) : m;
+}
+function _payslipYear(month) {
+    var m = (month || '').toUpperCase();
+    var i = m.indexOf('-');
+    return i >= 0 ? m.substring(i + 1) : String(new Date().getFullYear());
+}
+
+async function createPayslipSheet(sheet, person, config, month) {
+    const company = Object.assign({}, PAYSLIP_COMPANY_DEFAULT, (config && config.payslip_company) || {});
+    const rmFmt = '#,##0.00';
+    const pctFmt = '0.00%';
+    const thin = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+    const labelFont = { bold: true, size: 10 };
+    const valFont = { size: 10 };
+    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+
+    sheet.columns = [
+        { width: 16 }, { width: 14 }, { width: 14 }, { width: 14 },
+        { width: 16 }, { width: 14 }, { width: 14 }, { width: 14 }
+    ];
+    sheet.pageSetup = {
+        paperSize: 9,
+        orientation: 'portrait',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 }
+    };
+
+    function mergeTitle(row, text, size) {
+        sheet.mergeCells(row, 1, row, 8);
+        const c = sheet.getCell(row, 1);
+        c.value = text;
+        c.font = { bold: true, size: size || 12 };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+    function lbl(r, c, text) {
+        const cell = sheet.getCell(r, c);
+        cell.value = text;
+        cell.font = labelFont;
+        cell.border = thin;
+    }
+    function val(r, c, value, fmt) {
+        const cell = sheet.getCell(r, c);
+        cell.value = value;
+        cell.font = valFont;
+        cell.border = thin;
+        if (fmt) cell.numFmt = fmt;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    }
+    function mergeVal(r, c1, c2, value, fmt) {
+        sheet.mergeCells(r, c1, r, c2);
+        val(r, c1, value, fmt);
+        for (let c = c1 + 1; c <= c2; c++) sheet.getCell(r, c).border = thin;
+    }
+
+    const bareM = _payslipBareMonth(month);
+    const year = _payslipYear(month);
+    const periodLabel = (PAYSLIP_MONTH_NAMES[bareM] || bareM) + ' ' + year;
+
+    const salary = parseFloat(person.salary) || 0;
+    const allowances = person.allowances || {};
+    const allowEntries = [
+        ['HP', parseFloat(allowances.HP) || 0],
+        ['CAR', parseFloat(allowances.CAR) || 0],
+        ['LOCAL FUEL', parseFloat(allowances['LOCAL FUEL']) || 0],
+        ['OUTSTATION FUEL', parseFloat(allowances['OUTSTATION FUEL']) || 0],
+        ['HOUSING', parseFloat(allowances.HOUSING) || 0],
+        ['FOOD', parseFloat(allowances.FOOD) || 0],
+        ['OTHERS', parseFloat(allowances.OTHERS) || 0]
+    ].filter(function(a) { return a[1] > 0; });
+    while (allowEntries.length < 3) allowEntries.push(['', 0]);
+
+    const commission = parseFloat(person.commission) || 0;
+    const bonus = parseFloat(person.bonus) || 0;
+    const blockIncentive = parseFloat(person.blockIncentive) || 0;
+    const sales = parseFloat(person.sales) || 0;
+    const commRate = parseFloat(person.commissionRate) || 0;
+    const totalGross = parseFloat(person.totalGross) || 0;
+    const epfEmp = parseFloat(person.epfEmployee) || 0;
+    const epfEr = parseFloat(person.epfEmployer) || 0;
+    const socsoEmp = parseFloat(person.socsoEmployee) || 0;
+    const socsoEr = parseFloat(person.socsoEmployer) || 0;
+    const eisEmp = parseFloat(person.eisEmployee) || 0;
+    const eisEr = parseFloat(person.eisEmployer) || 0;
+    const netSalary = parseFloat(person.netSalary) || 0;
+    const empType = person.type || 'Sales';
+    const isMerch = empType === 'Support Staff';
+
+    let r = 1;
+    mergeTitle(r++, company.name, 14);
+    mergeTitle(r++, company.address, 10);
+    mergeTitle(r++, 'TEL: ' + company.tel + '    FAX: ' + company.fax, 10);
+    mergeTitle(r++, periodLabel, 12);
+    r++;
+
+    lbl(r, 1, 'NAME');
+    mergeVal(r, 2, 4, person.name || '', null);
+    lbl(r, 5, 'MYKAD NO / PASSPORT NO');
+    mergeVal(r, 6, 8, person.mykad || '', null);
+    r++;
+    lbl(r, 1, 'EPF NO');
+    mergeVal(r, 2, 4, person.epfNo || '', null);
+    lbl(r, 5, 'POSITION');
+    mergeVal(r, 6, 8, person.position || empType, null);
+    r++;
+    lbl(r, 1, 'DATE JOINED / (RESIGNED)');
+    mergeVal(r, 2, 4, person.joinDate || '', null);
+    lbl(r, 5, 'BANK ACCOUNT NO');
+    mergeVal(r, 6, 8, person.bankAccount || '', null);
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'BASIC SALARY';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    lbl(r, 1, 'Salary');
+    mergeVal(r, 2, 4, salary, rmFmt);
+    lbl(r, 5, 'Late (min)');
+    mergeVal(r, 6, 6, '', null);
+    lbl(r, 7, '');
+    mergeVal(r, 8, 8, 0, rmFmt);
+    r++;
+    lbl(r, 1, 'Unpaid leave (days)');
+    mergeVal(r, 2, 4, '', null);
+    mergeVal(r, 5, 8, 0, rmFmt);
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'ALLOWANCES';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    for (let i = 0; i < 3; i++) {
+        lbl(r, 1, String(i + 1) + (allowEntries[i][0] ? ' — ' + allowEntries[i][0] : ''));
+        mergeVal(r, 2, 8, allowEntries[i][1] || 0, rmFmt);
+        r++;
+    }
+    r++;
+
+    lbl(r, 1, 'BONUS');
+    mergeVal(r, 2, 8, bonus, rmFmt);
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'COMMISSION';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    lbl(r, 1, '');
+    lbl(r, 2, 'Sales');
+    lbl(r, 4, 'Rate');
+    lbl(r, 6, 'Total');
+    [1, 2, 4, 6].forEach(function(c) { sheet.getCell(r, c).fill = headerFill; });
+    r++;
+    if (isMerch) {
+        lbl(r, 1, 'Block Incentive');
+        mergeVal(r, 2, 3, parseFloat(person.blocks) || 0, rmFmt);
+        mergeVal(r, 4, 5, parseFloat(person.blockRate) || 0, rmFmt);
+        mergeVal(r, 6, 8, blockIncentive, rmFmt);
+    } else {
+        lbl(r, 1, 'Commission');
+        mergeVal(r, 2, 3, sales, rmFmt);
+        mergeVal(r, 4, 5, commRate, pctFmt);
+        mergeVal(r, 6, 8, commission, rmFmt);
+    }
+    r += 2;
+
+    lbl(r, 1, 'GROSS SALARY (EPF)');
+    mergeVal(r, 2, 8, totalGross, rmFmt);
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'OVERTIME';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    lbl(r, 1, 'Normal day');
+    lbl(r, 2, 'No of hours');
+    lbl(r, 4, 'Rate');
+    lbl(r, 6, 'Total');
+    r++;
+    lbl(r, 1, 'Sunday and public holiday');
+    mergeVal(r, 2, 3, 0, null);
+    mergeVal(r, 4, 5, 0, rmFmt);
+    mergeVal(r, 6, 8, 0, rmFmt);
+    r += 2;
+
+    lbl(r, 1, 'TOTAL GROSS SALARY');
+    mergeVal(r, 2, 8, totalGross, rmFmt);
+    sheet.getCell(r, 1).font = { bold: true, size: 11 };
+    sheet.getCell(r, 2).font = { bold: true, size: 11 };
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'DEDUCTIONS';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    lbl(r, 1, '');
+    lbl(r, 4, 'Total');
+    lbl(r, 6, 'Employer');
+    [1, 4, 6].forEach(function(c) { sheet.getCell(r, c).fill = headerFill; });
+    r++;
+    lbl(r, 1, 'EPF');
+    mergeVal(r, 4, 5, epfEmp, rmFmt);
+    mergeVal(r, 6, 8, epfEr, rmFmt);
+    r++;
+    lbl(r, 1, 'SOCSO');
+    mergeVal(r, 4, 5, socsoEmp, rmFmt);
+    mergeVal(r, 6, 8, socsoEr, rmFmt);
+    r++;
+    lbl(r, 1, 'EIS');
+    mergeVal(r, 4, 5, eisEmp, rmFmt);
+    mergeVal(r, 6, 8, eisEr, rmFmt);
+    r++;
+    lbl(r, 1, 'NET SALARY');
+    mergeVal(r, 4, 8, netSalary, rmFmt);
+    sheet.getCell(r, 1).font = { bold: true };
+    sheet.getCell(r, 4).font = { bold: true };
+    r += 2;
+
+    sheet.mergeCells(r, 1, r, 8);
+    sheet.getCell(r, 1).value = 'OTHER DEDUCTIONS';
+    sheet.getCell(r, 1).font = { bold: true, underline: true };
+    r++;
+    lbl(r, 1, 'Salary advance');
+    mergeVal(r, 2, 8, 0, rmFmt);
+    r += 2;
+
+    lbl(r, 1, 'Balance payable');
+    mergeVal(r, 2, 8, netSalary, rmFmt);
+    r += 2;
+
+    lbl(r, 1, 'Received by :');
+    mergeVal(r, 2, 4, '', null);
+    lbl(r, 5, 'Date :');
+    mergeVal(r, 6, 8, new Date().toLocaleDateString('en-GB'), null);
+    r += 2;
+
+    lbl(r, 1, 'BALANCE PAYABLE');
+    mergeVal(r, 2, 8, netSalary, rmFmt);
+    r++;
+    lbl(r, 1, 'LOST GOODS / EXPIRED GOODS');
+    mergeVal(r, 2, 8, 0, rmFmt);
+    r++;
+    lbl(r, 1, 'NET SALARY PAYABLE');
+    mergeVal(r, 2, 8, netSalary, rmFmt);
+    sheet.getCell(r, 1).font = { bold: true, size: 11 };
+    sheet.getCell(r, 2).font = { bold: true, size: 11 };
+}
+
 async function createSalarySheet(sheet, person, config, month, totalTeamSales = 0) {
     let epfRate = 0.11;
     
@@ -1558,7 +1931,8 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     
     sheet.columns = [
         { width: 25 }, { width: 15 }, { width: 15 }, 
-        { width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }
+        { width: 18 }, { width: 15 }, { width: 15 }, { width: 18 },
+        { width: 18 }, { width: 18 }
     ];
 
     const salary = person.salary || 0;
@@ -1597,9 +1971,21 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     const totalExtraIncome = isMerchandiser
         ? totalFixedIncome + blockIncentive
         : totalFixedIncome + commission + collectionIncentive + activeCallIncentive + quarterlyBonus;
-    const epfAmount = totalExtraIncome * epfRate;
-    const epfLabel = `EPF ${(epfRate * 100)}%`;
-    const grandTotalPayable = totalExtraIncome - epfAmount;
+    const _epfMain = computeEpfMain(config, nameUpper, totalExtraIncome, month);
+    const epfAmount = _epfMain.employee;
+    const epfLabel = `EPF ${_epfMain.empPct != null ? _epfMain.empPct.toFixed(1) : (epfRate * 100)}%`;
+    const _socsoMain = computeSocsoMain(config, nameUpper, totalExtraIncome, month);
+    const socsoAmount = _socsoMain.employee;
+    const socsoLabel = 'SOCSO 0.5%';
+    const _eisMain = computeEisMain(config, nameUpper, totalExtraIncome, month);
+    const eisAmount = _eisMain.employee;
+    const eisLabel = 'EIS 0.2%';
+    const grandTotalPayable = totalExtraIncome - epfAmount - socsoAmount - eisAmount;
+
+    // Employer-side statutory cost (shown in columns G/H/I so the employer sees monthly cost)
+    const erEpf = _epfMain.employer || 0;
+    const erSocso = _socsoMain.employer || 0;
+    const erEis = _eisMain.employer || 0;
 
     const headerStyle = styles.headerStyle;
     const sectionStyle = styles.subHeaderStyle;
@@ -1644,7 +2030,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     monthCell.alignment = { horizontal: 'center', vertical: 'middle' };
     
     try {
-        sheet.mergeCells('A1:G1');
+        sheet.mergeCells('A1:I1');
     } catch (err) {
         console.warn('Merge cells error:', err);
     }
@@ -1653,7 +2039,7 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
     if (isSupervisor) {
         rows = [
             { label: 'INCOME', type: 'header' },
-            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', ''] },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', '', 'Employer Pay', 'INDV%', 'TEAM%'] },
             { label: 'SALARY', value: salary },
 
             { label: 'ALLOWANCES', type: 'header' },
@@ -1679,14 +2065,16 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
-            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: epfLabel, value: epfAmount, type: 'epf', employerAmt: erEpf },
+            ...(socsoAmount > 0 || erSocso > 0 ? [{ label: socsoLabel, value: socsoAmount, type: 'epf', employerAmt: erSocso }] : []),
+            ...(eisAmount > 0 || erEis > 0 ? [{ label: eisLabel, value: eisAmount, type: 'epf', employerAmt: erEis }] : []),
             { label: '', type: 'empty' },
             { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
         ];
     } else if (isMerchandiser) {
         rows = [
             { label: 'INCOME', type: 'header' },
-            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', ''] },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'TEAM%', '', 'Employer Pay', 'INDV%', 'TEAM%'] },
             { label: 'SALARY', value: salary },
 
             { label: 'ALLOWANCES', type: 'header' },
@@ -1709,14 +2097,16 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
-            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: epfLabel, value: epfAmount, type: 'epf', employerAmt: erEpf },
+            ...(socsoAmount > 0 || erSocso > 0 ? [{ label: socsoLabel, value: socsoAmount, type: 'epf', employerAmt: erSocso }] : []),
+            ...(eisAmount > 0 || erEis > 0 ? [{ label: eisLabel, value: eisAmount, type: 'epf', employerAmt: erEis }] : []),
             { label: '', type: 'empty' },
             { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
         ];
     } else {
         rows = [
             { label: 'INCOME', type: 'header' },
-            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'INDV%', 'TEAM%'] },
+            { label: 'BASIC', type: 'section', cols: ['', '', 'PAY', 'INDV%', 'TEAM%', 'Employer Pay', 'INDV%', 'TEAM%'] },
             { label: 'SALARY', value: salary },
 
             { label: 'ALLOWANCES', type: 'header' },
@@ -1743,7 +2133,9 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
             { label: 'GRAND TOTAL', value: totalExtraIncome, type: 'total' },
 
             { label: '', type: 'empty' },
-            { label: epfLabel, value: epfAmount, type: 'epf' },
+            { label: epfLabel, value: epfAmount, type: 'epf', employerAmt: erEpf },
+            ...(socsoAmount > 0 || erSocso > 0 ? [{ label: socsoLabel, value: socsoAmount, type: 'epf', employerAmt: erSocso }] : []),
+            ...(eisAmount > 0 || erEis > 0 ? [{ label: eisLabel, value: eisAmount, type: 'epf', employerAmt: erEis }] : []),
             { label: '', type: 'empty' },
             { label: 'GRAND TOTAL PAYABLE', value: grandTotalPayable, type: 'grandTotal' }
         ];
@@ -1769,6 +2161,37 @@ async function createSalarySheet(sheet, person, config, month, totalTeamSales = 
         } else if (row.type === 'total' || row.type === 'grandTotal' || row.type === 'epf') {
             applyStyle(cell, totalStyle);
             for (let col = 1; col <= 7; col++) {
+                applyStyle(sheet.getCell(rowNum, col), totalStyle);
+            }
+        }
+
+        // Employer statutory: G = employer amount, H = amt / personal sales, I = amt / team sales
+        if (row.type === 'epf' && row.employerAmt != null) {
+            const erAmt = row.employerAmt;
+            const gCell = sheet.getCell(rowNum, 7);
+            gCell.value = erAmt;
+            gCell.numFmt = '#,##0.00';
+            gCell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+
+            const hCell = sheet.getCell(rowNum, 8);
+            if (!isSupervisor && !isMerchandiser && personMonthlySales > 0) {
+                hCell.value = erAmt / personMonthlySales;
+            } else {
+                hCell.value = 0;
+            }
+            hCell.numFmt = '0.000%';
+            hCell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+
+            const iCell = sheet.getCell(rowNum, 9);
+            if (totalTeamSales > 0) {
+                iCell.value = erAmt / totalTeamSales;
+            } else {
+                iCell.value = 0;
+            }
+            iCell.numFmt = '0.000%';
+            iCell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+
+            for (let col = 7; col <= 9; col++) {
                 applyStyle(sheet.getCell(rowNum, col), totalStyle);
             }
         }

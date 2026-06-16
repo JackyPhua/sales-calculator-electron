@@ -1414,6 +1414,7 @@ function loadQuickCalculateHistory() {
             + '<div class="flex gap-2 flex-wrap justify-end">'
             + '<button onclick="viewHistoryReport('+realIndex+')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
             + '<button onclick="exportHistoryToExcel('+realIndex+')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
+            + '<button onclick="printPayslipsFromHistory('+realIndex+')" class="px-3 py-1 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm">📄 Payslip</button>'
             + '<button onclick="printHistoryReport('+realIndex+')" class="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm">🖨 Print PDF</button>'
             + '<button onclick="deleteHistoryReport('+realIndex+')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">🗑️ Delete</button>'
             + '</div></div>'
@@ -1468,8 +1469,16 @@ function viewHistoryReport(index) {
         var qtrBon=isQtr&&typeof calculateIncentive==='function'?calculateIncentive(ach,appState.config.quarterly_incentive):0;
         var totalComm=comm+collBon+callBon+qtrBon;
         var totalIncome=salary+totalAllow+totalComm;
-        var epfAmt=Math.round(totalIncome*(epfRate/100)*100)/100;
-        var grandTotal=totalIncome-epfAmt;
+        var _vhBareM=(typeof bareMonth==='function')?bareMonth(report.month):month;
+        var _vhYear=(typeof keyYear==='function')?(keyYear(report.month)||new Date().getFullYear()):new Date().getFullYear();
+        var _vhEpf=(typeof window.computeEpf==='function')?window.computeEpf(p.name,totalIncome,_vhBareM,_vhYear):{employee:Math.round(totalIncome*(epfRate/100)*100)/100,empPct:epfRate};
+        var epfAmt=Math.round(_vhEpf.employee*100)/100;
+        var epfPctLabel=(_vhEpf.empPct!=null)?_vhEpf.empPct.toFixed(1):epfRate;
+        var _vhSocso=(typeof window.computeSocso==='function')?window.computeSocso(p.name,totalIncome,_vhBareM,_vhYear):{employee:0};
+        var socsoAmt=Math.round(_vhSocso.employee*100)/100;
+        var _vhEis=(typeof window.computeEis==='function')?window.computeEis(p.name,totalIncome,_vhBareM,_vhYear):{employee:0};
+        var eisAmt=Math.round(_vhEis.employee*100)/100;
+        var grandTotal=totalIncome-epfAmt-socsoAmt-eisAmt;
         var achColor=ach>=100?'#16a34a':ach>=90?'#d97706':'#dc2626';
         return '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">'
             +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6;">'
@@ -1486,7 +1495,9 @@ function viewHistoryReport(index) {
             +(isQtr?'<div style="color:#6b7280;">Quarterly Bonus</div><div style="text-align:right;color:#2563eb;">RM '+qtrBon.toFixed(2)+'</div>':'')
             +'<div style="color:#6b7280;font-weight:600;">Total Commission</div><div style="text-align:right;font-weight:700;color:#16a34a;">RM '+totalComm.toFixed(2)+'</div>'
             +'<div style="height:1px;background:#f3f4f6;grid-column:1/-1;margin:4px 0;"></div>'
-            +'<div style="color:#6b7280;">EPF ('+epfRate+'%)</div><div style="text-align:right;color:#dc2626;">- RM '+epfAmt.toFixed(2)+'</div>'
+            +'<div style="color:#6b7280;">EPF ('+epfPctLabel+'%)</div><div style="text-align:right;color:#dc2626;">- RM '+epfAmt.toFixed(2)+'</div>'
+            +(socsoAmt>0?'<div style="color:#6b7280;">SOCSO (0.5%)</div><div style="text-align:right;color:#dc2626;">- RM '+socsoAmt.toFixed(2)+'</div>':'')
+            +(eisAmt>0?'<div style="color:#6b7280;">EIS (0.2%)</div><div style="text-align:right;color:#dc2626;">- RM '+eisAmt.toFixed(2)+'</div>':'')
             +'<div style="font-weight:700;">Grand Total</div><div style="text-align:right;font-weight:700;font-size:15px;color:#4f46e5;">RM '+grandTotal.toFixed(2)+'</div>'
             +'</div></div>';
     }).join('');
