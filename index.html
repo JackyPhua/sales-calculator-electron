@@ -53,6 +53,32 @@
         .tbtn.green{background:var(--em);border-color:var(--em);color:#fff;}
         .tbtn.cyan{background:#0891b2;border-color:#0891b2;color:#fff;}
         .tbtn.cyan:hover{background:#0e7490;border-color:#0e7490;}
+        /* ── PRIMARY ACTION BUTTONS (People / Projection / Annual) ── */
+        .action-btn{
+            display:inline-flex;align-items:center;justify-content:center;gap:7px;
+            padding:9px 18px;border-radius:var(--r);border:none;
+            font-size:12px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;
+            letter-spacing:.2px;white-space:nowrap;line-height:1.2;
+            transition:transform .15s,box-shadow .15s,filter .15s,background .15s;
+        }
+        .action-btn:hover{transform:translateY(-1px);}
+        .action-btn:active{transform:translateY(0);filter:brightness(.98);}
+        .action-btn--primary{
+            background:linear-gradient(180deg,#1e4976 0%,#163556 100%);
+            color:#fff;box-shadow:0 2px 10px rgba(22,53,86,.28);
+        }
+        .action-btn--primary:hover{box-shadow:0 4px 16px rgba(22,53,86,.34);filter:brightness(1.06);}
+        .action-btn--outline{
+            background:var(--paper);color:var(--blue-d);
+            border:1.5px solid #93c5fd;box-shadow:var(--sh);
+        }
+        .action-btn--outline:hover{background:var(--blue-l);border-color:#60a5fa;box-shadow:var(--sh-md);}
+        .action-btn--excel{
+            background:linear-gradient(180deg,#047857 0%,#059669 100%);
+            color:#fff;box-shadow:0 2px 10px rgba(5,150,105,.28);
+        }
+        .action-btn--excel:hover{box-shadow:0 4px 16px rgba(5,150,105,.36);filter:brightness(1.05);}
+        .page-toolbar-actions .action-btn{padding:10px 20px;font-size:12px;}
         /* ── MONTH SELECT ── */
         .month-select-wrap{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r);font-size:12px;font-weight:700;color:var(--ink);}
         .month-select-wrap select{border:none;outline:none;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;}
@@ -136,22 +162,122 @@
         .stat-val2{font-size:14px;font-weight:700;color:var(--ink);font-family:'IBM Plex Mono',monospace;}
         .action-btns{display:flex;flex-direction:column;gap:7px;}
         /* ── HISTORY ── */
+        .history-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
+        .history-year-group{margin-bottom:22px;}
+        .history-section-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:14px;font-weight:800;color:var(--ink);margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line);}
+        .history-section-meta{font-size:11px;font-weight:600;color:var(--ink4);}
         .history-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-        .h-card{border:1px solid var(--line);border-radius:var(--r);background:var(--paper);overflow:hidden;box-shadow:var(--sh);transition:box-shadow .2s,transform .2s;cursor:pointer;}
+        @media(max-width:1100px){.history-grid{grid-template-columns:repeat(2,1fr);}.history-summary{grid-template-columns:repeat(2,1fr);}}
+        @media(max-width:640px){.history-grid,.history-summary{grid-template-columns:1fr;}}
+        .h-card{border:1px solid var(--line);border-radius:var(--r);background:var(--paper);overflow:hidden;box-shadow:var(--sh);transition:box-shadow .2s,transform .2s;border-left:3px solid #cbd5e1;}
+        .h-card--good{border-left-color:#047857;}
+        .h-card--warn{border-left-color:#b45309;}
+        .h-card--bad{border-left-color:#be123c;}
         .h-card:hover{box-shadow:var(--sh-lg);transform:translateY(-2px);}
-        .h-card-top{padding:14px 16px;background:linear-gradient(135deg,var(--ink),var(--ink2));color:#fff;display:flex;align-items:flex-start;justify-content:space-between;}
-        .h-month{font-size:22px;font-weight:800;letter-spacing:-1px;font-family:'IBM Plex Mono',monospace;}
-        .h-year{font-size:11px;opacity:.4;margin-top:1px;}
-        .h-comm-lbl{font-size:9px;opacity:.5;text-align:right;letter-spacing:.8px;text-transform:uppercase;}
-        .h-comm-val{font-size:15px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:#34d399;text-align:right;letter-spacing:-.5px;}
-        .h-people{display:grid;grid-template-columns:repeat(4,1fr);background:var(--line);border-top:1px solid var(--line);}
-        .h-person{background:var(--paper);padding:10px 8px;text-align:center;border-right:1px solid var(--line);}
-        .h-person:last-child{border-right:none;}
-        .h-pname{font-size:9px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
-        .h-pach{font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-        .h-pcomm{font-size:10px;color:var(--blue-d);font-weight:600;margin-top:2px;font-family:'IBM Plex Mono',monospace;}
-        .h-foot{padding:9px 12px;border-top:1px solid var(--line);display:flex;gap:6px;justify-content:flex-end;background:var(--sheet);}
+        .h-card-body{cursor:pointer;transition:background .15s;}
+        .h-card-body:hover .h-person{background:var(--sheet);}
+        /* History card header — slate-navy (aligned with payslip / enterprise tone) */
+        .h-card-top{
+            padding:14px 16px;
+            background:linear-gradient(180deg,#1e4976 0%,#163556 100%);
+            border-bottom:1px solid rgba(255,255,255,.06);
+            color:#e2e8f0;
+            display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+        }
+        .h-card--good .h-card-top{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);border-bottom-color:rgba(110,231,183,.12);}
+        .h-card--warn .h-card-top{background:linear-gradient(180deg,#4a3f1f 0%,#163556 100%);border-bottom-color:rgba(251,191,36,.1);}
+        .h-card--bad .h-card-top{background:linear-gradient(180deg,#4a2530 0%,#163556 100%);border-bottom-color:rgba(252,165,165,.1);}
+        .h-month-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+        .h-month{font-size:22px;font-weight:800;letter-spacing:-1px;font-family:'IBM Plex Mono',monospace;color:#fff;}
+        .h-qtr-badge{
+            display:inline-flex;align-items:center;padding:2px 8px;border-radius:6px;
+            font-size:9px;font-weight:700;letter-spacing:.35px;text-transform:uppercase;
+            background:rgba(255,255,255,.08);color:#cbd5e1;border:1px solid rgba(255,255,255,.12);
+        }
+        .h-qtr-badge.close{background:rgba(180,83,9,.22);color:#fde68a;border-color:rgba(251,191,36,.28);}
+        .h-year{font-size:11px;color:#94a3b8;margin-top:2px;letter-spacing:.2px;}
+        .h-ach-badge{
+            display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;
+            font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+            background:rgba(15,23,42,.35);border:1px solid rgba(255,255,255,.08);color:#cbd5e1;
+        }
+        .h-ach-badge.good{color:#a7f3d0;background:rgba(6,78,59,.45);border-color:rgba(110,231,183,.22);}
+        .h-ach-badge.warn{color:#fde68a;background:rgba(120,53,15,.4);border-color:rgba(251,191,36,.22);}
+        .h-ach-badge.bad{color:#fecaca;background:rgba(127,29,29,.38);border-color:rgba(252,165,165,.22);}
+        .h-comm-lbl{font-size:9px;color:#94a3b8;text-align:right;letter-spacing:.8px;text-transform:uppercase;}
+        .h-comm-val{font-size:15px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:#d1fae5;text-align:right;letter-spacing:-.5px;}
+        .h-people{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line);}
+        .h-person{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--paper);}
+        .h-person:last-child{border-bottom:none;}
+        .h-pav{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;}
+        .h-pinfo{flex:1;min-width:0;}
+        .h-pname{font-size:11px;font-weight:700;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .h-pmeta{font-size:9px;color:var(--ink4);margin-top:1px;}
+        .h-pach{font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0;text-align:right;}
+        .h-pcomm{font-size:10px;color:var(--blue-d);font-weight:600;margin-top:2px;font-family:'IBM Plex Mono',monospace;text-align:right;flex-shrink:0;min-width:72px;}
+        .h-person-right{text-align:right;flex-shrink:0;}
+        .h-more{padding:8px 14px;text-align:center;font-size:10px;font-weight:700;color:var(--ink4);background:var(--sheet);border-top:1px dashed var(--line);}
+        .h-foot{padding:9px 12px;border-top:1px solid var(--line);display:flex;gap:6px;justify-content:space-between;align-items:center;flex-wrap:wrap;background:var(--sheet);}
+        .h-foot-primary{display:flex;gap:6px;flex-wrap:wrap;}
+        .h-foot-actions{display:flex;gap:6px;align-items:center;margin-left:auto;}
+        .h-more-menu{position:relative;}
+        .h-more-menu summary{list-style:none;cursor:pointer;}
+        .h-more-menu summary::-webkit-details-marker{display:none;}
+        .hbtn-more{background:var(--paper);color:var(--ink3);border:1.5px solid var(--line);}
+        .h-more-drop{position:absolute;bottom:calc(100% + 4px);right:0;min-width:130px;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-lg);padding:4px;display:flex;flex-direction:column;gap:2px;z-index:10;}
+        .h-more-drop .hbtn{width:100%;text-align:left;padding:7px 12px;border-radius:6px;}
+        .hbtn-del--ghost{opacity:.45;transition:opacity .15s;}
+        .h-card:hover .hbtn-del--ghost{opacity:1;}
+        .hbtn-primary{padding:6px 14px;font-size:11px;}
+        .hbtn-view.hbtn-primary{background:var(--blue);color:#fff;}
+        .hbtn-excel.hbtn-primary{background:var(--em);color:#fff;}
         .hbtn{padding:5px 11px;border:none;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;letter-spacing:.2px;}
+        .hbtn-view{background:var(--blue-l);color:var(--blue-d);}
+        .hbtn-excel{background:var(--em-l);color:#065f46;}
+        .hbtn-payslip{background:var(--am-l);color:#92400e;}
+        .hbtn-pdf{background:var(--vi-l);color:#6d28d9;}
+        .hbtn-del{background:var(--ro-l);color:var(--rose);}
+        /* ── SHARED PAGE COMPONENTS ── */
+        .page-toolbar{display:flex;align-items:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+        .page-toolbar-actions{display:flex;align-items:flex-end;gap:8px;margin-left:auto;flex-wrap:wrap;}
+        .page-toolbar-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
+        .filter-field{display:flex;flex-direction:column;gap:3px;}
+        .filter-lbl{font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;}
+        .filter-select,.filter-select-sm{padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;outline:none;}
+        .filter-select-sm{padding:8px 14px;font-size:13px;}
+        .seg-toggle{display:flex;background:var(--line);border-radius:8px;padding:3px;}
+        .seg-toggle-btn{padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:transparent;color:var(--ink3);}
+        .seg-toggle-btn.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1);}
+        .filter-select:focus,.filter-select-sm:focus{border-color:var(--blue);}
+        .empty-state{text-align:center;padding:60px 20px;color:var(--ink4);}
+        .empty-state-icon{font-size:48px;margin-bottom:16px;}
+        .empty-state-title{font-size:15px;font-weight:600;margin-bottom:6px;color:var(--ink2);}
+        .empty-state-sub{font-size:13px;}
+        .ach-good{color:#059669!important;}
+        .ach-warn{color:#b45309!important;}
+        .ach-bad{color:#e11d48!important;}
+        .pi-btn{padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid var(--line);background:var(--paper);color:var(--ink2);}
+        .pi-btn--salary{border-color:#bae6fd;background:var(--blue-l);color:var(--blue-d);width:110px;}
+        .pi-btn--comm{border-color:#ddd6fe;background:var(--vi-l);color:var(--vi);width:140px;}
+        .pi-btn--target{border-color:#bbf7d0;background:var(--em-l);color:#065f46;width:110px;}
+        .pi-btn--tier{border-color:#93c5fd;background:#dbeafe;color:#1d4ed8;width:140px;}
+        .pi-btn--rate{border-color:#facc15;background:#fef9c3;color:#854d0e;width:140px;}
+        .pi-btn--active{border-color:#86efac;background:#dcfce7;color:#166534;}
+        .pi-btn--inactive{border-color:#fecaca;background:#fee2e2;color:#b91c1c;}
+        .pi-btn--del{border-color:#ffe4e6;background:#fff5f7;color:var(--rose);padding:7px 10px;}
+        .dash-kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
+        .dash-kpi{background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--sh);}
+        .dash-kpi-lbl{font-size:11px;font-weight:700;color:var(--ink4);text-transform:uppercase;letter-spacing:.8px;}
+        .dash-kpi-val{font-size:16px;font-weight:800;color:var(--ink);font-family:'IBM Plex Mono',monospace;margin-top:4px;white-space:nowrap;}
+        .dash-kpi--muted{background:var(--sheet);}
+        .dash-kpi--good{background:var(--em-l);border-color:#86efac;}
+        .dash-kpi--good .dash-kpi-val{color:#059669;}
+        .dash-kpi--warn{background:var(--am-l);border-color:#fde68a;}
+        .dash-kpi--warn .dash-kpi-val{color:#b45309;}
+        .dash-section-title{font-size:14px;font-weight:800;color:var(--ink);margin-bottom:12px;}
+        .dash-meta{font-size:13px;color:var(--ink3);margin-bottom:14px;}
+        @media(max-width:1100px){.dash-kpi-grid{grid-template-columns:repeat(3,1fr);}}
+        @media(max-width:700px){.dash-kpi-grid{grid-template-columns:1fr 1fr;}}
         /* ── PEOPLE ── */
         .people-add-bar{display:flex;gap:10px;align-items:flex-end;padding:16px 18px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px;box-shadow:var(--sh);}
         .ig{flex:1;}
@@ -162,14 +288,89 @@
         /* ── SETTINGS ── */
         .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
         .set-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:20px;box-shadow:var(--sh);}
-        .set-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+        .set-card--wide{grid-column:1/-1;}
+        .set-title{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;gap:8px;letter-spacing:-.2px;}
+        .set-sub{font-size:11px;color:var(--ink4);margin-bottom:14px;line-height:1.45;}
+        .set-divider{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);}
+        .set-section-lbl{font-size:10px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;}
+        .set-field{display:flex;flex-direction:column;gap:6px;}
+        .set-input,.set-input-row input{width:100%;padding:9px 13px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:'Sora',sans-serif;outline:none;color:var(--ink);background:var(--paper);box-sizing:border-box;transition:border-color .15s;}
+        .set-input:focus{border-color:var(--blue);}
+        .set-input-row{display:flex;gap:8px;align-items:stretch;}
+        .set-info-list{display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--ink3);}
+        .set-info-row{display:flex;justify-content:space-between;align-items:center;gap:12px;}
+        .set-info-val{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);}
+        .set-info-val--ok{color:#047857;}
         .set-btn{width:100%;padding:10px 16px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;background:var(--sheet);color:var(--ink2);display:flex;align-items:center;gap:8px;transition:all .15s;margin-bottom:8px;}
+        .set-btn:last-child{margin-bottom:0;}
         .set-btn:hover{background:var(--line);}
         .set-btn.sb-blue{background:var(--blue);border-color:var(--blue);color:#fff;}
+        .set-btn.sb-blue:hover{background:var(--blue-d);}
         .set-btn.sb-green{background:var(--em);border-color:var(--em);color:#fff;}
-        .lic-box{padding:16px;background:linear-gradient(135deg,var(--ink),var(--ink2));border-radius:var(--r);color:#fff;text-align:center;cursor:pointer;}
-        .lic-status-lbl{font-size:10px;opacity:.5;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
-        .lic-type{font-size:20px;font-weight:800;letter-spacing:-.5px;}
+        .set-btn.sb-green:hover{filter:brightness(.96);}
+        .lic-box{
+            padding:18px 16px;
+            background:linear-gradient(180deg,#1e4976 0%,#163556 100%);
+            border:1px solid rgba(255,255,255,.08);
+            border-radius:var(--r);color:#e2e8f0;text-align:center;cursor:pointer;
+            transition:box-shadow .15s,transform .15s;
+        }
+        .lic-box:hover{box-shadow:var(--sh-md);transform:translateY(-1px);}
+        .lic-status-lbl{font-size:10px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+        .lic-type{font-size:20px;font-weight:800;letter-spacing:-.5px;color:#fff;}
+        .lic-hint{font-size:11px;color:#94a3b8;margin-top:6px;}
+        #company-list .company-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px;font-weight:600;color:var(--ink2);}
+        /* ── ANNUAL / EXPENSES REPORT ── */
+        .annual-filter-bar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);}
+        .annual-filter-bar .filter-field{flex:0;}
+        .report-kpi-grid{margin-bottom:18px;}
+        @media(max-width:900px){.report-kpi-grid.dash-kpi-grid{grid-template-columns:repeat(2,1fr);}}
+        .report-panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:18px;box-shadow:var(--sh);}
+        .report-panel-head{
+            padding:13px 18px;
+            background:linear-gradient(180deg,#1e4976 0%,#163556 100%);
+            border-bottom:1px solid rgba(255,255,255,.08);
+            color:#e2e8f0;font-size:13px;font-weight:700;letter-spacing:.02em;
+        }
+        .report-panel-head--em{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);}
+        .report-panel-body.report-scroll{overflow-x:auto;}
+        .report-table{width:100%;font-size:12px;border-collapse:collapse;}
+        .report-table thead tr{background:var(--sheet);}
+        .report-table th{padding:10px 14px;text-align:left;font-weight:700;color:var(--ink3);font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--line);}
+        .report-table th.rt-num,.report-table td.rt-num{text-align:right;}
+        .report-table th.rt-border,.report-table td.rt-border{border-left:2px solid var(--line);}
+        .report-table td{padding:9px 14px;border-top:1px solid var(--line);color:var(--ink2);}
+        .report-table td.rt-mono{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+        .report-table tr.rt-total td{background:linear-gradient(180deg,var(--blue-l),#eff6ff);font-weight:700;color:var(--blue-d);border-top:2px solid #93c5fd;}
+        .report-table tr.rt-total-dark td{background:linear-gradient(180deg,#1e4976,#163556);color:#fde68a;font-weight:800;border-top:none;}
+        .report-table tr.rt-section td{padding:6px 14px;font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:1px;background:#fff5f7;}
+        .report-table tr.rt-revenue td{background:var(--em-l);font-weight:700;color:#065f46;}
+        .report-table tr.rt-highlight td{background:linear-gradient(180deg,var(--blue-l),#eff6ff);font-weight:700;color:var(--blue-d);}
+        .report-table tr.rt-expense td{background:#fff5f7;}
+        .annual-section-title{font-size:14px;font-weight:800;color:var(--ink);margin:4px 0 12px;}
+        .annual-person-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:8px;}
+        .annual-person-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}
+        .annual-person-head{padding:14px 16px;background:linear-gradient(180deg,#1e4976 0%,#163556 100%);color:#fff;border-bottom:1px solid rgba(255,255,255,.08);}
+        .annual-person-head--sales{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);}
+        .annual-person-head--mgmt{background:linear-gradient(180deg,#1e3a6e 0%,#163556 100%);}
+        .annual-person-head--support{background:linear-gradient(180deg,#4a3f1f 0%,#163556 100%);}
+        .annual-person-name{font-size:15px;font-weight:800;letter-spacing:-.2px;}
+        .annual-person-meta{font-size:11px;color:#94a3b8;margin-top:3px;}
+        .annual-person-body{padding:14px 16px;display:flex;flex-direction:column;gap:8px;font-size:13px;}
+        .annual-stat-row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+        .annual-stat-lbl{color:var(--ink3);}
+        .annual-stat-val{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--ink);}
+        .annual-stat-sep{height:1px;background:var(--line);margin:2px 0;}
+        .annual-stat-total .annual-stat-lbl{font-weight:700;color:var(--ink);}
+        .annual-stat-total .annual-stat-val{font-size:15px;color:#047857;}
+        .ec-card-head{padding:12px 18px;background:linear-gradient(180deg,#1e4976 0%,#163556 100%);display:flex;justify-content:space-between;align-items:center;gap:12px;color:#fff;}
+        .ec-card-title{font-size:15px;font-weight:800;}
+        .ec-card-sub{font-size:10px;color:#94a3b8;margin-top:2px;}
+        .ec-card-sales{text-align:right;}
+        .ec-card-sales-lbl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
+        .ec-card-sales-val{font-size:16px;font-weight:800;color:#a7f3d0;font-family:'IBM Plex Mono',monospace;}
+        .dash-kpi--cost .dash-kpi-val{color:#be123c;}
+        .dash-kpi--ratio .dash-kpi-val{color:#b45309;}
         /* ── TOAST ── */
         #toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
         .toast{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:var(--sh-lg);animation:slideIn .25s ease;font-family:'Sora',sans-serif;font-size:13px;font-weight:500;color:var(--ink2);}
@@ -180,6 +381,7 @@
             .person-sidebar{display:none;}
             .history-grid{grid-template-columns:1fr 1fr;}
             .settings-grid{grid-template-columns:1fr;}
+            .set-card--wide > div{grid-template-columns:1fr!important;}
         }
         @media(max-width:600px){
             .history-grid{grid-template-columns:1fr;}
@@ -425,7 +627,7 @@
         #view-quick .cw-foot-btn{padding:9px 18px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;border:none;}
         #view-quick .cw-foot-clear{background:#fff;border:1.5px solid #cbd5e1!important;color:#2563eb;}
         #view-quick .cw-foot-clear:hover{background:#f8fafc;}
-        #view-quick .cw-foot-save{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 2px 8px rgba(37,99,235,.35);}
+        #view-quick .cw-foot-save{background:linear-gradient(135deg,var(--blue-d),var(--blue));color:#fff;box-shadow:0 2px 8px rgba(14,165,233,.35);}
         #view-quick .cw-foot-save:hover{filter:brightness(1.05);}
         #view-quick .cw-foot-undo{background:#475569;color:#fff;}
         #view-quick .cw-foot-undo:hover{background:#334155;}
@@ -489,15 +691,14 @@
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading">Team Dashboard</span>
     </div>
-    <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-        <div>
-            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Year</div>
-            <select id="dashboard-year-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-            </select>
+    <div class="page-toolbar">
+        <div class="filter-field">
+            <div class="filter-lbl">Year</div>
+            <select id="dashboard-year-select" class="filter-select" onchange="renderDashboard()"></select>
         </div>
-        <div>
-            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
-            <select id="dashboard-month-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+        <div class="filter-field">
+            <div class="filter-lbl">Month</div>
+            <select id="dashboard-month-select" class="filter-select" onchange="renderDashboard()">
                 <option value="ALL">Full Year</option>
                 <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
                 <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
@@ -505,9 +706,9 @@
                 <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
             </select>
         </div>
-        <div>
-            <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
-            <select id="dashboard-group-select" onchange="renderDashboard()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+        <div class="filter-field">
+            <div class="filter-lbl">Group</div>
+            <select id="dashboard-group-select" class="filter-select" onchange="renderDashboard()">
                 <option value="ALL">All Groups</option>
                 <option value="Sales">💼 Sales</option>
                 <option value="Supervisor">👔 Management Staff</option>
@@ -516,9 +717,9 @@
         </div>
     </div>
     <div id="dashboard-body">
-        <div style="text-align:center;padding:48px;color:var(--ink4);">
-            <div style="font-size:32px;margin-bottom:12px;">📊</div>
-            <div style="font-size:14px;font-weight:600;">Loading dashboard...</div>
+        <div class="empty-state">
+            <div class="empty-state-icon">📊</div>
+            <div class="empty-state-title">Loading dashboard...</div>
         </div>
     </div>
 </div>
@@ -532,6 +733,9 @@
                 <span class="calc-heading">Calculation</span>
             </div>
             <div class="calc-period-box">
+                <select id="report-year" aria-label="Year">
+                </select>
+                <span class="calc-period-sep" aria-hidden="true"></span>
                 <select id="report-month" aria-label="Month">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option>
                     <option value="MAR">MAR</option><option value="APR">APR</option>
@@ -539,9 +743,6 @@
                     <option value="JUL">JUL</option><option value="AUG">AUG</option>
                     <option value="SEP">SEP</option><option value="OCT">OCT</option>
                     <option value="NOV">NOV</option><option value="DEC">DEC</option>
-                </select>
-                <span class="calc-period-sep" aria-hidden="true"></span>
-                <select id="report-year" aria-label="Year">
                 </select>
                 <span class="calc-period-sep" aria-hidden="true"></span>
                 <select id="calc-group-select" onchange="filterByGroup()" aria-label="Employee group">
@@ -750,17 +951,20 @@
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading">Add Person</span>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-        <input id="people-search" class="if" placeholder="🔍 Search by name..."
-            style="flex:1;min-width:200px;"
-            oninput="filterPeopleList(this.value)">
-        <select id="people-group-select" onchange="filterPeopleList(document.getElementById('people-search').value)" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-            <option value="ALL">All Groups</option>
-            <option value="Sales">💼 Sales</option>
-            <option value="Supervisor">👔 Management Staff</option>
-            <option value="Support Staff">🛠️ Support Staff</option>
-        </select>
-        <button onclick="promptAddPerson()" class="tbtn dark" style="padding:10px 22px;white-space:nowrap;font-size:13px;">➕ Add Person</button>
+    <div class="page-toolbar">
+        <input id="people-search" class="if" placeholder="🔍 Search by name..." style="flex:1;min-width:200px;" oninput="filterPeopleList(this.value)">
+        <div class="filter-field" style="flex:0;">
+            <div class="filter-lbl">Group</div>
+            <select id="people-group-select" class="filter-select" onchange="filterPeopleList(document.getElementById('people-search').value)">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Supervisor">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
+        <div class="page-toolbar-actions">
+            <button type="button" onclick="promptAddPerson()" class="action-btn action-btn--primary">➕ Add Person</button>
+        </div>
     </div>
     <div id="people-list-container"></div>
 </div>
@@ -770,22 +974,22 @@
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading">Projection</span>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
-            <div>
-                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Person</div>
-                <select id="proj-person-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+    <div class="page-toolbar">
+        <div class="page-toolbar-filters">
+            <div class="filter-field">
+                <div class="filter-lbl">Year</div>
+                <select id="proj-year-select" class="filter-select" onchange="this._userOverride=true;renderProjectionReport()">
+                </select>
+            </div>
+            <div class="filter-field">
+                <div class="filter-lbl">Person</div>
+                <select id="proj-person-select" class="filter-select" onchange="this._userOverride=true;renderProjectionReport()">
                     <option value="">— Select —</option>
                 </select>
             </div>
-            <div>
-                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
-                <select id="proj-year-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                </select>
-            </div>
-            <div>
-                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Month</div>
-                <select id="proj-month-select" onchange="this._userOverride=true;renderProjectionReport()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
+            <div class="filter-field">
+                <div class="filter-lbl">Month</div>
+                <select id="proj-month-select" class="filter-select" onchange="this._userOverride=true;renderProjectionReport()">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option>
                     <option value="MAR">MAR</option><option value="APR">APR</option>
                     <option value="MAY">MAY</option><option value="JUN">JUN</option>
@@ -799,30 +1003,37 @@
                 <span id="proj-month-label" style="font-size:13px;color:var(--ink3);margin-left:8px;">No data</span>
             </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button onclick="showTeamTargetAllocationModal()" class="tbtn cyan" style="padding:10px 22px;font-size:13px;" title="Split team sale target by contribution %">🎯 Team Target Setting</button>
-            <button onclick="printProjectionExcel()" class="tbtn blue" style="padding:10px 22px;font-size:13px;">🖨️ Print Excel</button>
-            <button onclick="printProjectionReport()" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print PDF</button>
+        <div class="page-toolbar-actions">
+            <button type="button" onclick="showTeamTargetAllocationModal()" class="action-btn action-btn--outline" title="Split team sale target by contribution %">🎯 Team Target Setting</button>
+            <button type="button" onclick="printProjectionExcel()" class="action-btn action-btn--excel">📊 Print Excel</button>
+            <button type="button" onclick="printProjectionReport()" class="action-btn action-btn--primary">🖨️ Print PDF</button>
         </div>
     </div>
     <div id="projection-report-body">
-        <div style="text-align:center;padding:48px;color:var(--ink4);">
-            <div style="font-size:32px;margin-bottom:12px;">📈</div>
-            <div style="font-size:14px;font-weight:600;">No data yet</div>
-            <div style="font-size:12px;margin-top:6px;">Go to Calculate tab, enter sales data, then come back here.</div>
+        <div class="empty-state" style="padding:48px;">
+            <div class="empty-state-icon" style="font-size:32px;">📈</div>
+            <div class="empty-state-title">No data yet</div>
+            <div class="empty-state-sub">Go to Calculate tab, enter sales data, then come back here.</div>
         </div>
     </div>
 </div>
 
 <!-- ══════════════════ HISTORY VIEW ══════════════════ -->
 <div id="view-history" class="view-container">
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;">
-        <div class="page-title-block">
-            <span class="page-heading">Report History</span>
-            <div id="history-sub" style="font-size:12px;color:var(--ink4);margin-top:2px;">Loading...</div>
-        </div>
-        <button onclick="loadQuickCalculateHistory()" class="tbtn">🔄 Refresh</button>
+    <div class="page-title-block" style="margin-bottom:10px;">
+        <span class="page-heading">Report History</span>
+        <div id="history-sub" class="set-sub" style="margin-top:2px;margin-bottom:0;">Loading...</div>
     </div>
+    <div class="page-toolbar">
+        <div class="filter-field">
+            <div class="filter-lbl">Year</div>
+            <select id="history-year-select" class="filter-select" onchange="loadQuickCalculateHistory()"></select>
+        </div>
+        <div class="page-toolbar-actions">
+            <button onclick="loadQuickCalculateHistory()" class="tbtn">🔄 Refresh</button>
+        </div>
+    </div>
+    <div id="history-summary"></div>
     <div id="history-list"></div>
 </div>
 
@@ -830,191 +1041,183 @@
 <div id="view-annual" class="view-container">
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading" id="annual-page-title">Annual Report</span>
-        <div id="annual-sub" style="font-size:12px;color:var(--ink3);margin-top:2px;">Complete sales performance summary</div>
+        <div id="annual-sub" class="set-sub" style="margin-top:2px;margin-bottom:0;">Complete sales performance summary</div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
-            <div>
-                <div style="font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Year</div>
-                <select id="annual-year-select" onchange="onAnnualViewChange()" style="padding:8px 14px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                </select>
-            </div>
+    <div class="page-toolbar">
+        <div class="filter-field">
+            <div class="filter-lbl">Year</div>
+            <select id="annual-year-select" class="filter-select" onchange="onAnnualViewChange()"></select>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-            <!-- Toggle Buttons -->
-            <div style="display:flex;background:var(--line);border-radius:8px;padding:3px;">
-                <button id="btn-annual-report" onclick="switchAnnualView('report')" style="padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1);">📊 Annual Report</button>
-                <button id="btn-employer-cost" onclick="switchAnnualView('cost')" style="padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:transparent;color:var(--ink3);">💰 Expenses</button>
+        <div class="page-toolbar-actions">
+            <div class="seg-toggle">
+                <button id="btn-annual-report" class="seg-toggle-btn active" onclick="switchAnnualView('report')">📊 Annual Report</button>
+                <button id="btn-employer-cost" class="seg-toggle-btn" onclick="switchAnnualView('cost')">💰 Expenses</button>
             </div>
-            <button onclick="printAnnualReport()" id="btn-annual-print" class="tbtn dark" style="padding:10px 22px;font-size:13px;">🖨️ Print Report</button>
+            <button type="button" onclick="printAnnualReport()" id="btn-annual-print" class="action-btn action-btn--primary">🖨️ Print Report</button>
         </div>
     </div>
     <!-- Employer Cost selectors (hidden by default) -->
-    <div id="employer-cost-selectors" style="display:none;margin-bottom:12px;display:none;">
-        <div style="display:flex;gap:8px;align-items:center;">
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
-                <select id="ec-month-select" onchange="onEcMonthModeChange()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">All Months</option>
-                </select>
-            </div>
-            <div id="ec-range-wrap" style="display:none;align-items:flex-end;gap:8px;">
-                <div>
-                    <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">From</div>
-                    <select id="ec-range-from" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                        <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
-                        <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
-                        <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
-                        <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
-                    </select>
-                </div>
-                <div>
-                    <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">To</div>
-                    <select id="ec-range-to" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                        <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
-                        <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
-                        <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
-                        <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC" selected>DEC</option>
-                    </select>
-                </div>
-            </div>
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Employee</div>
-                <select id="ec-person-select" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">All Employees</option>
-                </select>
-            </div>
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
-                <select id="ec-group-select" onchange="renderEmployerCostReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">All Groups</option>
-                    <option value="Sales">💼 Sales</option>
-                    <option value="Supervisor">👔 Management Staff</option>
-                    <option value="Support Staff">🛠️ Support Staff</option>
-                </select>
-            </div>
+    <div id="employer-cost-selectors" class="annual-filter-bar" style="display:none;">
+        <div class="filter-field">
+            <div class="filter-lbl">Month</div>
+            <select id="ec-month-select" class="filter-select" onchange="onEcMonthModeChange()">
+                <option value="ALL">All Months</option>
+            </select>
         </div>
-    </div>
-    <!-- Annual Report person selector -->
-    <div id="annual-report-selectors" style="margin-bottom:12px;">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Employee</div>
-                <select id="ar-person-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">All Employees</option>
-                </select>
-            </div>
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Month</div>
-                <select id="ar-month-select" onchange="onAnnualMonthModeChange()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">Full Year</option>
-                    <option value="UPTODATE">📅 Up to date</option>
-                    <option value="RANGE">📐 Custom range…</option>
+        <div id="ec-range-wrap" class="filter-field" style="display:none;flex-direction:row;align-items:flex-end;gap:8px;">
+            <div class="filter-field">
+                <div class="filter-lbl">From</div>
+                <select id="ec-range-from" class="filter-select" onchange="renderEmployerCostReport()">
                     <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
                     <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
                     <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
                     <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
                 </select>
             </div>
-            <div id="ar-range-wrap" style="display:none;align-items:flex-end;gap:8px;">
-                <div>
-                    <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">From</div>
-                    <select id="ar-range-from" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                        <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
-                        <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
-                        <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
-                        <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
-                    </select>
-                </div>
-                <div>
-                    <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">To</div>
-                    <select id="ar-range-to" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                        <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
-                        <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
-                        <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
-                        <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC" selected>DEC</option>
-                    </select>
-                </div>
-            </div>
-            <div>
-                <div style="font-size:9px;font-weight:600;color:var(--ink4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Group</div>
-                <select id="ar-group-select" onchange="renderAnnualReport()" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);background:var(--paper);cursor:pointer;">
-                    <option value="ALL">All Groups</option>
-                    <option value="Sales">💼 Sales</option>
-                    <option value="Management Staff">👔 Management Staff</option>
-                    <option value="Support Staff">🛠️ Support Staff</option>
+            <div class="filter-field">
+                <div class="filter-lbl">To</div>
+                <select id="ec-range-to" class="filter-select" onchange="renderEmployerCostReport()">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                    <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                    <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC" selected>DEC</option>
                 </select>
             </div>
         </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Employee</div>
+            <select id="ec-person-select" class="filter-select" onchange="renderEmployerCostReport()">
+                <option value="ALL">All Employees</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Group</div>
+            <select id="ec-group-select" class="filter-select" onchange="renderEmployerCostReport()">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Supervisor">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
+    </div>
+    <!-- Annual Report person selector -->
+    <div id="annual-report-selectors" class="annual-filter-bar">
+        <div class="filter-field">
+            <div class="filter-lbl">Employee</div>
+            <select id="ar-person-select" class="filter-select" onchange="renderAnnualReport()">
+                <option value="ALL">All Employees</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Month</div>
+            <select id="ar-month-select" class="filter-select" onchange="onAnnualMonthModeChange()">
+                <option value="ALL">Full Year</option>
+                <option value="UPTODATE">📅 Up to date</option>
+                <option value="RANGE">📐 Custom range…</option>
+                <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
+            </select>
+        </div>
+        <div id="ar-range-wrap" class="filter-field" style="display:none;flex-direction:row;align-items:flex-end;gap:8px;">
+            <div class="filter-field">
+                <div class="filter-lbl">From</div>
+                <select id="ar-range-from" class="filter-select" onchange="renderAnnualReport()">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                    <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                    <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC">DEC</option>
+                </select>
+            </div>
+            <div class="filter-field">
+                <div class="filter-lbl">To</div>
+                <select id="ar-range-to" class="filter-select" onchange="renderAnnualReport()">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option><option value="MAR">MAR</option>
+                    <option value="APR">APR</option><option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option><option value="SEP">SEP</option>
+                    <option value="OCT">OCT</option><option value="NOV">NOV</option><option value="DEC" selected>DEC</option>
+                </select>
+            </div>
+        </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Group</div>
+            <select id="ar-group-select" class="filter-select" onchange="renderAnnualReport()">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Management Staff">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
     </div>
     <div id="annual-report-body">
-        <div style="text-align:center;padding:48px;color:var(--ink4);">
-            <div style="font-size:32px;margin-bottom:12px;">📋</div>
-            <div style="font-size:14px;font-weight:600;">Loading annual report...</div>
+        <div class="empty-state" style="padding:48px;">
+            <div class="empty-state-icon" style="font-size:32px;">📋</div>
+            <div class="empty-state-title">Loading annual report...</div>
         </div>
     </div>
     <div id="employer-cost-body" style="display:none;">
-        <div style="text-align:center;padding:48px;color:var(--ink4);">
-            <div style="font-size:32px;margin-bottom:12px;">💰</div>
-            <div style="font-size:14px;font-weight:600;">Loading expenses report...</div>
+        <div class="empty-state" style="padding:48px;">
+            <div class="empty-state-icon" style="font-size:32px;">💰</div>
+            <div class="empty-state-title">Loading expenses report...</div>
         </div>
     </div>
 </div>
 <div id="view-settings" class="view-container">
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading">Settings</span>
+        <div class="set-sub" style="margin-bottom:0;">Backup, license, security &amp; updates</div>
     </div>
     <div class="settings-grid">
         <div class="set-card">
             <div class="set-title">🏢 Company Management</div>
-            <div style="font-size:11px;color:var(--ink4);margin-bottom:10px;">Manage companies for employee grouping</div>
+            <div class="set-sub">Manage companies for employee grouping</div>
             <div id="company-list" style="margin-bottom:10px;"></div>
-            <div style="display:flex;gap:6px;">
-                <input id="new-company-name" type="text" placeholder="e.g. ABC Sdn Bhd" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:'Sora',sans-serif;outline:none;box-sizing:border-box;">
-                <button onclick="addCompany()" class="set-btn sb-green" style="white-space:nowrap;">+ Add</button>
+            <div class="set-input-row">
+                <input id="new-company-name" type="text" class="set-input" placeholder="e.g. ABC Sdn Bhd">
+                <button onclick="addCompany()" class="set-btn sb-green" style="width:auto;margin:0;white-space:nowrap;">+ Add</button>
             </div>
         </div>
         <div class="set-card">
             <div class="set-title">🔒 Backup &amp; Restore</div>
+            <div class="set-sub">Export or import a full configuration backup</div>
             <button onclick="exportFullBackup()" class="set-btn sb-blue">📦 Export Backup</button>
             <button onclick="importBackup()" class="set-btn sb-green">📂 Import Backup</button>
         </div>
-        <div class="set-card">
-            <div class="set-title">🔑 License</div>
-            <div class="lic-box" onclick="showLicenseModal()">
-                <div class="lic-status-lbl">Current Plan</div>
-                <div class="lic-type" id="settings-license-type">Loading...</div>
-                <div style="font-size:11px;opacity:.4;margin-top:6px;">Click to manage</div>
-            </div>
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">App Info</div>
-                <div style="font-size:12px;color:var(--ink3);display:flex;flex-direction:column;gap:6px;">
-                    <div style="display:flex;justify-content:space-between;">
-                        <span>Version</span>
-                        <span id="settings-app-version" style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);">v4.7.4</span>
+        <div class="set-card set-card--wide">
+            <div class="set-title">🔑 License &amp; Application</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div>
+                    <div class="lic-box" onclick="showLicenseModal()">
+                        <div class="lic-status-lbl">Current Plan</div>
+                        <div class="lic-type" id="settings-license-type">Loading...</div>
+                        <div class="lic-hint">Click to manage license</div>
                     </div>
-                    <div style="display:flex;justify-content:space-between;">
-                        <span>Database</span>
-                        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--em);">SQLite ✓</span>
+                    <div class="set-divider">
+                        <div class="set-section-lbl">App Info</div>
+                        <div class="set-info-list">
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v4.8.1</span></div>
+                            <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">🔒 Annual Report &amp; Settings Password</div>
-                <div style="display:flex;flex-direction:column;gap:6px;">
-                    <input id="annual-pw-old" type="password" placeholder="Current password" style="width:100%;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:'Sora',sans-serif;outline:none;box-sizing:border-box;">
-                    <input id="annual-pw-setting" type="password" placeholder="New password" style="width:100%;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:'Sora',sans-serif;outline:none;box-sizing:border-box;">
-                    <div id="annual-pw-change-err" style="font-size:11px;color:#dc2626;min-height:16px;"></div>
-                    <button onclick="saveAnnualPassword()" class="set-btn sb-blue" style="align-self:flex-end;">💾 Change Password</button>
-                </div>
-                <div style="font-size:11px;color:var(--ink4);margin-top:6px;">Protects Annual Report and Settings. Default: boss123</div>
-            </div>
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-                <div style="font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">Software Update</div>
-                <div id="update-status-msg" style="font-size:12px;color:var(--ink3);margin-bottom:10px;">Click to check for updates</div>
-                <div style="display:flex;gap:8px;">
-                    <button onclick="checkForAppUpdate()" id="btn-check-update" class="set-btn sb-blue" style="flex:1;justify-content:center;">🔄 Check for Updates</button>
-                    <button onclick="installAppUpdate()" id="btn-install-update" class="set-btn sb-green" style="flex:1;justify-content:center;display:none;">⬇️ Install Update</button>
+                <div>
+                    <div class="set-section-lbl">🔒 Annual Report &amp; Settings Password</div>
+                    <div class="set-field">
+                        <input id="annual-pw-old" type="password" class="set-input" placeholder="Current password">
+                        <input id="annual-pw-setting" type="password" class="set-input" placeholder="New password">
+                        <div id="annual-pw-change-err" style="font-size:11px;color:#be123c;min-height:16px;"></div>
+                        <button onclick="saveAnnualPassword()" class="set-btn sb-blue" style="width:auto;align-self:flex-end;margin-bottom:0;">💾 Change Password</button>
+                    </div>
+                    <div class="set-sub" style="margin-top:8px;margin-bottom:0;">Protects Annual Report and Settings. Default: boss123</div>
+                    <div class="set-divider">
+                        <div class="set-section-lbl">Software Update</div>
+                        <div id="update-status-msg" class="set-sub" style="margin-bottom:10px;">Click to check for updates</div>
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="checkForAppUpdate()" id="btn-check-update" class="set-btn sb-blue" style="flex:1;justify-content:center;margin:0;">🔄 Check for Updates</button>
+                            <button onclick="installAppUpdate()" id="btn-install-update" class="set-btn sb-green" style="flex:1;justify-content:center;display:none;margin:0;">⬇️ Install Update</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1051,19 +1254,16 @@
 
         // Toast 通知
         function showToast(icon, message, duration = 3000) {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = 'toast bg-white shadow-lg rounded-lg px-4 py-3 flex items-center space-x-3 border border-gray-200';
-            toast.innerHTML = `
-                <span class="text-2xl">${icon}</span>
-                <span class="text-gray-700 font-medium">${message}</span>
-            `;
-            
+            var container = document.getElementById('toast-container');
+            if (!container) return;
+            var toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = '<span style="font-size:20px;line-height:1;">' + icon + '</span><span>' + message + '</span>';
             container.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.style.animation = 'fadeOut 0.3s ease-out';
-                setTimeout(() => toast.remove(), 300);
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity .3s';
+                setTimeout(function() { toast.remove(); }, 300);
             }, duration);
         }
 
@@ -1247,193 +1447,8 @@
     <!-- 引入主要脚本文件 -->
     <script src="src/calculator.js"></script>
 
-    <!-- History 功能增强 -->
+    <!-- History helpers (loadQuickCalculateHistory lives in calculator.js) -->
     <script>
-    function loadQuickCalculateHistory() {
-        var historyList = document.getElementById('history-list');
-        if (!historyList) return;
-
-        var history = (window.appState && window.appState.config && window.appState.config.reportHistory) || [];
-        var cfg = window.appState.config || {};
-        var subEl = document.getElementById('history-sub');
-
-        var defaultRates = [
-            {min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},
-            {min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}
-        ];
-        var cfgRates = cfg.monthly_commission_rates;
-        var rates = (cfgRates && cfgRates.length>0) ? cfgRates : defaultRates;
-
-        function calcC(sales,target,name){
-            if(!target||!sales||target<=0||sales<=0)return 0;
-            var ach=(sales/target)*100,r=rates;
-            var nu=name?name.toUpperCase():null;
-            if(nu&&cfg.person_commission_rates&&cfg.person_commission_rates[nu])r=cfg.person_commission_rates[nu];
-            for(var i=0;i<r.length;i++)if(ach>=r[i].min&&ach<=r[i].max)return sales*(r[i].rate||0);
-            return 0;
-        }
-        function calcInc(pct,tiers){
-            if(!tiers||!tiers.length)return 0;
-            var s=tiers.slice().sort(function(a,b){return b.min-a.min;});
-            for(var i=0;i<s.length;i++)if(pct>=s[i].min)return s[i].incentive||0;
-            return 0;
-        }
-
-        // Get all configured people
-        var configuredPeople = Object.keys(cfg.base_salaries || {}).map(function(n){ return n.toUpperCase(); });
-
-        var monthOrder=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        var curMonthIdx=new Date().getMonth();
-        var curYear=new Date().getFullYear();
-        var sorted=history.slice()
-            .filter(function(r){
-                var yr = (typeof keyYear==='function') ? keyYear(r.month) : curYear;
-                if (!yr) yr = curYear;
-                var bm = (typeof bareMonth==='function') ? bareMonth(r.month) : (r.month||'').toUpperCase().replace(/-\d{4}$/,'');
-                var mi = monthOrder.indexOf(bm);
-                return (yr < curYear || (yr === curYear && mi <= curMonthIdx)) && (r.data||[]).some(function(p){return (p.target||0)>0||(p.sales||0)>0;});
-            })
-            .sort(function(a,b){
-                var yA = (typeof keyYear==='function') ? (keyYear(a.month)||curYear) : curYear;
-                var yB = (typeof keyYear==='function') ? (keyYear(b.month)||curYear) : curYear;
-                if (yA !== yB) return yB - yA;
-                var bA = (typeof bareMonth==='function') ? bareMonth(a.month) : (a.month||'').toUpperCase().replace(/-\d{4}$/,'');
-                var bB = (typeof bareMonth==='function') ? bareMonth(b.month) : (b.month||'').toUpperCase().replace(/-\d{4}$/,'');
-                return monthOrder.indexOf(bB)-monthOrder.indexOf(bA);
-            });
-
-        if (subEl) subEl.textContent = sorted.length + ' records · ' + new Date().getFullYear();
-
-        if (sorted.length === 0) {
-            historyList.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--ink4);">'
-                +'<div style="font-size:48px;margin-bottom:16px;">📋</div>'
-                +'<div style="font-size:15px;font-weight:600;margin-bottom:6px;">No history yet</div>'
-                +'<div style="font-size:13px;">Save data in Calculate tab to create history</div></div>';
-            return;
-        }
-
-        function calcTeamTotalsForMonth(monthName) {
-            var bm = (typeof bareMonth==='function') ? bareMonth(monthName) : monthName.toUpperCase().replace(/-\d{4}$/,'');
-            var yr = (typeof keyYear==='function') ? keyYear(monthName) : null;
-            var hEntry = (typeof findHistEntry==='function') ? findHistEntry(history, bm, yr||curYear) : history.find(function(r){return (r.month||'').toUpperCase()===monthName.toUpperCase();});
-            if (!hEntry || !hEntry.data) return {ach:0, collAch:0, callAch:0};
-            var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
-            hEntry.data.forEach(function(p) {
-                var t = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
-                if (t !== 'Sales') return;
-                tS += parseFloat(p.sales)||0;
-                tT += parseFloat(p.target)||0;
-                tCo += parseFloat(p.collectionAmount)||0;
-                tCoT += parseFloat(p.collectionTarget)||0;
-                tCa += parseFloat(p.callActual)||0;
-                tCaT += parseFloat(p.callTarget)||0;
-            });
-            return {
-                ach: tT>0?(tS/tT*100):0,
-                collAch: tCoT>0?(tCo/tCoT*100):0,
-                callAch: tCaT>0?(tCa/tCaT*100):0
-            };
-        }
-        function getTierA(tiers, pct) {
-            if (!tiers || !tiers.length) return 0;
-            var s = tiers.slice().sort(function(a,b){return b.min-a.min;});
-            for (var i=0;i<s.length;i++) if (pct >= s[i].min) return s[i].amt || 0;
-            return 0;
-        }
-        function calcPersonBonus(p, monthName) {
-            var empType = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
-            var nu = (p.name||'').toUpperCase();
-            if (empType === 'Supervisor') {
-                var team = calcTeamTotalsForMonth(monthName);
-                var saleT = (cfg.person_supervisor_sale_tiers&&cfg.person_supervisor_sale_tiers[p.name])||cfg.supervisor_sale_tiers||[];
-                var collT = (cfg.person_supervisor_coll_tiers&&cfg.person_supervisor_coll_tiers[p.name])||cfg.supervisor_coll_tiers||[];
-                var callT = (cfg.person_supervisor_call_tiers&&cfg.person_supervisor_call_tiers[p.name])||cfg.supervisor_call_tiers||[];
-                var qtrT  = (cfg.person_supervisor_qtr_tiers&&cfg.person_supervisor_qtr_tiers[p.name])||cfg.supervisor_qtr_tiers||[];
-                var qtrBonus = ['MAR','JUN','SEP','DEC'].indexOf(monthName.toUpperCase())!==-1 ? getTierA(qtrT, team.ach) : 0;
-                var total = getTierA(saleT, team.ach) + getTierA(collT, team.collAch) + getTierA(callT, team.callAch) + qtrBonus;
-                return { total: total, ach: team.ach, display: empType };
-            }
-            if (empType === 'Support Staff') {
-                var blocks = parseFloat(p.collectionAmount) || 0;
-                var rate = (cfg.person_merchandiser_rates&&cfg.person_merchandiser_rates[p.name]!=null)
-                    ? parseFloat(cfg.person_merchandiser_rates[p.name])
-                    : (parseFloat(cfg.merchandiser_block_rate)||10);
-                return { total: blocks * rate, blocks: blocks, display: empType };
-            }
-            // Sales (default)
-            var comm = calcC(p.sales, p.target, p.name);
-            var collPct = (p.collectionTarget||0)>0?(p.collectionAmount||0)/p.collectionTarget*100:0;
-            var callPct = (p.callTarget||0)>0?(p.callActual||0)/p.callTarget*100:0;
-            var collI = calcInc(collPct,(cfg.person_collection_incentive&&cfg.person_collection_incentive[nu])||cfg.collection_incentive||[]);
-            var callI = calcInc(callPct,(cfg.person_call_incentive&&cfg.person_call_incentive[nu])||cfg.active_call_incentive||[]);
-            var ach = (p.target||0)>0?(p.sales||0)/p.target*100:0;
-            return { total: comm+collI+callI, ach: ach, display: empType };
-        }
-
-        historyList.innerHTML = '<div class="history-grid">'
-            + sorted.map(function(report) {
-                // Merge configured people with report data
-                var reportData = report.data || [];
-                var people = configuredPeople.map(function(name) {
-                    var existing = reportData.find(function(p){ return (p.name||'').toUpperCase() === name; });
-                    return existing || { name: name, target: 0, sales: 0, collectionTarget: 0, collectionAmount: 0, callTarget: 0, callActual: 0 };
-                });
-                // Also include people in report data not in config (legacy)
-                reportData.forEach(function(p) {
-                    if (configuredPeople.indexOf((p.name||'').toUpperCase()) === -1) people.push(p);
-                });
-
-                var month = (typeof bareMonth==='function') ? bareMonth(report.month) : (report.month||'').toUpperCase().replace(/-\d{4}$/,'');
-                var monthYear = (typeof keyYear==='function') ? (keyYear(report.month)||curYear) : curYear;
-                var realIndex=history.indexOf(report);
-                var totalComm=0;
-                people.forEach(function(p){
-                    if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return;
-                    totalComm += calcPersonBonus(p, month).total;
-                });
-                // Only include people with data (varies by type)
-                var peopleWithData = people.filter(function(p) {
-                    // Hide people who had not joined yet in this month
-                    if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return false;
-                    var t = (typeof getEmployeeType === 'function' ? getEmployeeType(p.name) : 'Sales');
-                    if (t === 'Sales') return (p.target||0)>0 || (p.sales||0)>0;
-                    if (t === 'Support Staff') return (p.collectionAmount||0)>0;
-                    if (t === 'Supervisor') return true;
-                    return false;
-                });
-                var peopleHtml = peopleWithData.slice(0,4).map(function(p){
-                    var bonus = calcPersonBonus(p, month);
-                    var typeColors = { Sales:{c:'#0f766e'}, Supervisor:{c:'#1d4ed8'}, 'Support Staff':{c:'#854d0e'} };
-                    var tc = typeColors[bonus.display] || typeColors.Sales;
-                    var ach = bonus.ach || 0;
-                    var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
-                    var mainVal = '';
-                    if (bonus.display === 'Support Staff') mainVal = bonus.blocks + ' blocks';
-                    else if (bonus.display === 'Supervisor') mainVal = ach.toFixed(2)+'% (team)';
-                    else mainVal = ach.toFixed(2)+'%';
-                    return '<div class="h-person">'
-                        +'<div class="h-pname">'+((p.name||'').substring(0,6))+'</div>'
-                        +'<div class="h-pach" style="color:'+(bonus.display==='Sales'?achColor:tc.c)+';">'+mainVal+'</div>'
-                        +'<div class="h-pcomm">'+formatCurrency(bonus.total)+'</div>'
-                        +'</div>';
-                }).join('');
-                return '<div class="h-card">'
-                    +'<div class="h-card-top">'
-                    +'<div><div class="h-month">'+month+'</div><div class="h-year">'+monthYear+'</div></div>'
-                    +'<div><div class="h-comm-lbl">TOTAL COMM/INC PAID</div><div class="h-comm-val">'+formatCurrency(totalComm)+'</div></div>'
-                    +'</div>'
-                    +(peopleHtml.length>0?'<div class="h-people">'+peopleHtml+'</div>':'')
-                    +'<div class="h-foot">'
-                    +'<button class="hbtn" style="background:#e0f2fe;color:#0284c7;" onclick="viewHistoryReport('+realIndex+')">👁 View</button>'
-                    +'<button class="hbtn" style="background:#d1fae5;color:#059669;" onclick="openHistoryExcel('+realIndex+')">📊 Excel</button>'
-                    +'<button class="hbtn" style="background:#fef3c7;color:#b45309;" onclick="printPayslipsFromHistory('+realIndex+')">📄 Payslip</button>'
-                    +'<button class="hbtn" style="background:#f3e8ff;color:#7c3aed;" onclick="printHistoryReport('+realIndex+')">🖨️ PDF</button>'
-                    +'<button class="hbtn" style="background:#ffe4e6;color:#e11d48;" onclick="deleteHistoryReport('+realIndex+')">🗑️</button>'
-                    +'</div></div>';
-            }).join('')+'</div>';
-    }
-
-
     async function reExportHistory(index) {
         var report = (window.appState.config.reportHistory||[])[index];
         if (!report) return;

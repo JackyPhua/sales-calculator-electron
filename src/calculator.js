@@ -340,15 +340,15 @@ function renderCompanyList() {
     var cfg = window.appState.config;
     var companies = cfg.companies || [];
     if (companies.length === 0) {
-        el.innerHTML = '<div style="font-size:12px;color:var(--ink4);padding:8px 0;">No companies yet. Add one below.</div>';
+        el.innerHTML = '<div class="set-sub" style="padding:8px 0;margin:0;">No companies yet. Add one below.</div>';
         return;
     }
     el.innerHTML = companies.map(function(c) {
         var count = Object.keys(cfg.employee_companies || {}).filter(function(k) { return cfg.employee_companies[k] === c; }).length;
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;">'
+        return '<div class="company-row">'
             + '<div><span style="font-size:13px;font-weight:700;color:var(--ink);">🏢 ' + c + '</span>'
             + '<span style="font-size:10px;color:var(--ink4);margin-left:8px;">' + count + ' employees</span></div>'
-            + '<button onclick="removeCompany(\'' + c.replace(/'/g, "\\'") + '\')" style="border:none;background:#ffe4e6;color:#e11d48;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;font-weight:600;">✕</button>'
+            + '<button onclick="removeCompany(\'' + c.replace(/'/g, "\\'") + '\')" class="pi-btn pi-btn--del" style="padding:4px 8px;width:auto;">✕</button>'
             + '</div>';
     }).join('');
 }
@@ -967,22 +967,16 @@ function getDefaultConfig() {
 
 // Toast notification
 function showToast(icon, message, duration = 3000) {
-    const container = document.getElementById('toast-container');
+    var container = document.getElementById('toast-container');
     if (!container) return;
-    
-    const toast = document.createElement('div');
-    toast.className = 'bg-white shadow-lg rounded-lg px-4 py-3 flex items-center space-x-3 border border-gray-200 animate-fadeIn';
-    toast.innerHTML = `
-        <span class="text-2xl">${icon}</span>
-        <span class="text-gray-700 font-medium">${message}</span>
-    `;
-    
+    var toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = '<span style="font-size:20px;line-height:1;">' + icon + '</span><span>' + message + '</span>';
     container.appendChild(toast);
-    
-    setTimeout(() => {
+    setTimeout(function() {
         toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s';
-        setTimeout(() => toast.remove(), 300);
+        toast.style.transition = 'opacity .3s';
+        setTimeout(function() { toast.remove(); }, 300);
     }, duration);
 }
 
@@ -5058,113 +5052,382 @@ function hideLoading() {
 // Load history records
 function loadQuickCalculateHistory() {
     var historyList = document.getElementById('history-list');
+    var summaryEl = document.getElementById('history-summary');
     if (!historyList) return;
 
-    var history = window.appState.config.reportHistory || [];
-    console.log('📜 reportHistory count:', history.length);
+    var history = (window.appState && window.appState.config && window.appState.config.reportHistory) || [];
+    var cfg = window.appState.config || {};
+    var subEl = document.getElementById('history-sub');
+    var curYear = new Date().getFullYear();
 
-    if (history.length === 0) {
-        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
-        return;
+    function escHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     }
 
     var defaultRates = [
-        {min:0,   max:79.99,  rate:0,     label:'0%-79%'},
-        {min:80,  max:89.99,  rate:0.006, label:'80%-89%'},
-        {min:90,  max:99.99,  rate:0.007, label:'90%-99%'},
-        {min:100, max:105.99, rate:0.008, label:'100%-105%'},
-        {min:106, max:999,    rate:0.01,  label:'106%+'}
+        {min:0,max:79.99,rate:0},{min:80,max:89.99,rate:0.006},
+        {min:90,max:99.99,rate:0.007},{min:100,max:105.99,rate:0.008},{min:106,max:999,rate:0.01}
     ];
-    var cfgRates = window.appState.config.monthly_commission_rates;
+    var cfgRates = cfg.monthly_commission_rates;
     var rates = (cfgRates && cfgRates.length > 0) ? cfgRates : defaultRates;
-    console.log('📜 using rates:', rates.length, 'tiers, first:', JSON.stringify(rates[0]));
 
-    function calcComm(sales, target, name) {
+    function calcC(sales, target, name) {
         if (!target || !sales || target <= 0 || sales <= 0) return 0;
-        var ach = (sales / target) * 100;
-        var r = rates;
+        var ach = (sales / target) * 100, r = rates;
         var nu = name ? name.toUpperCase() : null;
-        if (nu && window.appState.config.person_commission_rates && window.appState.config.person_commission_rates[nu])
-            r = window.appState.config.person_commission_rates[nu];
-        for (var i = 0; i < r.length; i++) {
-            if (ach >= r[i].min && ach <= r[i].max) {
-                var comm = sales * (r[i].rate || 0);
-                console.log('💰', name, '| sales:', sales, '| target:', target, '| ach:', ach.toFixed(2)+'%', '| tier:', r[i].label, '| rate:', r[i].rate, '| comm:', comm);
-                return comm;
-            }
-        }
-        console.warn('⚠️ No tier matched for', name, 'ach:', ach.toFixed(2)+'%');
+        if (nu && cfg.person_commission_rates && cfg.person_commission_rates[nu]) r = cfg.person_commission_rates[nu];
+        for (var i = 0; i < r.length; i++) if (ach >= r[i].min && ach <= r[i].max) return sales * (r[i].rate || 0);
+        return 0;
+    }
+    function calcInc(pct, tiers) {
+        if (!tiers || !tiers.length) return 0;
+        var s = tiers.slice().sort(function(a, b) { return b.min - a.min; });
+        for (var i = 0; i < s.length; i++) if (pct >= s[i].min) return s[i].incentive || 0;
         return 0;
     }
 
+    var configuredPeople = Object.keys(cfg.base_salaries || {}).map(function(n) { return n.toUpperCase(); });
     var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    var currentMonthIdx = new Date().getMonth();
-    var currentYear = new Date().getFullYear();
-    var sorted = history.slice()
-        .filter(function(r){
-            var yr = keyYear(r.month) || currentYear;
-            var mi = monthOrder.indexOf(bareMonth(r.month));
-            // Show entries up to current month of current year, and all past years
-            return yr < currentYear || (yr === currentYear && mi <= currentMonthIdx);
+    var curMonthIdx = new Date().getMonth();
+
+    function hasReportData(r) {
+        return (r.data || []).some(function(p) {
+            return (p.target || 0) > 0 || (p.sales || 0) > 0 || (p.collectionAmount || 0) > 0;
+        });
+    }
+
+    var allSorted = history.slice()
+        .filter(function(r) {
+            var yr = keyYear(r.month) || curYear;
+            var bm = bareMonth(r.month);
+            var mi = monthOrder.indexOf(bm);
+            return (yr < curYear || (yr === curYear && mi <= curMonthIdx)) && hasReportData(r);
         })
-        .sort(function(a,b){
-            var yA = keyYear(a.month) || currentYear;
-            var yB = keyYear(b.month) || currentYear;
-            if (yA !== yB) return yB - yA; // newest year first
-            return monthOrder.indexOf(bareMonth(b.month)) - monthOrder.indexOf(bareMonth(a.month)); // newest month first
+        .sort(function(a, b) {
+            var yA = keyYear(a.month) || curYear;
+            var yB = keyYear(b.month) || curYear;
+            if (yA !== yB) return yB - yA;
+            return monthOrder.indexOf(bareMonth(b.month)) - monthOrder.indexOf(bareMonth(a.month));
         });
 
-    // Remove months where all people have 0 data
-    sorted = sorted.filter(function(r){
-        return (r.data||[]).some(function(p){ return (p.target||0)>0 || (p.sales||0)>0; });
+    var yearsInHistory = [];
+    allSorted.forEach(function(r) {
+        var y = keyYear(r.month) || curYear;
+        if (yearsInHistory.indexOf(y) === -1) yearsInHistory.push(y);
     });
+    yearsInHistory.sort(function(a, b) { return b - a; });
+    if (yearsInHistory.indexOf(curYear) === -1) yearsInHistory.unshift(curYear);
+
+    var yearSel = document.getElementById('history-year-select');
+    var showAllYears = false;
+    var selectedYear = curYear;
+    if (yearSel) {
+        var prevVal = yearSel.value || '';
+        yearSel.innerHTML = '<option value="ALL">All Years</option>'
+            + yearsInHistory.map(function(y) {
+                return '<option value="' + y + '">' + y + '</option>';
+            }).join('');
+        if (prevVal === 'ALL') {
+            showAllYears = true;
+            yearSel.value = 'ALL';
+        } else if (prevVal && yearsInHistory.indexOf(parseInt(prevVal, 10)) !== -1) {
+            selectedYear = parseInt(prevVal, 10);
+            yearSel.value = prevVal;
+        } else if (yearsInHistory.indexOf(curYear) !== -1) {
+            selectedYear = curYear;
+            yearSel.value = String(curYear);
+        } else if (yearsInHistory.length) {
+            selectedYear = yearsInHistory[0];
+            yearSel.value = String(selectedYear);
+        } else {
+            yearSel.value = 'ALL';
+            showAllYears = true;
+        }
+        if (yearSel.value === 'ALL') showAllYears = true;
+    }
+
+    var sorted = showAllYears
+        ? allSorted.slice()
+        : allSorted.filter(function(r) {
+            return (keyYear(r.month) || curYear) === selectedYear;
+        });
+
+    function quarterNum(bm) {
+        var i = monthOrder.indexOf((bm || '').toUpperCase());
+        if (i < 0) return 0;
+        return Math.floor(i / 3) + 1;
+    }
+    function quarterKey(bm) {
+        var q = quarterNum(bm);
+        return q ? ('Q' + q) : '';
+    }
+    function isQuarterClose(bm) {
+        return ['MAR', 'JUN', 'SEP', 'DEC'].indexOf((bm || '').toUpperCase()) !== -1;
+    }
+
+    function calcTeamTotals(bm, yr) {
+        var hEntry = findHistEntry(history, bm, yr);
+        if (!hEntry || !hEntry.data) return { ach: 0, sales: 0, target: 0 };
+        var tS = 0, tT = 0;
+        hEntry.data.forEach(function(p) {
+            if (getEmployeeType(p.name) !== 'Sales') return;
+            tS += parseFloat(p.sales) || 0;
+            tT += parseFloat(p.target) || 0;
+        });
+        return { ach: tT > 0 ? (tS / tT * 100) : 0, sales: tS, target: tT };
+    }
+    function getTierA(tiers, pct) {
+        if (!tiers || !tiers.length) return 0;
+        var s = tiers.slice().sort(function(a, b) { return b.min - a.min; });
+        for (var i = 0; i < s.length; i++) if (pct >= s[i].min) return s[i].amt || 0;
+        return 0;
+    }
+    function calcTeamTotalsFull(bm, yr) {
+        var hEntry = findHistEntry(history, bm, yr);
+        if (!hEntry || !hEntry.data) return { ach: 0, collAch: 0, callAch: 0 };
+        var tS = 0, tT = 0, tCo = 0, tCoT = 0, tCa = 0, tCaT = 0;
+        hEntry.data.forEach(function(p) {
+            if (getEmployeeType(p.name) !== 'Sales') return;
+            tS += parseFloat(p.sales) || 0;
+            tT += parseFloat(p.target) || 0;
+            tCo += parseFloat(p.collectionAmount) || 0;
+            tCoT += parseFloat(p.collectionTarget) || 0;
+            tCa += parseFloat(p.callActual) || 0;
+            tCaT += parseFloat(p.callTarget) || 0;
+        });
+        return {
+            ach: tT > 0 ? (tS / tT * 100) : 0,
+            collAch: tCoT > 0 ? (tCo / tCoT * 100) : 0,
+            callAch: tCaT > 0 ? (tCa / tCaT * 100) : 0
+        };
+    }
+    function calcPersonBonus(p, bm, yr) {
+        var empType = getEmployeeType(p.name);
+        var nu = (p.name || '').toUpperCase();
+        if (empType === 'Supervisor') {
+            var team = calcTeamTotalsFull(bm, yr);
+            var saleT = (cfg.person_supervisor_sale_tiers && cfg.person_supervisor_sale_tiers[p.name]) || cfg.supervisor_sale_tiers || [];
+            var collT = (cfg.person_supervisor_coll_tiers && cfg.person_supervisor_coll_tiers[p.name]) || cfg.supervisor_coll_tiers || [];
+            var callT = (cfg.person_supervisor_call_tiers && cfg.person_supervisor_call_tiers[p.name]) || cfg.supervisor_call_tiers || [];
+            var qtrT = (cfg.person_supervisor_qtr_tiers && cfg.person_supervisor_qtr_tiers[p.name]) || cfg.supervisor_qtr_tiers || [];
+            var qtrBonus = ['MAR','JUN','SEP','DEC'].indexOf(bm.toUpperCase()) !== -1 ? getTierA(qtrT, team.ach) : 0;
+            return { total: getTierA(saleT, team.ach) + getTierA(collT, team.collAch) + getTierA(callT, team.callAch) + qtrBonus, ach: team.ach, display: empType };
+        }
+        if (empType === 'Support Staff') {
+            var blocks = parseFloat(p.collectionAmount) || 0;
+            var rate = (cfg.person_merchandiser_rates && cfg.person_merchandiser_rates[p.name] != null)
+                ? parseFloat(cfg.person_merchandiser_rates[p.name])
+                : (parseFloat(cfg.merchandiser_block_rate) || 10);
+            return { total: blocks * rate, blocks: blocks, display: empType };
+        }
+        var comm = calcC(p.sales, p.target, p.name);
+        var collPct = (p.collectionTarget || 0) > 0 ? (p.collectionAmount || 0) / p.collectionTarget * 100 : 0;
+        var callPct = (p.callTarget || 0) > 0 ? (p.callActual || 0) / p.callTarget * 100 : 0;
+        var collI = calcInc(collPct, (cfg.person_collection_incentive && cfg.person_collection_incentive[nu]) || cfg.collection_incentive || []);
+        var callI = calcInc(callPct, (cfg.person_call_incentive && cfg.person_call_incentive[nu]) || cfg.active_call_incentive || []);
+        var ach = (p.target || 0) > 0 ? (p.sales || 0) / p.target * 100 : 0;
+        return { total: comm + collI + callI, ach: ach, display: empType };
+    }
+    function monthTotalComm(report, bm, yr) {
+        var reportData = report.data || [];
+        var people = configuredPeople.map(function(name) {
+            var existing = reportData.find(function(p) { return (p.name || '').toUpperCase() === name; });
+            return existing || { name: name };
+        });
+        reportData.forEach(function(p) {
+            if (configuredPeople.indexOf((p.name || '').toUpperCase()) === -1) people.push(p);
+        });
+        var total = 0;
+        people.forEach(function(p) {
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, bm, yr)) return;
+            total += calcPersonBonus(p, bm, yr).total;
+        });
+        return total;
+    }
+
+    if (subEl) {
+        var scopeLabel = showAllYears ? 'All Years' : String(selectedYear);
+        subEl.textContent = sorted.length + ' month' + (sorted.length === 1 ? '' : 's') + ' · ' + scopeLabel;
+    }
+
+    if (summaryEl) summaryEl.innerHTML = '';
 
     if (sorted.length === 0) {
-        historyList.innerHTML = '<div class="text-center py-8 text-gray-500"><p>No history records yet</p></div>';
+        var emptyScope = showAllYears ? 'any year' : selectedYear;
+        historyList.innerHTML = '<div class="empty-state">'
+            + '<div class="empty-state-icon">📋</div>'
+            + '<div class="empty-state-title">No history for ' + emptyScope + '</div>'
+            + '<div class="empty-state-sub">Save data in the Calculate tab to create monthly records</div>'
+            + '<button type="button" class="tbtn blue" style="margin-top:16px;" onclick="switchView(\'quick\')">Go to Calculate →</button>'
+            + '</div>';
         return;
     }
 
-    historyList.innerHTML = sorted.map(function(report) {
-        var people = report.data || [];
-        var month  = bareMonth(report.month);
-        var monthYear = keyYear(report.month) || new Date().getFullYear();
-        var realIndex = history.indexOf(report);
+    var scopeCommTotal = 0;
+    var achSum = 0;
+    var achCount = 0;
+    sorted.forEach(function(report) {
+        var bm = bareMonth(report.month);
+        var yr = keyYear(report.month) || (showAllYears ? curYear : selectedYear);
+        scopeCommTotal += monthTotalComm(report, bm, yr);
+        var team = calcTeamTotals(bm, yr);
+        if (team.target > 0) {
+            achSum += team.ach;
+            achCount++;
+        }
+    });
+    var avgAch = achCount > 0 ? (achSum / achCount) : 0;
+    var latest = sorted[0];
+    var latestLabel = bareMonth(latest.month) + ' ' + (keyYear(latest.month) || (showAllYears ? curYear : selectedYear));
+    var fmtRm = function(n) {
+        return 'RM ' + (n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    var summaryScopeLabel = showAllYears ? 'All Years' : String(selectedYear);
 
-        var totalComm = 0;
-        people.forEach(function(p) {
-            var comm    = calcComm(p.sales, p.target, p.name);
-            var collPct = (p.collectionTarget||0) > 0 ? (p.collectionAmount||0)/p.collectionTarget*100 : 0;
-            var callPct = (p.callTarget||0) > 0 ? (p.callActual||0)/p.callTarget*100 : 0;
-            var coll    = calculateIncentive(collPct, collectionIncentiveTiersFor(p.name));
-            var callB   = calculateIncentive(callPct, activeCallIncentiveTiersFor(p.name));
-            totalComm  += comm + coll + callB;
+    if (summaryEl) {
+        summaryEl.innerHTML = '<div class="history-summary">'
+            + '<div class="dash-kpi"><div class="dash-kpi-lbl">Records</div><div class="dash-kpi-val">' + sorted.length + '</div></div>'
+            + '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">Total Comm / Inc (' + summaryScopeLabel + ')</div><div class="dash-kpi-val">' + fmtRm(scopeCommTotal) + '</div></div>'
+            + '<div class="dash-kpi ' + (avgAch >= 100 ? 'dash-kpi--good' : avgAch >= 90 ? 'dash-kpi--warn' : '') + '"><div class="dash-kpi-lbl">Avg Team Achievement</div><div class="dash-kpi-val">' + avgAch.toFixed(2) + '%</div></div>'
+            + '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Latest Month</div><div class="dash-kpi-val" style="font-family:Sora,sans-serif;">' + latestLabel + '</div></div>'
+            + '</div>';
+    }
+
+    function renderHistoryCard(report) {
+        var reportData = report.data || [];
+        var people = configuredPeople.map(function(name) {
+            var existing = reportData.find(function(p) { return (p.name || '').toUpperCase() === name; });
+            return existing || { name: name, target: 0, sales: 0, collectionTarget: 0, collectionAmount: 0, callTarget: 0, callActual: 0 };
+        });
+        reportData.forEach(function(p) {
+            if (configuredPeople.indexOf((p.name || '').toUpperCase()) === -1) people.push(p);
         });
 
-        var peopleCards = people.map(function(p) {
-            var comm = calcComm(p.sales, p.target, p.name);
-            var ach  = (p.target||0) > 0 ? (p.sales||0)/p.target*100 : 0;
-            return '<div class="bg-white rounded p-3 text-center border border-gray-100">'
-                + '<div class="font-medium text-gray-800 text-sm">' + (p.name||'—') + '</div>'
-                + '<div class="text-xs font-semibold mt-1 ' + (ach>=100?'text-green-600':ach>=90?'text-yellow-600':'text-red-500') + '">' + ach.toFixed(2) + '%</div>'
-                + '<div class="text-xs text-indigo-600 font-medium">' + formatCurrency(comm) + '</div>'
+        var month = bareMonth(report.month);
+        var monthYear = keyYear(report.month) || (showAllYears ? curYear : selectedYear);
+        var realIndex = history.indexOf(report);
+        var totalComm = monthTotalComm(report, month, monthYear);
+        var teamAch = calcTeamTotals(month, monthYear).ach;
+        var achBadgeCls = teamAch >= 100 ? 'good' : teamAch >= 90 ? 'warn' : 'bad';
+        var qKey = quarterKey(month);
+        var qtrBadge = qKey
+            ? '<span class="h-qtr-badge' + (isQuarterClose(month) ? ' close' : '') + '">' + qKey + (isQuarterClose(month) ? ' Close' : '') + '</span>'
+            : '';
+
+        var peopleWithData = people.filter(function(p) {
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return false;
+            var t = getEmployeeType(p.name);
+            if (t === 'Sales') return (p.target || 0) > 0 || (p.sales || 0) > 0;
+            if (t === 'Support Staff') return (p.collectionAmount || 0) > 0;
+            if (t === 'Supervisor') return true;
+            return false;
+        });
+        peopleWithData.sort(function(a, b) {
+            return calcPersonBonus(b, month, monthYear).total - calcPersonBonus(a, month, monthYear).total;
+        });
+
+        var showMax = 4;
+        var peopleHtml = peopleWithData.slice(0, showMax).map(function(p) {
+            var bonus = calcPersonBonus(p, month, monthYear);
+            var tc = getRoleBadgeStyle(bonus.display);
+            var ach = bonus.ach || 0;
+            var achCls = bonus.display === 'Sales' ? (ach >= 100 ? 'ach-good' : ach >= 90 ? 'ach-warn' : 'ach-bad') : '';
+            var mainVal = bonus.display === 'Support Staff' ? bonus.blocks + ' blk'
+                : bonus.display === 'Supervisor' ? ach.toFixed(1) + '% team'
+                : ach.toFixed(1) + '%';
+            var meta = tc.icon + ' ' + (bonus.display === 'Supervisor' ? 'Mgmt' : bonus.display === 'Support Staff' ? 'Support' : 'Sales');
+            var pname = p.name || '—';
+            return '<div class="h-person">'
+                + '<div class="h-pav" style="background:' + tc.bg + ';color:' + tc.c + ';">' + escHtml(pname.charAt(0)) + '</div>'
+                + '<div class="h-pinfo"><div class="h-pname" title="' + escHtml(pname) + '">' + escHtml(pname) + '</div><div class="h-pmeta">' + meta + '</div></div>'
+                + '<div class="h-person-right"><div class="h-pach' + (achCls ? ' ' + achCls : '') + '"' + (!achCls ? ' style="color:' + tc.c + ';"' : '') + '>' + mainVal + '</div>'
+                + '<div class="h-pcomm">' + formatCurrency(bonus.total) + '</div></div>'
                 + '</div>';
         }).join('');
+        var moreCount = peopleWithData.length - showMax;
+        if (moreCount > 0) {
+            peopleHtml += '<div class="h-more">+' + moreCount + ' more employee' + (moreCount > 1 ? 's' : '') + ' · click card to open full report</div>';
+        }
 
-        return '<div style="background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(8,15,26,.08);border:1px solid #e2e8f0;margin-bottom:16px;overflow:hidden;">'
-            + '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;">'
-            + '<div><div style="font-size:18px;font-weight:800;color:#fff;">' + month + '</div><div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">' + monthYear + '</div></div>'
-            + '<div style="text-align:right;"><div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px;">TOTAL COMM/INC PAID</div><div style="font-size:18px;font-weight:800;color:#10b981;">' + formatCurrency(totalComm) + '</div></div>'
+        var cardAccent = teamAch >= 100 ? 'h-card--good' : teamAch >= 90 ? 'h-card--warn' : teamAch > 0 ? 'h-card--bad' : '';
+
+        return '<div class="h-card ' + cardAccent + '">'
+            + '<div class="h-card-body" onclick="viewHistoryReport(' + realIndex + ')" title="Click to view full report">'
+            + '<div class="h-card-top">'
+            + '<div><div class="h-month-row"><div class="h-month">' + month + '</div>' + qtrBadge
+            + (teamAch > 0 ? '<span class="h-ach-badge ' + achBadgeCls + '">' + teamAch.toFixed(1) + '%</span>' : '')
+            + '</div><div class="h-year">' + monthYear + '</div></div>'
+            + '<div><div class="h-comm-lbl">TOTAL COMM/INC PAID</div><div class="h-comm-val">' + formatCurrency(totalComm) + '</div></div>'
             + '</div>'
-            + '<div style="padding:16px 20px;">'
-            + '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">' + peopleCards + '</div>'
-            + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
-            + '<button onclick="viewHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">👁 View</button>'
-            + '<button onclick="openHistoryExcel(' + realIndex + ')" class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">📊 Excel</button>'
-            + '<button onclick="printPayslipsFromHistory(' + realIndex + ')" class="px-3 py-1 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm">📄 Payslip</button>'
-            + '<button onclick="deleteHistoryReport(' + realIndex + ')" class="px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm">🗑️</button>'
+            + (peopleHtml.length > 0 ? '<div class="h-people">' + peopleHtml + '</div>' : '')
+            + '</div>'
+            + '<div class="h-foot">'
+            + '<div class="h-foot-primary">'
+            + '<button class="hbtn hbtn-view hbtn-primary" onclick="event.stopPropagation();viewHistoryReport(' + realIndex + ')">👁 View</button>'
+            + '<button class="hbtn hbtn-excel hbtn-primary" onclick="event.stopPropagation();openHistoryExcel(' + realIndex + ')">📊 Excel</button>'
+            + '</div>'
+            + '<div class="h-foot-actions">'
+            + '<details class="h-more-menu" onclick="event.stopPropagation()">'
+            + '<summary class="hbtn hbtn-more">⋯ More</summary>'
+            + '<div class="h-more-drop">'
+            + '<button class="hbtn hbtn-payslip" onclick="event.stopPropagation();printPayslipsFromHistory(' + realIndex + ')">📄 Payslip</button>'
+            + '<button class="hbtn hbtn-pdf" onclick="event.stopPropagation();printHistoryReport(' + realIndex + ')">🖨️ PDF</button>'
+            + '</div></details>'
+            + '<button class="hbtn hbtn-del hbtn-del--ghost" onclick="event.stopPropagation();deleteHistoryReport(' + realIndex + ')" title="Delete this month">🗑️</button>'
             + '</div></div></div>';
-    }).join('');
+    }
+
+    function sectionMeta(reports, yrLabel) {
+        var comm = 0;
+        reports.forEach(function(r) {
+            comm += monthTotalComm(r, bareMonth(r.month), keyYear(r.month) || yrLabel || curYear);
+        });
+        return reports.length + ' month' + (reports.length === 1 ? '' : 's') + ' · ' + fmtRm(comm);
+    }
+
+    function buildGroupedHistoryHtml() {
+        if (showAllYears) {
+            var byYear = {};
+            sorted.forEach(function(r) {
+                var y = keyYear(r.month) || curYear;
+                if (!byYear[y]) byYear[y] = [];
+                byYear[y].push(r);
+            });
+            return Object.keys(byYear).map(Number).sort(function(a, b) { return b - a; }).map(function(y) {
+                return '<div class="history-year-group">'
+                    + '<div class="history-section-title"><span>' + y + '</span><span class="history-section-meta">' + sectionMeta(byYear[y], y) + '</span></div>'
+                    + '<div class="history-grid">' + byYear[y].map(renderHistoryCard).join('') + '</div>'
+                    + '</div>';
+            }).join('');
+        }
+
+        var byQuarter = { Q4: [], Q3: [], Q2: [], Q1: [] };
+        sorted.forEach(function(r) {
+            var q = quarterKey(bareMonth(r.month));
+            if (byQuarter[q]) byQuarter[q].push(r);
+        });
+        var qOrder = ['Q4', 'Q3', 'Q2', 'Q1'];
+        var qLabels = { Q1: 'Q1 · Jan – Mar', Q2: 'Q2 · Apr – Jun', Q3: 'Q3 · Jul – Sep', Q4: 'Q4 · Oct – Dec' };
+        return qOrder.filter(function(q) { return byQuarter[q].length > 0; }).map(function(q) {
+            return '<div class="history-year-group">'
+                + '<div class="history-section-title"><span>' + qLabels[q] + '</span><span class="history-section-meta">' + sectionMeta(byQuarter[q], selectedYear) + '</span></div>'
+                + '<div class="history-grid">' + byQuarter[q].map(renderHistoryCard).join('') + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
+    historyList.innerHTML = buildGroupedHistoryHtml();
+
+    historyList.querySelectorAll('.h-more-menu').forEach(function(menu) {
+        menu.addEventListener('toggle', function() {
+            if (!menu.open) return;
+            historyList.querySelectorAll('.h-more-menu').forEach(function(other) {
+                if (other !== menu) other.open = false;
+            });
+        });
+    });
 }
+window.loadQuickCalculateHistory = loadQuickCalculateHistory;
 
 
 
@@ -8276,10 +8539,10 @@ function renderPeopleList() {
     var cfg = window.appState.config;
     var people = Object.keys(cfg.base_salaries || {});
     if (people.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--ink4);">'
-            + '<div style="font-size:40px;margin-bottom:12px;">👥</div>'
-            + '<div style="font-size:14px;font-weight:600;">No salespeople yet</div>'
-            + '<div style="font-size:12px;margin-top:6px;">Add a person above to get started</div></div>';
+        container.innerHTML = '<div class="empty-state" style="padding:48px 20px;">'
+            + '<div class="empty-state-icon" style="font-size:40px;">👥</div>'
+            + '<div class="empty-state-title">No salespeople yet</div>'
+            + '<div class="empty-state-sub">Add a person above to get started</div></div>';
         return;
     }
     container.innerHTML = '';
@@ -8319,7 +8582,7 @@ function renderPeopleList() {
                 ? '<span style="background:var(--vi-l);color:var(--vi);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;">✦ Personal</span>'
                 : '<span style="background:var(--sheet);color:var(--ink4);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--line);">Company Rate</span>')
             + '</div></div>'
-            + '<select id="type-select-'+i+'" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--line);font-size:11px;font-weight:600;cursor:pointer;background:#fff;font-family:Sora,sans-serif;">'
+            + '<select id="type-select-'+i+'" class="filter-select" style="padding:5px 10px;font-size:11px;">'
             + '<option value="Sales"'+(empType==='Sales'?' selected':'')+'>💼 Sales</option>'
             + '<option value="Supervisor"'+(empType==='Supervisor'?' selected':'')+'>👔 Supervisor</option>'
             + '<option value="Support Staff"'+(empType==='Support Staff'?' selected':'')+'>🛠️ Support Staff</option>'
@@ -8330,7 +8593,7 @@ function renderPeopleList() {
                 var empCompany = getEmployeeCompany(name);
                 var opts = '<option value=""'+(empCompany===''?' selected':'')+'>— No Company —</option>';
                 companies.forEach(function(c){ opts += '<option value="'+c+'"'+(empCompany===c?' selected':'')+'>🏢 '+c+'</option>'; });
-                return '<select id="company-select-'+i+'" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--line);font-size:11px;font-weight:600;cursor:pointer;background:#fff;font-family:Sora,sans-serif;">'+opts+'</select>';
+                return '<select id="company-select-'+i+'" class="filter-select" style="padding:5px 10px;font-size:11px;">'+opts+'</select>';
             })()
             + '<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap;width:520px;" id="pi-btns-'+i+'"></div>';
         container.appendChild(item);
@@ -8342,25 +8605,25 @@ function renderPeopleList() {
 
         // Salary always first
         var bS = document.createElement('button');
-        bS.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bae6fd;background:#e0f2fe;color:#0284c7;width:110px;';
+        bS.className = 'pi-btn pi-btn--salary';
         bS.textContent = '💵 Salary';
         bS.addEventListener('click',(function(n){return function(){showSalaryModal(n);};})(name));
         btns.appendChild(bS);
 
         if (empType === 'Sales') {
             var bC = document.createElement('button');
-            bC.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ddd6fe;background:var(--vi-l);color:var(--vi);width:140px;';
+            bC.className = 'pi-btn pi-btn--comm';
             bC.textContent = '💰 Commission';
             bC.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
             var bT = document.createElement('button');
-            bT.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #bbf7d0;background:#d1fae5;color:#065f46;width:110px;';
+            bT.className = 'pi-btn pi-btn--target';
             bT.textContent = '🎯 Target';
             bT.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
             btns.appendChild(bC);
             btns.appendChild(bT);
         } else if (empType === 'Supervisor') {
             var bSI = document.createElement('button');
-            bSI.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #93c5fd;background:#dbeafe;color:#1d4ed8;width:140px;';
+            bSI.className = 'pi-btn pi-btn--tier';
             bSI.textContent = '👔 Incentive Tiers';
             bSI.addEventListener('click',(function(n){return function(){showSupervisorIncentiveModal(n);};})(name));
             var spacer = document.createElement('div');
@@ -8369,7 +8632,7 @@ function renderPeopleList() {
             btns.appendChild(spacer);
         } else if (empType === 'Support Staff') {
             var bMR = document.createElement('button');
-            bMR.style.cssText = 'padding:7px 14px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #facc15;background:#fef9c3;color:#854d0e;width:140px;';
+            bMR.className = 'pi-btn pi-btn--rate';
             bMR.textContent = '🛠️ Block Rate';
             bMR.addEventListener('click',(function(n){return function(){showMerchandiserRateModal(n);};})(name));
             var spacer2 = document.createElement('div');
@@ -8380,16 +8643,13 @@ function renderPeopleList() {
 
         var bA = document.createElement('button');
         bA.title = active ? 'Click to mark as resigned / inactive' : 'Click to reactivate';
-        bA.style.cssText = 'padding:7px 12px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;'
-            + (active
-                ? 'border:1.5px solid #86efac;background:#dcfce7;color:#166534;'
-                : 'border:1.5px solid #fecaca;background:#fee2e2;color:#b91c1c;');
+        bA.className = 'pi-btn ' + (active ? 'pi-btn--active' : 'pi-btn--inactive');
         bA.textContent = active ? '● Active' : '○ Inactive';
         bA.addEventListener('click',(function(n, isActive){ return function(){ requirePeoplePassword((isActive ? 'Set ' : 'Reactivate ') + n + ' \u2014 enter password to continue', function(){ showEmployeeStatusDatePicker(n, isActive); }); };})(name, active));
         btns.appendChild(bA);
 
         var bD = document.createElement('button');
-        bD.style.cssText = 'padding:7px 10px;border-radius:var(--r);font-size:11px;font-weight:700;cursor:pointer;font-family:Sora,sans-serif;border:1.5px solid #ffe4e6;background:#fff5f7;color:var(--rose);';
+        bD.className = 'pi-btn pi-btn--del';
         bD.textContent = '🗑️';
         bD.addEventListener('click',(function(n){return function(){ requirePeoplePassword('Delete ' + n + ' \u2014 enter password to continue', function(){ deleteSalespersonConfig(n); }); };})(name));
         btns.appendChild(bD);
@@ -9106,20 +9366,19 @@ function renderDashboard() {
     });
     var medals = ['🥇','🥈','🥉'];
     var html = '';
-    html += '<div style="margin-bottom:14px;font-size:13px;color:#64748b;">'+curYear+' Overview · '+configPeople.length+' salespeople</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
-    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Target</div><div style="font-size:16px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamTarget)+'</div></div>';
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Team Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
-    var achColor = teamAch>=100?'#059669':'#d97706';
-    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Achievement</div><div style="font-size:16px;font-weight:800;color:'+achColor+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+teamAch.toFixed(2)+'%</div></div>';
-    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">TOTAL COMM/INC PAID</div><div style="font-size:16px;font-weight:800;color:#059669;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamComm)+'</div></div>';
+    html += '<div class="dash-meta">'+selectedYear+' Overview · '+configPeople.length+' people</div>';
+    html += '<div class="dash-kpi-grid">';
+    html += '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Team Target</div><div class="dash-kpi-val">'+fmt(teamTarget)+'</div></div>';
+    html += '<div class="dash-kpi"><div class="dash-kpi-lbl">Team Sales</div><div class="dash-kpi-val">'+fmt(teamSales)+'</div></div>';
+    html += '<div class="dash-kpi '+(teamAch>=100?'dash-kpi--good':'dash-kpi--warn')+'"><div class="dash-kpi-lbl">Achievement</div><div class="dash-kpi-val">'+teamAch.toFixed(2)+'%</div></div>';
+    html += '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">TOTAL COMM/INC PAID</div><div class="dash-kpi-val">'+fmt(teamComm)+'</div></div>';
     var topTc = (topPerson && topPerson !== '—') ? getRoleBadgeStyle(getEmployeeType(topPerson)) : { bg: '#f1f5f9', c: '#64748b', icon: '🏆' };
-    html += '<div style="background:linear-gradient(135deg,'+topTc.bg+' 0%,#fff 55%);border:1.5px solid var(--line);border-left:3px solid '+topTc.c+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Top Performer</div><div style="font-size:16px;font-weight:800;color:'+topTc.c+';margin-top:4px;white-space:nowrap;">'+topTc.icon+' '+topPerson+'</div></div>';
+    html += '<div class="dash-kpi" style="background:linear-gradient(135deg,'+topTc.bg+' 0%,var(--paper) 55%);border-left:3px solid '+topTc.c+';"><div class="dash-kpi-lbl">Top Performer</div><div class="dash-kpi-val" style="color:'+topTc.c+';font-family:Sora,sans-serif;">'+topTc.icon+' '+topPerson+'</div></div>';
     html += '</div>';
-    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">🏆 Team Ranking</div>';
+    html += '<div class="dash-section-title">🏆 Team Ranking</div>';
     ranked.forEach(function(p, i) {
         var tc = getRoleBadgeStyle(p.type);
-        var achC = p.ach>=100?'#059669':p.ach>=90?'#d97706':'#dc2626';
+        var achC = p.ach>=100?'ach-good':p.ach>=90?'ach-warn':'ach-bad';
         var typeIcon = tc.icon;
         var typeDisplay = p.type==='Supervisor'?'Management Staff':p.type;
         var typeLabel = '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:9px;font-weight:700;margin-left:6px;">'+typeIcon+' '+typeDisplay+'</span>';
@@ -9142,7 +9401,7 @@ function renderDashboard() {
         }
         // Column 2: Achievement or "—"
         if (p.type === 'Sales') {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div style="font-size:13px;font-weight:700;color:'+achC+';font-family:\'IBM Plex Mono\',monospace;">'+p.ach.toFixed(2)+'%</div></div>';
+            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div class="dash-kpi-val '+achC+'" style="font-size:13px;margin-top:0;">'+p.ach.toFixed(2)+'%</div></div>';
         } else {
             html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;line-height:1.25;">'+typeIcon+' '+typeDisplay+'</div></div>';
         }
@@ -9323,12 +9582,13 @@ function renderAnnualReport() {
         });
     });
     var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
+    function achCls(pct) { return pct >= 100 ? 'ach-good' : pct >= 90 ? 'ach-warn' : 'ach-bad'; }
     var html = '';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px;">';
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Team Sales</div><div style="font-size:20px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamSales)+'</div></div>';
-    html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Target</div><div style="font-size:20px;font-weight:800;color:#64748b;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamTarget)+'</div></div>';
-    html += '<div style="background:'+(teamAch>=100?'#f0fdf4':'#fefce8')+';border:1.5px solid '+(teamAch>=100?'#86efac':'#fde68a')+';border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Overall Achievement</div><div style="font-size:20px;font-weight:800;color:'+(teamAch>=100?'#059669':'#d97706')+';font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+teamAch.toFixed(2)+'%</div></div>';
-    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px 20px;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">TOTAL COMM/INC PAID</div><div style="font-size:20px;font-weight:800;color:#059669;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+fmt(teamComm)+'</div></div>';
+    html += '<div class="dash-kpi-grid report-kpi-grid">';
+    html += '<div class="dash-kpi"><div class="dash-kpi-lbl">Total Team Sales</div><div class="dash-kpi-val">'+fmt(teamSales)+'</div></div>';
+    html += '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Total Target</div><div class="dash-kpi-val">'+fmt(teamTarget)+'</div></div>';
+    html += '<div class="dash-kpi '+(teamAch>=100?'dash-kpi--good':teamAch>=90?'dash-kpi--warn':'')+'"><div class="dash-kpi-lbl">Overall Achievement</div><div class="dash-kpi-val">'+teamAch.toFixed(2)+'%</div></div>';
+    html += '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">TOTAL COMM/INC PAID</div><div class="dash-kpi-val">'+fmt(teamComm)+'</div></div>';
     html += '</div>';
     // Monthly breakdown
     // Filter people by type for different sections
@@ -9338,94 +9598,85 @@ function renderAnnualReport() {
 
     // ── Monthly Breakdown (Sales only) ──
     if (salesDisplay.length > 0) {
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-        html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">📊 Sales Monthly Breakdown — '+selectedYear+' (Sales)</div>';
-        html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
-        html += '<thead><tr style="background:#f1f5f9;"><th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Month</th>';
-        salesDisplay.forEach(function(p) { html += '<th colspan="3" style="padding:10px 8px;text-align:center;font-weight:700;color:#1e40af;border-left:2px solid #e2e8f0;">'+p+'</th>'; });
-        html += '</tr><tr style="background:#f8fafc;"><th style="padding:6px 14px;"></th>';
-        salesDisplay.forEach(function() { html += '<th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;border-left:2px solid #e2e8f0;">TARGET</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">SALES</th><th style="padding:6px 8px;text-align:right;font-weight:600;color:#94a3b8;font-size:10px;">ACH%</th>'; });
+        html += '<div class="report-panel"><div class="report-panel-head">📊 Sales Monthly Breakdown — '+selectedYear+' (Sales)</div>';
+        html += '<div class="report-panel-body report-scroll"><table class="report-table">';
+        html += '<thead><tr><th>Month</th>';
+        salesDisplay.forEach(function(p) { html += '<th colspan="3" class="rt-num rt-border">'+p+'</th>'; });
+        html += '</tr><tr><th></th>';
+        salesDisplay.forEach(function() { html += '<th class="rt-num rt-border">Target</th><th class="rt-num">Sales</th><th class="rt-num">Ach%</th>'; });
         html += '</tr></thead><tbody>';
         displayMonths.forEach(function(m) {
             var hasData = salesDisplay.some(function(p){return peopleData[p][m];});
             if (!hasData) return;
-            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:10px 14px;font-weight:700;color:#0f172a;">'+m+'</td>';
+            html += '<tr><td style="font-weight:700;">'+m+'</td>';
             salesDisplay.forEach(function(p) {
-                var d = peopleData[p][m]; var achCol = d ? (d.ach>=100?'#059669':d.ach>=90?'#d97706':'#dc2626') : '#cbd5e1';
-                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#475569;border-left:2px solid #f1f5f9;">'+(d?fmt(d.target):'—')+'</td>';
-                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:#0f172a;font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
-                html += '<td style="padding:8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:'+achCol+';">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
+                var d = peopleData[p][m];
+                html += '<td class="rt-num rt-mono rt-border">'+(d?fmt(d.target):'—')+'</td>';
+                html += '<td class="rt-num rt-mono" style="font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
+                html += '<td class="rt-num rt-mono '+(d?achCls(d.ach):'')+'" style="font-weight:700;">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
             });
             html += '</tr>';
         });
-        html += '<tr style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-top:2px solid #93c5fd;"><td style="padding:12px 14px;font-weight:800;color:#1e40af;">TOTAL</td>';
+        html += '<tr class="rt-total"><td>TOTAL</td>';
         salesDisplay.forEach(function(p) {
             var tT=0, tS=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
             var tA = tT>0?(tS/tT*100):0;
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:700;color:#1e40af;border-left:2px solid #bfdbfe;">'+fmt(tT)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:11px;font-weight:800;color:#0f172a;">'+fmt(tS)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:12px;font-weight:800;color:'+(tA>=100?'#059669':'#dc2626')+';">'+tA.toFixed(2)+'%</td>';
+            html += '<td class="rt-num rt-mono rt-border">'+fmt(tT)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(tS)+'</td>';
+            html += '<td class="rt-num rt-mono '+achCls(tA)+'">'+tA.toFixed(2)+'%</td>';
         });
         html += '</tr></tbody></table></div></div>';
     }
 
     // ── Commission Summary (Sales) ──
     if (salesDisplay.length > 0) {
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">💰 Commission & Incentive Summary (Sales)</div>';
-        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f0fdf4;">';
-        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#166534;">Person</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Commission</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Collection</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Call Bonus</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#166534;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#166534;">TOTAL</th></tr></thead><tbody>';
+        html += '<div class="report-panel"><div class="report-panel-head report-panel-head--em">💰 Commission &amp; Incentive Summary (Sales)</div>';
+        html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
+        html += '<th>Person</th><th class="rt-num">Commission</th><th class="rt-num">Collection</th><th class="rt-num">Call Bonus</th><th class="rt-num">Quarterly</th><th class="rt-num">Total</th>';
+        html += '</tr></thead><tbody>';
         salesDisplay.forEach(function(p) {
             var comm=0,coll=0,call=0,qtr=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}});
-            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">'+p+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(comm)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(coll)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(call)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qtr)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#059669;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
+            html += '<tr><td style="font-weight:700;">'+p+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(comm)+'</td><td class="rt-num rt-mono">'+fmt(coll)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(call)+'</td><td class="rt-num rt-mono">'+fmt(qtr)+'</td>';
+            html += '<td class="rt-num rt-mono ach-good" style="font-weight:800;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
         });
-        html += '</tbody></table></div>';
+        html += '</tbody></table></div></div>';
     }
 
-    // ── Supervisor Summary ──
     if (supervisorDisplay.length > 0) {
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">👔 Management Staff Incentive Summary</div>';
-        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#f3e8ff;">';
-        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#6b21a8;">Management Staff</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Sale Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Collection Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Call Inc</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#6b21a8;">Quarterly</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#6b21a8;">TOTAL</th></tr></thead><tbody>';
+        html += '<div class="report-panel"><div class="report-panel-head">👔 Management Staff Incentive Summary</div>';
+        html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
+        html += '<th>Management Staff</th><th class="rt-num">Sale Inc</th><th class="rt-num">Collection Inc</th><th class="rt-num">Call Inc</th><th class="rt-num">Quarterly</th><th class="rt-num">Total</th>';
+        html += '</tr></thead><tbody>';
         supervisorDisplay.forEach(function(p) {
             var sI=0,cI=0,caI=0,qI=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}});
-            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">👔 '+p+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#7c3aed;">'+fmt(sI)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#2563eb;">'+fmt(cI)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#0891b2;">'+fmt(caI)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#d97706;">'+fmt(qI)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#7c3aed;">'+fmt(sI+cI+caI+qI)+'</td></tr>';
+            html += '<tr><td style="font-weight:700;">👔 '+p+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(sI)+'</td><td class="rt-num rt-mono">'+fmt(cI)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(caI)+'</td><td class="rt-num rt-mono">'+fmt(qI)+'</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--vi);">'+fmt(sI+cI+caI+qI)+'</td></tr>';
         });
-        html += '</tbody></table></div>';
+        html += '</tbody></table></div></div>';
     }
 
-    // ── Merchandiser Summary ──
     if (merchandiserDisplay.length > 0) {
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:20px;">';
-        html += '<div style="background:linear-gradient(135deg,#059669,#10b981);padding:14px 20px;color:#fff;font-size:13px;font-weight:700;">🛠️ Support Staff Incentive Summary</div>';
-        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#fef3c7;">';
-        html += '<th style="padding:10px 14px;text-align:left;font-weight:700;color:#92400e;">Support Staff</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Total Blocks</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Rate/Block</th><th style="padding:10px 8px;text-align:right;font-weight:600;color:#92400e;">Months Active</th><th style="padding:10px 8px;text-align:right;font-weight:800;color:#92400e;">TOTAL INCENTIVE</th></tr></thead><tbody>';
+        html += '<div class="report-panel"><div class="report-panel-head">🛠️ Support Staff Incentive Summary</div>';
+        html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
+        html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block</th><th class="rt-num">Months Active</th><th class="rt-num">Total Incentive</th>';
+        html += '</tr></thead><tbody>';
         merchandiserDisplay.forEach(function(p) {
             var totBlocks=0, totInc=0, mc=0, rate=0;
             displayMonths.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}});
-            html += '<tr style="border-top:1px solid #f1f5f9;"><td style="padding:12px 14px;font-weight:700;color:#0f172a;">🛠️ '+p+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#92400e;font-weight:700;">'+totBlocks+' blocks</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#475569;">'+fmt(rate)+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#475569;">'+mc+'</td>';
-            html += '<td style="padding:10px 8px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#d97706;">'+fmt(totInc)+'</td></tr>';
+            html += '<tr><td style="font-weight:700;">🛠️ '+p+'</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:700;">'+totBlocks+' blocks</td>';
+            html += '<td class="rt-num rt-mono">'+fmt(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
+            html += '<td class="rt-num rt-mono ach-warn" style="font-weight:800;">'+fmt(totInc)+'</td></tr>';
         });
-        html += '</tbody></table></div>';
+        html += '</tbody></table></div></div>';
     }
 
-    // ── Individual Annual Summary cards ──
-    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;">👤 Individual Annual Summary</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat('+Math.min(displayPeople.length,3)+',1fr);gap:14px;">';
+    html += '<div class="annual-section-title">👤 Individual Annual Summary</div>';
+    html += '<div class="annual-person-grid">';
     displayPeople.forEach(function(p) {
         var empType = getEmployeeType(p);
         var tS=0,tT=0,tComm=0,mc=0,totBlocks=0;
@@ -9439,24 +9690,24 @@ function renderAnnualReport() {
         var sal = ((cfg.base_salaries&&cfg.base_salaries[p])||1700)*mc;
         var allow = cfg.allowances&&cfg.allowances[p] ? Object.values(cfg.allowances[p]).reduce(function(s,v){return s+(parseFloat(v)||0);},0)*mc : 0;
         var typeIcons = { Sales:'', Supervisor:'👔 ', 'Support Staff':'🛠️ ' };
-        var hdrColor = empType==='Supervisor'?'#7c3aed':empType==='Support Staff'?'#d97706':'#2563eb';
-        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">';
-        html += '<div style="background:linear-gradient(135deg,#1e3a5f,'+hdrColor+');padding:16px 18px;color:#fff;"><div style="font-size:16px;font-weight:800;">'+(typeIcons[empType]||'')+p+'</div><div style="font-size:12px;opacity:.7;margin-top:2px;">'+mc+' months · '+empType+'</div></div>';
-        html += '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:8px;font-size:13px;">';
+        var headCls = empType==='Supervisor'?'annual-person-head--mgmt':empType==='Support Staff'?'annual-person-head--support':'annual-person-head--sales';
+        html += '<div class="annual-person-card">';
+        html += '<div class="annual-person-head '+headCls+'"><div class="annual-person-name">'+(typeIcons[empType]||'')+p+'</div><div class="annual-person-meta">'+mc+' months · '+empType+'</div></div>';
+        html += '<div class="annual-person-body">';
         if (empType === 'Sales') {
-            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Sales</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+fmt(tS)+'</span></div>';
-            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Achievement</span><span style="font-weight:700;color:'+(tAch>=100?'#059669':'#d97706')+';">'+tAch.toFixed(2)+'%</span></div>';
+            html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Sales</span><span class="annual-stat-val">'+fmt(tS)+'</span></div>';
+            html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Achievement</span><span class="annual-stat-val '+achCls(tAch)+'">'+tAch.toFixed(2)+'%</span></div>';
         } else if (empType === 'Support Staff') {
-            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Blocks</span><span style="font-weight:700;font-family:\'IBM Plex Mono\',monospace;">'+totBlocks+'</span></div>';
+            html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Blocks</span><span class="annual-stat-val">'+totBlocks+'</span></div>';
         } else {
-            html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Earns From</span><span style="font-weight:700;color:#7c3aed;">Team Performance</span></div>';
+            html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Earns From</span><span class="annual-stat-val" style="color:var(--vi);">Team Performance</span></div>';
         }
-        html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Salary</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal)+'</span></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:#64748b;">Total Allowances</span><span style="font-family:\'IBM Plex Mono\',monospace;">'+fmt(allow)+'</span></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="color:'+hdrColor+';">Total Incentive</span><span style="font-weight:700;color:'+hdrColor+';font-family:\'IBM Plex Mono\',monospace;">'+fmt(tComm)+'</span></div>';
-        html += '<div style="height:1px;background:#f1f5f9;margin:4px 0;"></div>';
-        html += '<div style="display:flex;justify-content:space-between;"><span style="font-weight:700;">Total Paid</span><span style="font-weight:800;color:#059669;font-size:15px;font-family:\'IBM Plex Mono\',monospace;">'+fmt(sal+allow+tComm)+'</span></div>';
+        html += '<div class="annual-stat-sep"></div>';
+        html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Salary</span><span class="annual-stat-val">'+fmt(sal)+'</span></div>';
+        html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Allowances</span><span class="annual-stat-val">'+fmt(allow)+'</span></div>';
+        html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Incentive</span><span class="annual-stat-val ach-good">'+fmt(tComm)+'</span></div>';
+        html += '<div class="annual-stat-sep"></div>';
+        html += '<div class="annual-stat-row annual-stat-total"><span class="annual-stat-lbl">Total Paid</span><span class="annual-stat-val">'+fmt(sal+allow+tComm)+'</span></div>';
         html += '</div></div>';
     });
     html += '</div>';
@@ -9576,8 +9827,8 @@ function switchAnnualView(mode) {
         if (costBody) costBody.style.display = 'none';
         if (costSelectors) costSelectors.style.display = 'none';
         if (reportSelectors) reportSelectors.style.display = 'block';
-        if (btnReport) { btnReport.style.background = '#fff'; btnReport.style.color = 'var(--ink)'; btnReport.style.boxShadow = '0 1px 3px rgba(0,0,0,.1)'; }
-        if (btnCost) { btnCost.style.background = 'transparent'; btnCost.style.color = 'var(--ink3)'; btnCost.style.boxShadow = 'none'; }
+        if (btnReport) btnReport.classList.add('active');
+        if (btnCost) btnCost.classList.remove('active');
         if (title) title.textContent = 'Annual Report';
         renderAnnualReport();
     } else {
@@ -9585,8 +9836,8 @@ function switchAnnualView(mode) {
         if (costBody) costBody.style.display = 'block';
         if (costSelectors) costSelectors.style.display = 'block';
         if (reportSelectors) reportSelectors.style.display = 'none';
-        if (btnCost) { btnCost.style.background = '#fff'; btnCost.style.color = 'var(--ink)'; btnCost.style.boxShadow = '0 1px 3px rgba(0,0,0,.1)'; }
-        if (btnReport) { btnReport.style.background = 'transparent'; btnReport.style.color = 'var(--ink3)'; btnReport.style.boxShadow = 'none'; }
+        if (btnCost) btnCost.classList.add('active');
+        if (btnReport) btnReport.classList.remove('active');
         if (title) title.textContent = 'Expenses Report';
         initEmployerCostSelectors();
         renderEmployerCostReport();
@@ -9834,18 +10085,17 @@ function renderEmployerCostReport() {
     var html = '';
 
     // Summary cards
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px;">';
+    html += '<div class="dash-kpi-grid report-kpi-grid">';
     var selectedEmpType = selectedPerson !== 'ALL' ? getEmployeeType(selectedPerson) : null;
     var salesLabel = (selectedPerson === 'ALL' && selectedMonth === 'ALL') ? 'Grand Total Sales' : (selectedPerson !== 'ALL' && selectedEmpType === 'Sales' ? 'Individual Sales' : 'Selected Sales');
-    html += '<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">Grand Total Sales</div><div style="font-size:16px;font-weight:800;color:#0f172a;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(teamSales)+'</div></div>';
-    // Hide Individual Sales card for Supervisor/Support Staff
+    html += '<div class="dash-kpi"><div class="dash-kpi-lbl">Grand Total Sales</div><div class="dash-kpi-val">'+fmt(teamSales)+'</div></div>';
     if (selectedEmpType && selectedEmpType !== 'Sales') {
-        html += '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;opacity:0.5;"><div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;">N/A</div><div style="font-size:16px;font-weight:800;color:#94a3b8;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">—</div></div>';
+        html += '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Individual Sales</div><div class="dash-kpi-val" style="color:var(--ink4);">—</div></div>';
     } else {
-        html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.8px;">'+salesLabel+'</div><div style="font-size:16px;font-weight:800;color:#166534;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalSales)+'</div></div>';
+        html += '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">'+salesLabel+'</div><div class="dash-kpi-val">'+fmt(displayTotalSales)+'</div></div>';
     }
-    html += '<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (RM)</div><div style="font-size:16px;font-weight:800;color:#be123c;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;white-space:nowrap;">'+fmt(displayTotalCost)+'</div></div>';
-    html += '<div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;"><div style="font-size:9px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.8px;">Expenses / Grand Total Sales (%)</div><div style="font-size:16px;font-weight:800;color:#a16207;font-family:\'IBM Plex Mono\',monospace;margin-top:4px;">'+pct(displayTotalCost, teamSales)+'</div></div>';
+    html += '<div class="dash-kpi dash-kpi--cost"><div class="dash-kpi-lbl">Total Expenses (RM)</div><div class="dash-kpi-val">'+fmt(displayTotalCost)+'</div></div>';
+    html += '<div class="dash-kpi dash-kpi--ratio"><div class="dash-kpi-lbl">Expenses / Sales</div><div class="dash-kpi-val">'+pct(displayTotalCost, teamSales)+'</div></div>';
     html += '</div>';
 
     // Per person tables
@@ -9856,35 +10106,29 @@ function renderEmployerCostReport() {
         var profit = p.totalSales - p.totalCost;
         var profitColor = profit >= 0 ? '#4ade80' : '#fb7185';
 
-        html += '<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:16px;">';
-        // Header
+        html += '<div class="report-panel">';
         var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
-        html += '<div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;">';
-        html += '<div><div style="font-size:15px;font-weight:800;color:#fff;">'+name+typeTag+'</div>';
-        html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
+        html += '<div class="ec-card-head">';
+        html += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
         if (empType === 'Sales') {
-            html += '<div style="text-align:right;"><div style="font-size:9px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Sales</div>';
-            html += '<div style="font-size:16px;font-weight:800;color:#4ade80;font-family:\'IBM Plex Mono\',monospace;">'+fmt(p.totalSales)+'</div></div>';
+            html += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Sales</div><div class="ec-card-sales-val">'+fmt(p.totalSales)+'</div></div>';
         }
         html += '</div>';
 
-        // Table — Supervisor/Support Staff: no INDV% column
         var hasIndv = (empType === 'Sales');
-        html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        html += '<table class="report-table">';
         if (hasIndv) {
-            html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:40%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:17%;">INDV%</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:18%;">TEAM%</th></tr></thead>';
+            html += '<thead><tr><th style="width:40%;">Cost Item</th><th class="rt-num" style="width:25%;">Amount</th><th class="rt-num" style="width:17%;">INDV%</th><th class="rt-num" style="width:18%;">TEAM%</th></tr></thead>';
         } else {
-            html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 14px;text-align:left;font-weight:700;color:#475569;width:45%;">Cost Item</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:30%;">Amount</th><th style="padding:8px 10px;text-align:right;font-weight:700;color:#475569;width:25%;">TEAM%</th></tr></thead>';
+            html += '<thead><tr><th style="width:45%;">Cost Item</th><th class="rt-num" style="width:30%;">Amount</th><th class="rt-num" style="width:25%;">TEAM%</th></tr></thead>';
         }
         html += '<tbody>';
 
-        // Sales Revenue row (only for Sales type)
         if (empType === 'Sales') {
-            html += '<tr style="background:#f0fdf4;"><td style="padding:8px 14px;font-weight:700;color:#166534;">📈 Sales Revenue</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#166534;">'+fmt(p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">100.000%</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#64748b;">'+pct(p.totalSales,teamSales)+'</td></tr>';
+            html += '<tr class="rt-revenue"><td>📈 Sales Revenue</td><td class="rt-num rt-mono">'+fmt(p.totalSales)+'</td><td class="rt-num rt-mono">100.000%</td><td class="rt-num rt-mono">'+pct(p.totalSales,teamSales)+'</td></tr>';
         }
 
-        // Divider
-        html += '<tr><td colspan="'+(hasIndv?4:3)+'" style="padding:4px 14px;font-size:9px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;background:#fff5f5;">Expenses</td></tr>';
+        html += '<tr class="rt-section"><td colspan="'+(hasIndv?4:3)+'">Expenses</td></tr>';
 
         // Cost rows — build based on type
         var costRows = [];
@@ -9906,37 +10150,33 @@ function renderEmployerCostReport() {
         }
 
         costRows.forEach(function(r) {
-            var c = r.color || '#475569';
             if (hasIndv) {
-                html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+                html += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
             } else {
-                html += '<tr style="border-top:1px solid #f1f5f9;background:'+r.bg+';"><td style="padding:7px 14px;font-weight:600;color:'+c+';">'+r.label+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;">'+fmt(r.val)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:#94a3b8;">'+pct(r.val,teamSales)+'</td></tr>';
+                html += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
             }
         });
 
-        // Total Pay
         if (hasIndv) {
-            html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+            html += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
         } else {
-            html += '<tr style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border-top:2px solid #93c5fd;"><td style="padding:8px 14px;font-weight:800;color:#1e40af;">Total Pay</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:#1e40af;">'+fmt(p.totalPay)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#1e40af;">'+pct(p.totalPay,teamSales)+'</td></tr>';
+            html += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
         }
 
-        // Employer EPF
         if (hasIndv) {
-            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
-            if (p.employerSocso > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer SOCSO</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerSocso)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,teamSales)+'</td></tr>';
-            if (p.employerEis > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EIS (0.2%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEis)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,teamSales)+'</td></tr>';
+            html += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) html += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) html += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
         } else {
-            html += '<tr style="background:#fff5f5;border-top:1px solid #fecdd3;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EPF</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEpf)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEpf,teamSales)+'</td></tr>';
-            if (p.employerSocso > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer SOCSO</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerSocso)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerSocso,teamSales)+'</td></tr>';
-            if (p.employerEis > 0) html += '<tr style="background:#fff5f5;"><td style="padding:8px 14px;font-weight:700;color:#dc2626;">🏛️ Employer EIS (0.2%)</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;font-weight:600;">'+fmt(p.employerEis)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;color:#dc2626;">'+pct(p.employerEis,teamSales)+'</td></tr>';
+            html += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) html += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) html += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
         }
 
-        // Total Cost
         if (hasIndv) {
-            html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,p.totalSales)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+            html += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
         } else {
-            html += '<tr style="background:linear-gradient(135deg,#0f172a,#1e3a5f);"><td style="padding:10px 14px;font-weight:800;color:#fbbf24;font-size:12px;">⚠️ TOTAL EXPENSES</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:800;color:#fbbf24;font-size:12px;">'+fmt(p.totalCost)+'</td><td style="padding:6px 10px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:#94a3b8;">'+pct(p.totalCost,teamSales)+'</td></tr>';
+            html += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
         }
 
         html += '</tbody></table></div>';
