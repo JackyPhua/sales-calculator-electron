@@ -89,6 +89,92 @@ ipcMain.handle('install-update', () => {
 
 // ── SQLite DB setup ──────────────────────────────────────────────────────────
 let db = null;
+
+function getLegacyUserDataPaths() {
+    const appData = app.getPath('appData');
+    return [
+        path.join(appData, 'CommissionPro'),
+        path.join(appData, 'commission-pro')
+    ];
+}
+
+const LEGACY_DATA_FILES = ['commission_pro.db', 'config.json', 'license.json'];
+
+function legacyDirHasData(dir) {
+    return LEGACY_DATA_FILES.some(function(name) {
+        return fsSync.existsSync(path.join(dir, name));
+    });
+}
+
+function sqliteHasRows(dbPath) {
+    try {
+        var Database = require('better-sqlite3');
+        var tmp = new Database(dbPath, { readonly: true });
+        var row = tmp.prepare('SELECT COUNT(*) as c FROM kv_store').get();
+        tmp.close();
+        return row && row.c > 0;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function migrateLegacyUserData() {
+    const userData = app.getPath('userData');
+    const markerPath = path.join(userData, 'migrated-from-commissionpro.json');
+    if (fsSync.existsSync(markerPath)) return;
+
+    for (var i = 0; i < getLegacyUserDataPaths().length; i++) {
+        var legacyDir = getLegacyUserDataPaths()[i];
+        if (!fsSync.existsSync(legacyDir) || !legacyDirHasData(legacyDir)) continue;
+
+        console.log('Migrating CommissionPro data from', legacyDir, 'to', userData);
+        await fs.mkdir(userData, { recursive: true });
+
+        var legacyDb = path.join(legacyDir, 'commission_pro.db');
+        var currentDb = path.join(userData, 'commission_pro.db');
+        if (fsSync.existsSync(legacyDb)) {
+            var copyDb = !fsSync.existsSync(currentDb) || !sqliteHasRows(currentDb);
+            if (copyDb && sqliteHasRows(legacyDb)) {
+                await fs.copyFile(legacyDb, currentDb);
+                console.log('  copied commission_pro.db');
+            }
+        }
+
+        for (var j = 0; j < LEGACY_DATA_FILES.length; j++) {
+            var fileName = LEGACY_DATA_FILES[j];
+            if (fileName === 'commission_pro.db') continue;
+            var src = path.join(legacyDir, fileName);
+            var dest = path.join(userData, fileName);
+            if (fsSync.existsSync(src) && !fsSync.existsSync(dest)) {
+                await fs.copyFile(src, dest);
+                console.log('  copied', fileName);
+            }
+        }
+
+        var legacyBackups = path.join(legacyDir, 'backups');
+        var newBackups = path.join(userData, 'backups');
+        if (fsSync.existsSync(legacyBackups)) {
+            await fs.mkdir(newBackups, { recursive: true });
+            var backupFiles = await fs.readdir(legacyBackups);
+            for (var k = 0; k < backupFiles.length; k++) {
+                var backupName = backupFiles[k];
+                var backupSrc = path.join(legacyBackups, backupName);
+                var backupDest = path.join(newBackups, backupName);
+                if (!fsSync.existsSync(backupDest) && fsSync.statSync(backupSrc).isFile()) {
+                    await fs.copyFile(backupSrc, backupDest);
+                }
+            }
+        }
+
+        await fs.writeFile(
+            markerPath,
+            JSON.stringify({ from: legacyDir, migratedAt: new Date().toISOString() }, null, 2)
+        );
+        console.log('CommissionPro data migration complete');
+        return;
+    }
+}
+
 function initDB() {
     try {
         const Database = require('better-sqlite3');
@@ -307,6 +393,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+    await migrateLegacyUserData();
     initDB();
     // 确保配置文件存在
     const configPath = path.join(app.getPath('userData'), 'config.json');
