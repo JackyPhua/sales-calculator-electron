@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const ExcelJS = require('exceljs');
 const fs = require('fs').promises;
+const fsSync = require('fs');
+const { spawn } = require('child_process');
+const ExcelJS = require('exceljs');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 
@@ -49,7 +51,7 @@ function setupAutoUpdater() {
         dialog.showMessageBox(mainWindow, {
             type: 'info',
             title: 'Update Ready',
-            message: 'CommissionPro v' + info.version + ' has been downloaded.',
+            message: 'SalesPro v' + info.version + ' has been downloaded.',
             detail: 'The update will be installed when you restart the app. Restart now?',
             buttons: ['Restart Now', 'Later'],
             defaultId: 0
@@ -326,7 +328,7 @@ ipcMain.handle('open-excel-preview', async (event, data) => {
     try {
         const os = require('os');
         const tempPath = path.join(os.tmpdir(), 
-            'CommissionPro_' + (data.month || 'Report') + '_' + Date.now() + '.xlsx');
+            'SalesPro_' + (data.month || 'Report') + '_' + Date.now() + '.xlsx');
 
         const workbook = new ExcelJS.Workbook();
         
@@ -1569,6 +1571,43 @@ ipcMain.handle('readBackupFile', async (event, filePath) => {
 // ========== App Version ==========
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+// ========== Bundled Route Planner ==========
+const ROUTE_PLANNER_EXE = 'Route Planner 1.1.11.exe';
+
+function getRoutePlannerExePath() {
+    const candidates = [
+        path.join(process.resourcesPath, 'route-planner', ROUTE_PLANNER_EXE),
+        path.join(__dirname, 'resources', 'route-planner', ROUTE_PLANNER_EXE),
+        path.join(__dirname, '..', 'Route Planner', 'release', ROUTE_PLANNER_EXE)
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+        if (fsSync.existsSync(candidates[i])) return candidates[i];
+    }
+    return null;
+}
+
+ipcMain.handle('launch-route-planner', async () => {
+    const exePath = getRoutePlannerExePath();
+    if (!exePath) {
+        return { success: false, error: 'Route Planner not found. Please reinstall SalesPro.' };
+    }
+    try {
+        spawn(exePath, [], {
+            detached: true,
+            stdio: 'ignore',
+            cwd: path.dirname(exePath)
+        }).unref();
+        return { success: true, path: exePath };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.handle('get-route-planner-status', () => {
+    const exePath = getRoutePlannerExePath();
+    return { available: !!exePath, version: '1.1.11' };
 });
 
 // ========== Helper Functions ==========

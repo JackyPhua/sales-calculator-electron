@@ -6,3 +6,4 @@ Thumbs.db
 *.exe
 *.dmg
 *.AppImage
+!resources/route-planner/*.exe

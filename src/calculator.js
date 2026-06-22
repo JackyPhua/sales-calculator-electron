@@ -433,7 +433,7 @@ function showLicenseModal(featureName) {
     modal.innerHTML = `
         <div style="background:#fff;border-radius:16px;padding:0;max-width:440px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
             <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);padding:24px 28px;color:white;">
-                <h3 style="margin:0;font-size:20px;font-weight:700;">🔑 Activate CommissionPro</h3>
+                <h3 style="margin:0;font-size:20px;font-weight:700;">🔑 Activate SalesPro</h3>
                 <p style="margin:6px 0 0;font-size:13px;opacity:0.8;">Enter your license key to unlock all features</p>
             </div>
             <div style="padding:24px 28px;">
@@ -518,7 +518,7 @@ async function submitLicenseKey() {
     try {
         const result = await window.electronAPI.activateLicense(key);
         if (result.success) {
-            successEl.textContent = '✅ License activated successfully! Enjoy CommissionPro Pro.';
+            successEl.textContent = '✅ License activated successfully! Enjoy SalesPro Pro.';
             successEl.style.display = 'block';
             errorEl.style.display = 'none';
             window.licenseStatus = { status: 'pro', key: result.key };
@@ -1116,6 +1116,8 @@ function switchView(view) {
             });
         }
         if (typeof renderCompanyList === 'function') renderCompanyList();
+    } else if (view === 'routeplanner') {
+        if (typeof initRoutePlannerView === 'function') initRoutePlannerView();
     } else if (view === 'salary') {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
@@ -8121,10 +8123,67 @@ function printProjectionExcel() {
 }
 window.printProjectionExcel = printProjectionExcel;
 
+async function initRoutePlannerView() {
+    var statusEl = document.getElementById('rp-status');
+    var btn = document.getElementById('btn-launch-route-planner');
+    if (!window.electronAPI || !window.electronAPI.getRoutePlannerStatus) {
+        if (statusEl) {
+            statusEl.textContent = 'Route Planner launcher unavailable in this environment.';
+            statusEl.className = 'rp-status err';
+        }
+        if (btn) btn.disabled = true;
+        return;
+    }
+    try {
+        var info = await window.electronAPI.getRoutePlannerStatus();
+        if (statusEl) {
+            if (info.available) {
+                statusEl.textContent = 'Route Planner is bundled and ready to launch.';
+                statusEl.className = 'rp-status ok';
+            } else {
+                statusEl.textContent = 'Route Planner not found. Please reinstall SalesPro.';
+                statusEl.className = 'rp-status err';
+            }
+        }
+        if (btn) btn.disabled = !info.available;
+        var verEl = document.getElementById('rp-version-label');
+        if (verEl && info.version) verEl.textContent = 'v' + info.version;
+    } catch (e) {
+        if (statusEl) {
+            statusEl.textContent = 'Could not check Route Planner: ' + e.message;
+            statusEl.className = 'rp-status err';
+        }
+        if (btn) btn.disabled = true;
+    }
+}
+
+async function launchRoutePlanner() {
+    if (!window.electronAPI || !window.electronAPI.launchRoutePlanner) {
+        showToast('❌', 'Route Planner launcher unavailable');
+        return;
+    }
+    var btn = document.getElementById('btn-launch-route-planner');
+    if (btn) btn.disabled = true;
+    try {
+        var result = await window.electronAPI.launchRoutePlanner();
+        if (result && result.success) {
+            showToast('✅', 'Route Planner opened');
+        } else {
+            showToast('❌', (result && result.error) || 'Failed to launch Route Planner');
+        }
+    } catch (e) {
+        showToast('❌', e.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 // ==================== Global Function Export ====================
 
 window.initApp = initApp;
 window.switchView = switchView;
+window.launchRoutePlanner = launchRoutePlanner;
+window.initRoutePlannerView = initRoutePlannerView;
 // ==================== Payslip Preview Modal ====================
 function showPayslipPreview(index) {
     var person = window.appState.salespeople[index];

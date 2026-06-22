@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CommissionPro</title>
+    <title>SalesPro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -79,6 +79,21 @@
         }
         .action-btn--excel:hover{box-shadow:0 4px 16px rgba(5,150,105,.36);filter:brightness(1.05);}
         .page-toolbar-actions .action-btn{padding:10px 20px;font-size:12px;}
+        /* ── ROUTE PLANNER LAUNCHER ── */
+        .rp-launcher{max-width:560px;margin:40px auto;padding:0 16px;}
+        .rp-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh-md);overflow:hidden;}
+        .rp-card-head{background:linear-gradient(180deg,#1e4976 0%,#163556 100%);padding:28px 32px;color:#fff;text-align:center;}
+        .rp-card-icon{font-size:48px;line-height:1;margin-bottom:12px;}
+        .rp-card-title{font-size:20px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px;}
+        .rp-card-ver{font-size:12px;opacity:.75;font-family:'IBM Plex Mono',monospace;}
+        .rp-card-body{padding:28px 32px;text-align:center;}
+        .rp-desc{font-size:13px;color:var(--ink3);line-height:1.6;margin-bottom:24px;}
+        .rp-features{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;text-align:left;}
+        .rp-feature{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--ink2);padding:10px 12px;background:var(--sheet);border-radius:10px;border:1px solid var(--line);}
+        .rp-feature-icon{font-size:16px;flex-shrink:0;line-height:1.3;}
+        .rp-status{font-size:11px;color:var(--ink4);margin-top:14px;}
+        .rp-status.ok{color:#059669;}
+        .rp-status.err{color:#dc2626;}
         /* ── MONTH SELECT ── */
         .month-select-wrap{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r);font-size:12px;font-weight:700;color:var(--ink);}
         .month-select-wrap select{border:none;outline:none;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;}
@@ -663,7 +678,7 @@
 <nav id="app-nav">
     <div class="nav-logo">
         <div class="nav-logo-icon">💰</div>
-        CommissionPro
+        SalesPro
     </div>
     <div class="nav-spacer"></div>
     <div id="license-badge" onclick="showLicenseModal()">
@@ -680,6 +695,7 @@
     <button onclick="switchView('quick')"   id="tab-quick"    class="tab-button active">📊 Calculation</button>
     <button onclick="switchView('history')" id="tab-history"  class="tab-button">📜 Records</button>
     <button onclick="switchView('annual')"  id="tab-annual"   class="tab-button">📋 Annual</button>
+    <button onclick="switchView('routeplanner')" id="tab-routeplanner" class="tab-button">🗺️ Route Planner</button>
     <button onclick="switchView('settings')"id="tab-settings" class="tab-button">⚙️ Settings</button>
 </div>
 
@@ -1163,6 +1179,31 @@
         </div>
     </div>
 </div>
+
+<!-- ══════════════════ ROUTE PLANNER VIEW ══════════════════ -->
+<div id="view-routeplanner" class="view-container">
+    <div class="rp-launcher">
+        <div class="rp-card">
+            <div class="rp-card-head">
+                <div class="rp-card-icon">🗺️</div>
+                <div class="rp-card-title">Route Planner</div>
+                <div class="rp-card-ver" id="rp-version-label">v1.1.11</div>
+            </div>
+            <div class="rp-card-body">
+                <div class="rp-desc">Plan sales visits on a calendar — import customers, drag stops onto days, and export your route schedule.</div>
+                <div class="rp-features">
+                    <div class="rp-feature"><span class="rp-feature-icon">📥</span><span>Import customers from Excel / CSV</span></div>
+                    <div class="rp-feature"><span class="rp-feature-icon">📅</span><span>Drag visits onto calendar days</span></div>
+                    <div class="rp-feature"><span class="rp-feature-icon">🚗</span><span>Organise daily sales routes</span></div>
+                    <div class="rp-feature"><span class="rp-feature-icon">💾</span><span>Save &amp; load route plans</span></div>
+                </div>
+                <button type="button" id="btn-launch-route-planner" onclick="launchRoutePlanner()" class="action-btn action-btn--primary" style="padding:12px 32px;font-size:13px;">🚀 Open Route Planner</button>
+                <div id="rp-status" class="rp-status">Checking availability…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="view-settings" class="view-container">
     <div class="page-title-block" style="margin-bottom:10px;">
         <span class="page-heading">Settings</span>
@@ -1196,7 +1237,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v4.8.1</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.0</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>

@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
+    // ========== Route Planner ==========
+    launchRoutePlanner: () => ipcRenderer.invoke('launch-route-planner'),
+    getRoutePlannerStatus: () => ipcRenderer.invoke('get-route-planner-status'),
+
     // ========== 平台信息 ==========
     platform: process.platform
 });
