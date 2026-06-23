@@ -403,17 +403,25 @@
             .calc-grid{grid-template-columns:1fr;}
         }
         /* ── CALCULATION VIEW (refined workspace) ── */
-        #view-quick .calc-toolbar-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
-        #view-quick .calc-toolbar-left{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0;}
+        #view-quick .calc-toolbar-wrap{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);}
+        #view-quick .calc-toolbar-title-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:10px;}
+        #view-quick .calc-toolbar-left{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0;width:100%;}
         #view-quick .calc-toolbar-title{display:flex;flex-direction:column;gap:2px;min-width:0;}
         #view-quick .calc-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
-        #view-quick .calc-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
+        #view-quick .calc-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
+        #view-quick .calc-filter-row{display:flex;align-items:flex-end;width:100%;}
+        #view-quick .calc-filter-field{min-width:260px;max-width:480px;flex:1;}
         #view-quick .calc-period-box{display:inline-flex;align-items:center;gap:0;flex-wrap:wrap;padding:6px 8px;background:var(--paper);border:1.5px solid var(--line);border-radius:10px;box-shadow:var(--sh);}
         #view-quick .calc-period-box select{border:none;outline:none;background:transparent;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;padding:6px 8px;border-radius:8px;}
         #view-quick .calc-period-box select:hover{background:var(--sheet);}
         #view-quick .calc-period-sep{width:1px;height:22px;background:var(--line);flex-shrink:0;}
         #view-quick .calc-batch-btn{white-space:nowrap;}
-        #view-quick .calc-grid{gap:14px;grid-template-columns:196px minmax(0,1fr) 272px;align-items:stretch;min-height:0;}
+        #view-quick .calc-grid{gap:14px;grid-template-columns:minmax(0,1fr) 360px;align-items:stretch;min-height:0;}
+        #view-quick .calc-right{min-width:0;}
+        #view-quick .live-payslip-card .ps-head-title{font-size:12px!important;}
+        #view-quick .live-payslip-card table.ps-table{font-size:11px!important;}
+        #view-quick .live-payslip-card .ps-th td{padding:9px 11px!important;font-size:10px!important;}
+        #view-quick .live-payslip-card .ps-foot-val{font-size:19px!important;}
         #view-quick .person-sidebar{border-radius:12px;box-shadow:var(--sh-md);border-color:#dfe6ee;}
         #view-quick .sidebar-hd{padding:11px 14px;font-size:10px;letter-spacing:.1em;background:linear-gradient(180deg,var(--paper),var(--sheet));}
         #view-quick .person-row[data-type="Sales"] .p-av{background:#ccfbf1;color:#0f766e;}
@@ -506,11 +514,6 @@
         #view-quick .cw-mock-meta-cell{display:flex;flex-direction:column;gap:3px;}
         #view-quick .cw-mock-meta-lbl{font-size:9px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
         #view-quick .cw-mock-meta-val{font-size:12px;font-weight:700;color:#0f172a;}
-        #view-quick .cw-mock-close{
-            margin-left:auto;width:34px;height:34px;border:none;border-radius:10px;background:#fef2f2;color:#dc2626;
-            font-size:20px;line-height:1;cursor:pointer;font-weight:300;flex-shrink:0;
-        }
-        #view-quick .cw-mock-close:hover{background:#fee2e2;}
         #view-quick .cw-kpi-row--mock{
             display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px;
         }
@@ -559,7 +562,7 @@
         #view-quick .cw-trend-pos{color:#059669;font-weight:700;}
         #view-quick .cw-trend-neg{color:#dc2626;font-weight:700;}
         #view-quick .cw-mock-mid{
-            display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px;align-items:stretch;
+            display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;align-items:stretch;
         }
         @media(max-width:1100px){#view-quick .cw-mock-mid{grid-template-columns:1fr;}}
         #view-quick .cw-mock-tile{
@@ -622,16 +625,18 @@
         #view-quick .cw-wif-line{margin-bottom:4px;}
         #view-quick .cw-wif-net{color:#059669;font-weight:700;font-family:'IBM Plex Mono',monospace;}
         #view-quick .cw-whatif-disabled{opacity:.5;pointer-events:none;}
-        #view-quick .cw-tier-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;}
-        #view-quick .cw-tier-table th,#view-quick .cw-tier-table td{padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0;}
-        #view-quick .cw-tier-table th{font-size:9px;font-weight:800;color:#64748b;background:#f1f5f9;text-transform:uppercase;letter-spacing:.06em;}
+        #view-quick .cw-tier-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:6px;}
+        #view-quick .cw-tier-table th,#view-quick .cw-tier-table td{padding:5px 8px;text-align:left;border-bottom:1px solid #e2e8f0;}
+        #view-quick .cw-tier-table th{font-size:8px;font-weight:800;color:#64748b;background:#f1f5f9;text-transform:uppercase;letter-spacing:.06em;}
         #view-quick .cw-tier-table td:nth-child(2){text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;}
         #view-quick .cw-tier-table tr.cw-tier-active{background:#ecfdf5;outline:2px solid #10b981;outline-offset:-2px;}
         #view-quick .cw-tier-table tr.cw-tier-active td{font-weight:700;color:#047857;}
-        #view-quick .cw-tier-bar-wrap{height:10px;border-radius:99px;overflow:hidden;margin-top:8px;
+        #view-quick .cw-tier-section{margin-top:14px;padding-top:12px;border-top:1px solid #bfdbfe;}
+        #view-quick .cw-tier-section-hd{font-size:9px;font-weight:800;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;}
+        #view-quick .cw-tier-bar-wrap{height:8px;border-radius:99px;overflow:hidden;margin-top:6px;
             background:linear-gradient(90deg,#fee2e2 0%,#fef9c3 28%,#d1fae5 58%,#6ee7b7 100%);}
         #view-quick .cw-tier-bar-fill{height:100%;width:0;border-radius:99px;background:rgba(15,23,42,.28);transition:width .35s ease;}
-        #view-quick .cw-tier-bar-lbl{font-size:10px;font-weight:700;color:#475569;margin-top:8px;text-align:center;}
+        #view-quick .cw-tier-bar-lbl{font-size:9px;font-weight:700;color:#475569;margin-top:6px;text-align:center;}
         #view-quick .cw-mock-footer{
             display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;
             padding-top:14px;border-top:1px solid #e8edf3;
@@ -744,10 +749,13 @@
 <div id="view-quick" class="view-container active" style="display:block">
     <!-- Toolbar -->
     <div class="toolbar calc-toolbar-wrap">
-        <div class="calc-toolbar-left">
-            <div class="calc-toolbar-title">
-                <span class="calc-heading">Calculation</span>
+        <div class="calc-toolbar-title-row">
+            <span class="calc-heading">Calculation</span>
+            <div class="calc-toolbar-right">
+                <button type="button" onclick="showBatchExportModal()" class="tbtn calc-batch-btn">Batch export</button>
             </div>
+        </div>
+        <div class="calc-toolbar-left">
             <div class="calc-period-box">
                 <select id="report-year" aria-label="Year">
                 </select>
@@ -760,29 +768,30 @@
                     <option value="SEP">SEP</option><option value="OCT">OCT</option>
                     <option value="NOV">NOV</option><option value="DEC">DEC</option>
                 </select>
-                <span class="calc-period-sep" aria-hidden="true"></span>
-                <select id="calc-group-select" onchange="filterByGroup()" aria-label="Employee group">
-                    <option value="ALL">All Groups</option>
-                    <option value="Sales">💼 Sales</option>
-                    <option value="Supervisor">👔 Management Staff</option>
-                    <option value="Support Staff">🛠️ Support Staff</option>
-                </select>
             </div>
-        </div>
-        <div class="calc-toolbar-right">
-            <button type="button" onclick="showBatchExportModal()" class="tbtn calc-batch-btn">Batch export</button>
+            <div class="calc-filter-row">
+                <div class="filter-field calc-filter-field">
+                    <div class="filter-lbl">Group</div>
+                    <select id="calc-group-select" class="filter-select" onchange="onCalcGroupChange()">
+                        <option value="ALL">All Groups</option>
+                        <option value="Sales">💼 Sales</option>
+                        <option value="Supervisor">👔 Supervisor</option>
+                        <option value="Support Staff">🛠️ Support Staff</option>
+                    </select>
+                </div>
+            </div>
+            <div class="calc-filter-row">
+                <div class="filter-field calc-filter-field">
+                    <div class="filter-lbl">Person</div>
+                    <select id="calc-person-select" class="filter-select" onchange="onCalcPersonChange()">
+                        <option value="">— Select person —</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="calc-grid">
-        <!-- Person Sidebar -->
-        <div class="person-sidebar">
-            <div class="sidebar-hd" id="sidebar-count">Salesperson</div>
-            <div id="person-sidebar-list">
-                <!-- Populated by JS -->
-            </div>
-        </div>
-
         <!-- Center: Cards + Fields -->
         <div class="calc-center">
             <!-- Achievement Hero (hidden until person selected) -->
@@ -813,7 +822,6 @@
                         <div class="cw-mock-meta">
                             <div class="cw-mock-meta-cell"><span class="cw-mock-meta-lbl">Department</span><span class="cw-mock-meta-val" id="cw-meta-dept">—</span></div>
                         </div>
-                        <button type="button" class="cw-mock-close" title="Remove salesperson" aria-label="Remove salesperson" onclick="var p=window.appState.salespeople[0];if(p&amp;&amp;p.id)deleteSalespersonCard(p.id)">&times;</button>
                     </header>
 
                     <div class="cw-kpi-row cw-kpi-row--mock">
@@ -866,12 +874,12 @@
                                 <span class="cw-net-lbl">Net payable (this month)</span>
                                 <span id="cw-net-val" class="cw-net-val">RM 0.00</span>
                             </div>
-                        </div>
-                        <div class="cw-mock-tile" id="cw-tier-panel">
-                            <div class="cw-panel-hd">Commission tier table</div>
-                            <table class="cw-tier-table" id="cw-tier-table" aria-label="Commission tiers"></table>
-                            <div class="cw-tier-bar-wrap"><div class="cw-tier-bar-fill" id="cw-tier-bar-fill" style="width:0%"></div></div>
-                            <div class="cw-tier-bar-lbl" id="cw-tier-bar-lbl">Your position: 0% achievement</div>
+                            <div class="cw-tier-section" id="cw-tier-panel">
+                                <div class="cw-tier-section-hd">Commission tier table</div>
+                                <table class="cw-tier-table" id="cw-tier-table" aria-label="Commission tiers"></table>
+                                <div class="cw-tier-bar-wrap"><div class="cw-tier-bar-fill" id="cw-tier-bar-fill" style="width:0%"></div></div>
+                                <div class="cw-tier-bar-lbl" id="cw-tier-bar-lbl">Your position: 0% achievement</div>
+                            </div>
                         </div>
                     </div>
 
@@ -1237,7 +1245,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.0</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.1</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>

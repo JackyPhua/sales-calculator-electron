@@ -1369,7 +1369,8 @@ async function initQuickCalculate() {
     }
     // Update summary
     updateSummaryView();
-    
+    if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
+
     console.log('✅ Quick Calculate initialization completed');
 }
 
@@ -2732,171 +2733,164 @@ function updateAchievementHero() {
     }
 }
 
-function renderPersonSidebar() {
-    var list = document.getElementById('person-sidebar-list');
-    var countEl = document.getElementById('sidebar-count');
-    if (!list) return;
-
+function getBaseConfiguredPeople() {
     var configPeople = Object.keys(window.appState.config.base_salaries || {});
     if (configPeople.length === 0) {
-        configPeople = window.appState.salespeople.filter(function(p){return p.name;}).map(function(p){return p.name;});
+        configPeople = window.appState.salespeople.filter(function(p) { return p.name; }).map(function(p) { return p.name; });
     }
-    // Hide inactive (resigned) people from the daily entry sidebar
     if (typeof isEmployeeActive === 'function') {
-        configPeople = configPeople.filter(function(n){ return isEmployeeActive(n); });
+        configPeople = configPeople.filter(function(n) { return isEmployeeActive(n); });
     }
+    return configPeople;
+}
 
-    if (countEl) countEl.textContent = 'Salesperson \u00b7 ' + configPeople.length;
-    list.innerHTML = '';
-
-    var companies = (window.appState.config.companies || []).slice();
-    var hasCompanies = companies.length > 0;
-
-    var typeOrder = {'Sales':0,'Supervisor':1,'Support Staff':2};
-    function sortByType(arr) {
-        return arr.slice().sort(function(a,b){
-            var tA = typeOrder[getEmployeeType(a)]!==undefined ? typeOrder[getEmployeeType(a)] : 3;
-            var tB = typeOrder[getEmployeeType(b)]!==undefined ? typeOrder[getEmployeeType(b)] : 3;
-            return tA - tB;
-        });
+function getCalcConfiguredPeople() {
+    var configPeople = getBaseConfiguredPeople();
+    var groupSel = document.getElementById('calc-group-select');
+    var selectedGroup = groupSel ? groupSel.value : 'ALL';
+    if (selectedGroup !== 'ALL') {
+        configPeople = configPeople.filter(function(n) { return getEmployeeType(n) === selectedGroup; });
     }
-
-    // Group people by company
-    var groups = [];
-    if (hasCompanies) {
-        companies.forEach(function(c) {
-            var members = sortByType(configPeople.filter(function(n) { return getEmployeeCompany(n) === c; }));
-            if (members.length > 0) groups.push({ company: c, people: members });
-        });
-        var unassigned = sortByType(configPeople.filter(function(n) { return !getEmployeeCompany(n); }));
-        if (unassigned.length > 0) groups.push({ company: '', people: unassigned });
-    } else {
-        groups.push({ company: '', people: sortByType(configPeople) });
-    }
-
-    groups.forEach(function(group) {
-        if (hasCompanies && group.company) {
-            var hdr = document.createElement('div');
-            hdr.style.cssText = 'padding:7px 12px;font-size:10px;font-weight:800;color:#1e293b;text-transform:uppercase;letter-spacing:.6px;line-height:1.3;background:var(--sheet);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;';
-            hdr.innerHTML = '<span style="font-size:11px;line-height:1;">\ud83c\udfe2</span><span>' + group.company + '</span>';
-            list.appendChild(hdr);
-        } else if (hasCompanies && !group.company) {
-            var hdr2 = document.createElement('div');
-            hdr2.style.cssText = 'padding:6px 12px;font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;background:var(--sheet);border-bottom:1px solid var(--line);';
-            hdr2.textContent = '\u2014 Unassigned \u2014';
-            list.appendChild(hdr2);
-        }
-
-        group.people.forEach(function(personName) {
-            var empType = getEmployeeType(personName);
-            var currentMonth = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
-            var currentYear = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
-            var monthKey = currentMonth + '-' + currentYear;
-            var history = window.appState.config.reportHistory || [];
-            var histEntry = history.find(function(r){ return (r.month||'').toUpperCase() === monthKey; })
-                         || history.find(function(r){ return (r.month||'').toUpperCase() === currentMonth; });
-            var pData = histEntry && histEntry.data ? histEntry.data.find(function(p){ return (p.name||'').toUpperCase() === personName.toUpperCase(); }) : null;
-
-            var curPerson = window.appState.salespeople[0];
-            if (!pData && curPerson && (curPerson.name||'').toUpperCase() === personName.toUpperCase()) {
-                pData = curPerson;
-            }
-
-            var ach = pData && pData.target > 0 ? (parseFloat(pData.sales)||0) / parseFloat(pData.target) * 100 : 0;
-            var achColor = ach>=100?'#059669':ach>=90?'#b45309':'#e11d48';
-            var achBg    = ach>=100?'#d1fae5':ach>=90?'#fef3c7':'#ffe4e6';
-
-            var row = document.createElement('div');
-            row.className = 'person-row';
-            row.setAttribute('data-type', empType);
-            row.setAttribute('data-name', personName.toUpperCase());
-            if (curPerson && (curPerson.name||'').toUpperCase() === personName.toUpperCase()) {
-                row.classList.add('active');
-            }
-            row.innerHTML =
-                '<div class="p-av">'+personName[0]+'</div>'
-                + '<span class="p-name">'+personName+'</span>'
-                + (empType==='Sales' && ach>0 ? '<span class="p-ach" style="background:'+achBg+';color:'+achColor+';">'+ach.toFixed(2)+'%</span>' : '');
-
-            row.addEventListener('click', (function(name){ return function() {
-                var mon = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
-                var yr = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
-                var mKey = mon + '-' + yr;
-                var hist = window.appState.config.reportHistory || [];
-
-                var curName = (document.getElementById('name-0')||{}).value || '';
-                if (curName && curName.toUpperCase() !== name.toUpperCase()) {
-                    function getField(id) {
-                        var el = document.getElementById(id + '-0');
-                        if (!el) return 0;
-                        if (el.disabled) {
-                            var sp = window.appState.salespeople[0];
-                            if (id === 'target' && sp && sp.target) return sp.target;
-                            if (id === 'collection-target' && sp && sp.collectionTarget) return sp.collectionTarget;
-                            if (id === 'call-target' && sp && sp.callTarget) return sp.callTarget;
-                        }
-                        return parseFloat(el.value) || 0;
-                    }
-                    var curTarget = getField('target');
-                    var curSales  = getField('sales');
-                    if (curName && (curTarget > 0 || curSales > 0)) {
-                        var hIdx = hist.findIndex(function(r){ return (r.month||'').toUpperCase() === mKey || (r.month||'').toUpperCase() === mon; });
-                        if (hIdx === -1) { hist.push({ month: mKey, data: [] }); hIdx = hist.length - 1; }
-                        if (!hist[hIdx].data) hist[hIdx].data = [];
-                        var pIdx2 = hist[hIdx].data.findIndex(function(p){ return (p.name||'').toUpperCase() === curName.toUpperCase(); });
-                        var saveObj = {
-                            name: curName.toUpperCase(),
-                            target: curTarget, sales: curSales,
-                            collectionTarget: getField('collection-target'),
-                            collectionAmount: getField('collection-amount'),
-                            callTarget: getField('call-target'),
-                            callActual: getField('call-actual')
-                        };
-                        if (pIdx2 >= 0) hist[hIdx].data[pIdx2] = saveObj;
-                        else hist[hIdx].data.push(saveObj);
-                        dbSave('reportHistory', hist).catch(function(){});
-                        saveConfig();
-                        dbSave('reportHistory', hist).catch(function(){});
-                    }
-                }
-
-                document.querySelectorAll('.person-row').forEach(function(r){ r.classList.remove('active'); });
-                row.classList.add('active');
-
-                var hEntry = hist.find(function(r){ return (r.month||'').toUpperCase() === mKey; })
-                          || hist.find(function(r){ return (r.month||'').toUpperCase() === mon; });
-                var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){ return (p.name||'').toUpperCase() === name.toUpperCase(); }) : null;
-
-                var nameEl = document.getElementById('name-0');
-                if (nameEl) nameEl.value = name;
-                var nameText = document.getElementById('card-name-text-0');
-                var avatarEl = document.getElementById('card-avatar-0');
-                if (nameText) nameText.textContent = name;
-                if (avatarEl) avatarEl.textContent = name ? name[0] : '?';
-
-                function setField(id, v) {
-                    var el = document.getElementById(id + '-0');
-                    if (el) el.value = (v != null && v !== '' && v !== 0) ? v : '';
-                }
-                setField('sales',             pd ? pd.sales : '');
-                setField('collection-amount',  pd ? pd.collectionAmount : '');
-                setField('call-actual',        pd ? pd.callActual : '');
-
-                if (window.appState.salespeople.length > 0) {
-                    window.appState.salespeople[0].name = name;
-                    if (pd) {
-                        window.appState.salespeople[0].target = parseFloat(pd.target) || 0;
-                        window.appState.salespeople[0].collectionTarget = parseFloat(pd.collectionTarget) || 0;
-                        window.appState.salespeople[0].callTarget = parseFloat(pd.callTarget) || 0;
-                    }
-                }
-                if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
-                updateSalespersonData(0);
-            }; })(personName));
-
-            list.appendChild(row);
-        });
+    var typeOrder = { 'Sales': 0, 'Supervisor': 1, 'Support Staff': 2 };
+    return configPeople.slice().sort(function(a, b) {
+        var tA = typeOrder[getEmployeeType(a)] !== undefined ? typeOrder[getEmployeeType(a)] : 3;
+        var tB = typeOrder[getEmployeeType(b)] !== undefined ? typeOrder[getEmployeeType(b)] : 3;
+        if (tA !== tB) return tA - tB;
+        return a.localeCompare(b);
     });
+}
+
+function populateCalcPersonSelect(preferredName) {
+    var sel = document.getElementById('calc-person-select');
+    if (!sel) return null;
+    var people = getCalcConfiguredPeople();
+    if (people.length === 0) {
+        sel.innerHTML = '<option value="">— No person —</option>';
+        sel.value = '';
+        return null;
+    }
+    var curName = preferredName
+        || (window.appState.salespeople[0] && window.appState.salespeople[0].name)
+        || sel.value;
+    sel.innerHTML = people.map(function(n) {
+        return '<option value="' + n.replace(/"/g, '&quot;') + '">' + n + '</option>';
+    }).join('');
+    var match = people.find(function(n) { return n.toUpperCase() === (curName || '').toUpperCase(); });
+    var chosen = match || people[0];
+    sel.value = chosen;
+    return chosen;
+}
+
+function saveCurrentCalcPersonBeforeSwitch() {
+    var curPerson = window.appState.salespeople[0];
+    var curNameEl = document.getElementById('name-0');
+    var curNameDisp = document.getElementById('card-name-text-0');
+    var curName = (curPerson && curPerson.name) ? curPerson.name
+        : (curNameDisp && curNameDisp.textContent !== '—') ? curNameDisp.textContent
+        : (curNameEl ? curNameEl.value : '');
+    if (!curName) return;
+
+    function getField(id) {
+        var el = document.getElementById(id + '-0');
+        if (!el) return 0;
+        if (el.disabled) {
+            var sp = window.appState.salespeople[0];
+            if (id === 'target' && sp && sp.target) return sp.target;
+            if (id === 'collection-target' && sp && sp.collectionTarget) return sp.collectionTarget;
+            if (id === 'call-target' && sp && sp.callTarget) return sp.callTarget;
+        }
+        return parseFloat(el.value) || 0;
+    }
+    var curTarget = getField('target');
+    var curSales = getField('sales');
+    if (!(curTarget > 0 || curSales > 0)) return;
+
+    var mon = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var yr = ((document.getElementById('report-year') || {}).value || '') || String(new Date().getFullYear());
+    var mKey = mon + '-' + yr;
+    var hist = window.appState.config.reportHistory || [];
+    var hIdx = hist.findIndex(function(r) { return (r.month || '').toUpperCase() === mKey || (r.month || '').toUpperCase() === mon; });
+    if (hIdx === -1) { hist.push({ month: mKey, data: [] }); hIdx = hist.length - 1; }
+    if (!hist[hIdx].data) hist[hIdx].data = [];
+    var pIdx2 = hist[hIdx].data.findIndex(function(p) { return (p.name || '').toUpperCase() === curName.toUpperCase(); });
+    var saveObj = {
+        name: curName.toUpperCase(),
+        target: curTarget,
+        sales: curSales,
+        collectionTarget: getField('collection-target'),
+        collectionAmount: getField('collection-amount'),
+        callTarget: getField('call-target'),
+        callActual: getField('call-actual')
+    };
+    if (pIdx2 >= 0) hist[hIdx].data[pIdx2] = saveObj;
+    else hist[hIdx].data.push(saveObj);
+    dbSave('reportHistory', hist).catch(function() {});
+    saveConfig();
+}
+
+function selectCalcPerson(name, options) {
+    options = options || {};
+    if (!name) return;
+    var curPerson = window.appState.salespeople[0];
+    var curName = (curPerson && curPerson.name) || (document.getElementById('name-0') || {}).value || '';
+    if (!options.force && curName && curName.toUpperCase() === name.toUpperCase()) return;
+
+    if (curName && curName.toUpperCase() !== name.toUpperCase()) {
+        saveCurrentCalcPersonBeforeSwitch();
+    }
+
+    var mon = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var yr = ((document.getElementById('report-year') || {}).value || '') || String(new Date().getFullYear());
+    var mKey = mon + '-' + yr;
+    var hist = window.appState.config.reportHistory || [];
+    var hEntry = hist.find(function(r) { return (r.month || '').toUpperCase() === mKey; })
+        || hist.find(function(r) { return (r.month || '').toUpperCase() === mon; });
+    var pd = hEntry && hEntry.data ? hEntry.data.find(function(p) { return (p.name || '').toUpperCase() === name.toUpperCase(); }) : null;
+
+    var nameEl = document.getElementById('name-0');
+    if (nameEl) nameEl.value = name;
+    var nameText = document.getElementById('card-name-text-0');
+    var avatarEl = document.getElementById('card-avatar-0');
+    if (nameText) nameText.textContent = name;
+    if (avatarEl) avatarEl.textContent = name ? name[0] : '?';
+
+    function setField(id, v) {
+        var el = document.getElementById(id + '-0');
+        if (el) el.value = (v != null && v !== '' && v !== 0) ? v : '';
+    }
+    setField('sales', pd ? pd.sales : '');
+    setField('collection-amount', pd ? pd.collectionAmount : '');
+    setField('call-actual', pd ? pd.callActual : '');
+
+    if (window.appState.salespeople.length > 0) {
+        window.appState.salespeople[0].name = name;
+        if (pd) {
+            window.appState.salespeople[0].target = parseFloat(pd.target) || 0;
+            window.appState.salespeople[0].collectionTarget = parseFloat(pd.collectionTarget) || 0;
+            window.appState.salespeople[0].callTarget = parseFloat(pd.callTarget) || 0;
+        }
+    }
+
+    var pSel = document.getElementById('calc-person-select');
+    if (pSel && pSel.value.toUpperCase() !== name.toUpperCase()) pSel.value = name;
+
+    if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
+    updateSalespersonData(0);
+}
+
+function onCalcPersonChange() {
+    var sel = document.getElementById('calc-person-select');
+    if (sel && sel.value) selectCalcPerson(sel.value, { force: true });
+}
+
+function onCalcGroupChange() {
+    var name = populateCalcPersonSelect();
+    if (name) selectCalcPerson(name, { force: true });
+}
+
+function renderPersonSidebar() {
+    var cur = window.appState.salespeople[0] && window.appState.salespeople[0].name;
+    populateCalcPersonSelect(cur);
 }
 
 
@@ -6181,32 +6175,9 @@ function filterPeopleList(query) {
 
 // (Team selectors are now hardcoded group dropdowns in HTML)
 
-// Filter sidebar in Calculation by employee group
+// Filter Calculation person list by employee group (Sales / Supervisor / Support Staff)
 function filterByGroup() {
-    var sel = document.getElementById('calc-group-select');
-    var selectedGroup = sel ? sel.value : 'ALL';
-    var list = document.getElementById('person-sidebar-list');
-    if (!list) return;
-    var children = list.children;
-    var visibleCount = 0;
-    for (var i = 0; i < children.length; i++) {
-        var child = children[i];
-        if (child.classList.contains('person-row')) {
-            var pType = child.getAttribute('data-type') || 'Sales';
-            var show = selectedGroup === 'ALL' || pType === selectedGroup;
-            child.style.display = show ? '' : 'none';
-            if (show) visibleCount++;
-        } else {
-            // Company group headers - hide when filtering by type
-            child.style.display = selectedGroup === 'ALL' ? '' : 'none';
-        }
-    }
-    // Update sidebar count
-    var countEl = document.getElementById('sidebar-count');
-    if (countEl) {
-        var label = selectedGroup === 'ALL' ? 'Salesperson' : selectedGroup;
-        countEl.textContent = label + ' · ' + visibleCount;
-    }
+    onCalcGroupChange();
 }
 
 function buildHistoryExportPeople(report) {
@@ -9151,6 +9122,9 @@ window.resetToGlobalComm=resetToGlobalComm;
 window.addTempRate=addTempRate;
 window.addTempIncentive=addTempIncentive;
 window.renderPersonSidebar=renderPersonSidebar;
+window.onCalcPersonChange=onCalcPersonChange;
+window.onCalcGroupChange=onCalcGroupChange;
+window.selectCalcPerson=selectCalcPerson;
 window.updateAchievementHero=updateAchievementHero;
 
 window.promptAddPerson = promptAddPerson;
@@ -9158,7 +9132,6 @@ window.filterPeopleList = filterPeopleList;
 window.renderPeopleList = renderPeopleList;
 window.showSalaryModal = showSalaryModal;
 window.showCommissionModal = showCommissionModal;
-window.renderPersonSidebar = renderPersonSidebar;
 window.updateAchievementHero = updateAchievementHero;
 window.addSalespersonCard = addSalespersonCard;
 window.deleteSalespersonCard = deleteSalespersonCard;
