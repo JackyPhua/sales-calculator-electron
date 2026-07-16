@@ -1008,14 +1008,6 @@ function switchView(view) {
         if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
     } else if (view === 'history') {
         if (typeof loadQuickCalculateHistory === 'function') loadQuickCalculateHistory();
-    } else if (view === 'report') {
-        var _ps = document.getElementById('proj-person-select');
-        var _ms = document.getElementById('proj-month-select');
-        var _ys = document.getElementById('proj-year-select');
-        if (_ps) _ps._userOverride = false;
-        if (_ms) _ms._userOverride = false;
-        if (_ys) _ys._userOverride = false;
-        if (typeof renderProjectionReport === 'function') renderProjectionReport();
     } else if (view === 'annual') {
         if (!window._annualUnlocked) {
             if (viewEl) { viewEl.style.display = 'none'; }
@@ -7708,7 +7700,8 @@ function renderProjectionReport() {
             });
         }
         if (!yearSelect._userOverride) {
-            yearSelect.value = curYear;
+            var calcYearEl = document.getElementById('report-year');
+            yearSelect.value = (calcYearEl && calcYearEl.value) ? calcYearEl.value : String(curYear);
         }
     }
 
@@ -7987,6 +7980,94 @@ function printProjectionReport() {
 }
 window.renderProjectionReport = renderProjectionReport;
 window.printProjectionReport  = printProjectionReport;
+
+function syncProjectionFromCalculate() {
+    var calcMonth = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var calcYear = ((document.getElementById('report-year') || {}).value || '') || String(new Date().getFullYear());
+    var person0 = window.appState.salespeople[0];
+    var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+
+    var yearSelect = document.getElementById('proj-year-select');
+    if (yearSelect) {
+        yearSelect._userOverride = false;
+        yearSelect.value = calcYear;
+    }
+    var monthSelect = document.getElementById('proj-month-select');
+    if (monthSelect) {
+        monthSelect._userOverride = false;
+        if (calcMonth) monthSelect.value = calcMonth;
+    }
+    var personSelect = document.getElementById('proj-person-select');
+    if (personSelect && calcName) {
+        personSelect._userOverride = false;
+        var opts = Array.from(personSelect.options || []);
+        var match = opts.find(function(o) { return (o.value || '').toUpperCase() === calcName; });
+        if (match) personSelect.value = calcName;
+    }
+}
+
+function closeProjectionFullscreenModal() {
+    var modal = document.getElementById('projection-fullscreen-modal');
+    if (modal) modal.remove();
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', _projFsEscHandler);
+}
+
+function _projFsEscHandler(e) {
+    if (e.key === 'Escape') closeProjectionFullscreenModal();
+}
+
+function showProjectionFullscreenModal() {
+    closeProjectionFullscreenModal();
+
+    if (typeof renderProjectionReport === 'function') {
+        syncProjectionFromCalculate();
+        renderProjectionReport();
+    }
+
+    var bodyEl = document.getElementById('projection-report-body');
+    if (!bodyEl) return;
+
+    var personLabel = (document.getElementById('proj-person-name') || {}).textContent || '—';
+    var monthLabel = (document.getElementById('proj-month-label') || {}).textContent || '';
+    var content = bodyEl.innerHTML;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'projection-fullscreen-modal';
+    overlay.className = 'proj-fs-modal';
+    overlay.innerHTML =
+        '<div class="proj-fs-card" role="dialog" aria-modal="true" aria-labelledby="proj-fs-title">'
+        + '<div class="proj-fs-head">'
+        + '<div><div id="proj-fs-title" class="proj-fs-title">📈 Projection — ' + personLabel + '</div>'
+        + '<div class="proj-fs-sub">' + monthLabel + '</div></div>'
+        + '<div class="proj-fs-actions">'
+        + '<button type="button" class="proj-fs-btn proj-fs-btn--ghost" id="proj-fs-excel">📊 Print Excel</button>'
+        + '<button type="button" class="proj-fs-btn proj-fs-btn--ghost" id="proj-fs-pdf">🖨️ Print PDF</button>'
+        + '<button type="button" class="proj-fs-btn proj-fs-btn--close" id="proj-fs-close">✕ Close</button>'
+        + '</div></div>'
+        + '<div class="proj-fs-body" id="proj-fs-body"></div>'
+        + '</div>';
+
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+
+    var fsBody = document.getElementById('proj-fs-body');
+    if (fsBody) fsBody.innerHTML = content;
+
+    document.getElementById('proj-fs-close').addEventListener('click', closeProjectionFullscreenModal);
+    document.getElementById('proj-fs-excel').addEventListener('click', function() {
+        if (typeof printProjectionExcel === 'function') printProjectionExcel();
+    });
+    document.getElementById('proj-fs-pdf').addEventListener('click', function() {
+        if (typeof printProjectionReport === 'function') printProjectionReport();
+    });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay && e.target.classList.contains('proj-fs-modal')) closeProjectionFullscreenModal();
+    });
+    document.addEventListener('keydown', _projFsEscHandler);
+}
+window.showProjectionFullscreenModal = showProjectionFullscreenModal;
+window.closeProjectionFullscreenModal = closeProjectionFullscreenModal;
 
 function printProjectionExcel() {
     var personSelect = document.getElementById('proj-person-select');
@@ -8540,18 +8621,30 @@ function manualSave() {
         }
     }
 
-    // Save to JSON config
-    window.electronAPI.saveConfig(window.appState.config).then(function(r){
-        if(r && r.success) showToast('✅', 'Saved!');
-        else showToast('❌', 'Save failed: ' + (r && r.error || 'unknown'));
-    }).catch(function(e){ showToast('❌', e.message); });
-
     // Save to SQLite DB
     dbSave('quickCalculateData', snapshot);
     dbSave('reportHistory', window.appState.config.reportHistory);
 
     // Refresh history if visible
     if (document.getElementById('history-list')) loadQuickCalculateHistory();
+
+    var savedPerson = window.appState.salespeople[0];
+    var openProjection = savedPerson && savedPerson.name && getEmployeeType(savedPerson.name) === 'Sales';
+
+    function afterSaved() {
+        if (openProjection && typeof showProjectionFullscreenModal === 'function') {
+            showProjectionFullscreenModal();
+        }
+    }
+
+    window.electronAPI.saveConfig(window.appState.config).then(function(r){
+        if(r && r.success) {
+            showToast('✅', 'Saved!');
+            afterSaved();
+        } else {
+            showToast('❌', 'Save failed: ' + (r && r.error || 'unknown'));
+        }
+    }).catch(function(e){ showToast('❌', e.message); });
 }
 window.manualSave = manualSave;
 
