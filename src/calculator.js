@@ -9884,29 +9884,44 @@ function renderAnnualReport() {
         html += '<div class="report-panel-body report-scroll"><table class="report-table">';
         html += '<thead><tr><th>Month</th>';
         salesDisplay.forEach(function(p) { html += '<th colspan="3" class="rt-num rt-border">'+p+'</th>'; });
+        html += '<th colspan="3" class="rt-num rt-border">Total</th>';
         html += '</tr><tr><th></th>';
         salesDisplay.forEach(function() { html += '<th class="rt-num rt-border">Target</th><th class="rt-num">Sales</th><th class="rt-num">Ach%</th>'; });
+        html += '<th class="rt-num rt-border">Target</th><th class="rt-num">Sales</th><th class="rt-num">Ach%</th>';
         html += '</tr></thead><tbody>';
         displayMonths.forEach(function(m) {
             var hasData = salesDisplay.some(function(p){return peopleData[p][m];});
             if (!hasData) return;
+            var monthTarget = 0, monthSales = 0;
             html += '<tr><td style="font-weight:700;">'+m+'</td>';
             salesDisplay.forEach(function(p) {
                 var d = peopleData[p][m];
+                if (d) { monthTarget += d.target || 0; monthSales += d.sales || 0; }
                 html += '<td class="rt-num rt-mono rt-border">'+(d?fmt(d.target):'—')+'</td>';
                 html += '<td class="rt-num rt-mono" style="font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
                 html += '<td class="rt-num rt-mono '+(d?achCls(d.ach):'')+'" style="font-weight:700;">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
             });
+            var monthAch = monthTarget > 0 ? (monthSales / monthTarget * 100) : 0;
+            html += '<td class="rt-num rt-mono rt-border" style="font-weight:700;">'+(monthTarget > 0 ? fmt(monthTarget) : '—')+'</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:800;">'+(monthSales > 0 ? fmt(monthSales) : '—')+'</td>';
+            html += '<td class="rt-num rt-mono '+(monthTarget > 0 ? achCls(monthAch) : '')+'" style="font-weight:800;">'+(monthTarget > 0 ? monthAch.toFixed(2)+'%' : '—')+'</td>';
             html += '</tr>';
         });
         html += '<tr class="rt-total"><td>TOTAL</td>';
+        var grandTarget = 0, grandSales = 0;
         salesDisplay.forEach(function(p) {
             var tT=0, tS=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d){tT+=d.target;tS+=d.sales;}});
+            grandTarget += tT;
+            grandSales += tS;
             var tA = tT>0?(tS/tT*100):0;
             html += '<td class="rt-num rt-mono rt-border">'+fmt(tT)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmt(tS)+'</td>';
             html += '<td class="rt-num rt-mono '+achCls(tA)+'">'+tA.toFixed(2)+'%</td>';
         });
+        var grandAch = grandTarget > 0 ? (grandSales / grandTarget * 100) : 0;
+        html += '<td class="rt-num rt-mono rt-border">'+fmt(grandTarget)+'</td>';
+        html += '<td class="rt-num rt-mono">'+fmt(grandSales)+'</td>';
+        html += '<td class="rt-num rt-mono '+achCls(grandAch)+'">'+grandAch.toFixed(2)+'%</td>';
         html += '</tr></tbody></table></div></div>';
     }
 
