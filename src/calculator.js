@@ -5577,13 +5577,100 @@ function cwTierSortIdx(achievement, rates) {
     return -1;
 }
 function cwSalesFromHistory(name, month, yearStr) {
+    var row = cwPersonRowFromHistory(name, month, yearStr);
+    if (row) return parseFloat(row.sales) || 0;
+    return null;
+}
+function cwPersonRowFromHistory(name, month, yearStr) {
     var nu = (name || '').toUpperCase();
     var h = findHistEntry(window.appState.config.reportHistory || [], month, yearStr);
     if (h && h.data) {
         var row = h.data.find(function(p) { return (p.name || '').toUpperCase() === nu; });
-        if (row) return parseFloat(row.sales) || 0;
+        if (row) return row;
     }
     return null;
+}
+function cwRenderPrevMonthItem(lbl, val, extraClass) {
+    return '<div class="cw-prev-month-item"><span class="cw-prev-month-lbl">' + lbl + '</span>'
+        + '<span class="cw-prev-month-val' + (extraClass ? ' ' + extraClass : '') + '">' + val + '</span></div>';
+}
+function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear, curSales) {
+    var panel = document.getElementById('cw-prev-month-panel');
+    var lblEl = document.getElementById('cw-prev-month-label');
+    var bodyEl = document.getElementById('cw-prev-month-body');
+    if (!panel || !bodyEl) return;
+
+    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var mi = months.indexOf((selMonth || '').toUpperCase());
+    var pm = mi <= 0 ? months[11] : months[mi - 1];
+    var py = mi <= 0 ? selYear - 1 : selYear;
+    var monthLabel = pm + ' ' + py;
+    if (lblEl) lblEl.textContent = monthLabel;
+
+    var html = '';
+    var foot = '';
+
+    if (empType === 'Supervisor') {
+        var teamPrev = cwSupervisorTeamTotals(pm, String(py));
+        var hasData = teamPrev.teamSales > 0 || teamPrev.teamTarget > 0;
+        if (!hasData) {
+            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved team data for ' + monthLabel + '.</div>';
+            return;
+        }
+        var prevAch = teamPrev.teamTarget > 0 ? (teamPrev.teamSales / teamPrev.teamTarget) * 100 : 0;
+        html += cwRenderPrevMonthItem('Team sales', formatCurrency(teamPrev.teamSales));
+        html += cwRenderPrevMonthItem('Team target', formatCurrency(teamPrev.teamTarget));
+        html += cwRenderPrevMonthItem('Achievement', prevAch.toFixed(1) + '%', 'cw-prev-month-ach');
+        html += cwRenderPrevMonthItem('Commission', '\u2014');
+    } else if (empType === 'Support Staff') {
+        var rowS = cwPersonRowFromHistory(person.name, pm, String(py));
+        if (!rowS) {
+            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved data for ' + monthLabel + '.</div>';
+            return;
+        }
+        var blocks = parseFloat(rowS.collectionAmount) || 0;
+        html += cwRenderPrevMonthItem('Blocks', String(blocks));
+        html += cwRenderPrevMonthItem('Block target', String(parseFloat(rowS.collectionTarget) || 0));
+        html += cwRenderPrevMonthItem('Call actual', String(parseFloat(rowS.callActual) || 0));
+        html += cwRenderPrevMonthItem('Call target', String(parseFloat(rowS.callTarget) || 0));
+    } else {
+        var row = cwPersonRowFromHistory(person.name, pm, String(py));
+        if (!row) {
+            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved data for ' + monthLabel + '.</div>';
+            return;
+        }
+        var prevSales = parseFloat(row.sales) || 0;
+        var prevTarget = parseFloat(row.target) || 0;
+        var prevAch = prevTarget > 0 ? (prevSales / prevTarget) * 100 : 0;
+        var prevComm = calculateCommission(prevSales, prevTarget, person.name);
+        html += cwRenderPrevMonthItem('Sales', formatCurrency(prevSales));
+        html += cwRenderPrevMonthItem('Target', formatCurrency(prevTarget));
+        html += cwRenderPrevMonthItem('Achievement', prevTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014', 'cw-prev-month-ach');
+        html += cwRenderPrevMonthItem('Commission', formatCurrency(prevComm));
+
+        var prevCollAmt = parseFloat(row.collectionAmount) || 0;
+        var prevCollTgt = parseFloat(row.collectionTarget) || 0;
+        var prevCallAct = parseFloat(row.callActual) || 0;
+        var prevCallTgt = parseFloat(row.callTarget) || 0;
+        if (prevCollAmt > 0 || prevCollTgt > 0) {
+            html += cwRenderPrevMonthItem('Collection', formatCurrency(prevCollAmt) + ' / ' + formatCurrency(prevCollTgt));
+        }
+        if (prevCallAct > 0 || prevCallTgt > 0) {
+            html += cwRenderPrevMonthItem('Active call', String(prevCallAct) + ' / ' + String(prevCallTgt));
+        }
+
+        if (prevSales > 0 && curSales > 0) {
+            var chg = ((curSales - prevSales) / prevSales) * 100;
+            var cl = chg >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
+            var arr = chg >= 0 ? '\u25b4' : '\u25bc';
+            foot = 'vs this month sales: <span class="' + cl + '">' + arr + ' ' + Math.abs(chg).toFixed(1) + '%</span>';
+        } else if (prevSales === 0 && curSales > 0) {
+            foot = 'vs this month: up from RM 0 last month';
+        }
+    }
+
+    bodyEl.innerHTML = '<div class="cw-prev-month-grid">' + html + '</div>'
+        + (foot ? '<div class="cw-prev-month-foot">' + foot + '</div>' : '');
 }
 function cwBindWhatIf() {
     if (window._cwWhatIfBound) return;
@@ -5870,6 +5957,8 @@ function updateCalcWorkspace() {
 
     cwSetText('cw-kpi-proj', formatCurrency(totalInc));
     cwSetText('cw-net-val', formatCurrency(grand));
+
+    cwUpdatePrevMonthPanel(person, empType, selMonth, selYear, sales);
 
     var upEl = document.getElementById('cw-mock-updated');
     if (upEl) {
@@ -7959,7 +8048,7 @@ function renderProjectionReport() {
         }
     }
 
-    body.innerHTML = html;
+    body.innerHTML = '<div class="proj-report-root">' + html + '</div>';
 }
 
 function printProjectionReport() {
@@ -8021,11 +8110,45 @@ function closeProjectionFullscreenModal() {
     if (modal) modal.remove();
     document.body.style.overflow = '';
     document.removeEventListener('keydown', _projFsEscHandler);
+    window.removeEventListener('resize', _projFsResizeHandler);
 }
 
 function _projFsEscHandler(e) {
     if (e.key === 'Escape') closeProjectionFullscreenModal();
 }
+
+function _projFsResizeHandler() {
+    if (document.getElementById('projection-fullscreen-modal')) fitProjectionToScreen();
+}
+
+/** Scale projection card to fit viewport — no scroll. */
+function fitProjectionToScreen() {
+    var wrap = document.querySelector('#projection-fullscreen-modal .proj-fs-scale-wrap');
+    var inner = document.getElementById('proj-fs-inner');
+    if (!wrap || !inner) return;
+
+    inner.style.zoom = '1';
+    inner.style.transform = 'none';
+    inner.style.marginBottom = '0';
+    inner.style.width = '100%';
+    inner.style.maxWidth = '1280px';
+
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            var availW = wrap.clientWidth;
+            var availH = wrap.clientHeight;
+            var contentW = inner.offsetWidth;
+            var contentH = inner.scrollHeight;
+            if (!contentW || !contentH || !availW || !availH) return;
+
+            var scale = Math.min(1, availW / contentW, availH / contentH);
+            scale = Math.max(0.01, Math.floor(scale * 1000) / 1000);
+
+            inner.style.zoom = String(scale);
+        });
+    });
+}
+window.fitProjectionToScreen = fitProjectionToScreen;
 
 function openProjectionFromToolbar() {
     var sel = document.getElementById('calc-person-select');
@@ -8075,14 +8198,18 @@ function showProjectionFullscreenModal() {
         + '<button type="button" class="proj-fs-btn proj-fs-btn--ghost" id="proj-fs-pdf">🖨️ Print PDF</button>'
         + '<button type="button" class="proj-fs-btn proj-fs-btn--close" id="proj-fs-close">✕ Close</button>'
         + '</div></div>'
-        + '<div class="proj-fs-body" id="proj-fs-body"></div>'
+        + '<div class="proj-fs-body"><div class="proj-fs-scale-wrap"><div class="proj-fs-inner" id="proj-fs-inner"></div></div></div>'
         + '</div>';
 
     document.body.appendChild(overlay);
     document.body.style.overflow = 'hidden';
 
-    var fsBody = document.getElementById('proj-fs-body');
-    if (fsBody) fsBody.innerHTML = content;
+    var fsInner = document.getElementById('proj-fs-inner');
+    if (fsInner) fsInner.innerHTML = content;
+    fitProjectionToScreen();
+    setTimeout(fitProjectionToScreen, 60);
+    setTimeout(fitProjectionToScreen, 180);
+    window.addEventListener('resize', _projFsResizeHandler);
 
     document.getElementById('proj-fs-close').addEventListener('click', closeProjectionFullscreenModal);
     document.getElementById('proj-fs-excel').addEventListener('click', function() {

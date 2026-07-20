@@ -38,9 +38,110 @@
         #app-body{max-width:1600px;margin:0 auto;padding:10px 20px;}
         .view-container{display:none;}
         .view-container.active{display:block;}
-        /* ── PAGE TITLE (top-left of each view) ── */
+        /* ── PAGE TITLE (legacy; prefer page-header-bar) ── */
         .page-title-block{display:flex;flex-direction:column;gap:2px;min-width:0;}
         .page-heading{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.4px;line-height:1.2;}
+        /* ── SHARED PAGE HEADER BAR (Sales Insight style) ── */
+        :root{--app-navy:#1e4976;--app-navy-d:#163556;--app-navy-xl:#f4f7fb;--app-header-border:#d4dce8;}
+        .page-header-bar,
+        #view-quick .calc-toolbar-compact{
+            display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;
+            padding:10px 14px 10px 16px;margin-bottom:10px;
+            background:linear-gradient(135deg,var(--app-navy-d) 0%,var(--app-navy) 55%,#1a5a8a 100%);
+            border:1px solid rgba(255,255,255,.08);border-radius:12px;flex-shrink:0;
+            box-shadow:0 4px 18px rgba(22,53,86,.22),inset 0 1px 0 rgba(255,255,255,.08);
+            position:relative;overflow:hidden;
+        }
+        .page-header-bar::after,
+        #view-quick .calc-toolbar-compact::after{
+            content:'';position:absolute;top:0;right:0;width:40%;height:100%;pointer-events:none;
+            background:radial-gradient(ellipse at 100% 0%,rgba(56,189,248,.18) 0%,transparent 70%);
+        }
+        .page-header-title-wrap{display:flex;flex-direction:column;gap:2px;min-width:0;position:relative;z-index:1;margin-right:4px;}
+        .page-header-title,
+        #view-quick .calc-heading-sm{
+            font-size:15px;font-weight:800;color:#fff;letter-spacing:-.2px;white-space:nowrap;
+            margin-right:8px;line-height:1.2;display:inline-flex;align-items:center;gap:8px;
+            position:relative;z-index:1;
+        }
+        .page-header-title::before,
+        #view-quick .calc-heading-sm::before{
+            content:'';width:8px;height:8px;border-radius:50%;flex-shrink:0;
+            background:linear-gradient(135deg,#34d399,#14b8a6);
+            box-shadow:0 0 0 3px rgba(52,211,153,.25);
+        }
+        .page-header-sub{font-size:11px;color:rgba(255,255,255,.72);font-weight:500;line-height:1.25;}
+        .page-header-bar > .filter-field,
+        .page-header-bar .page-toolbar-filters .filter-field,
+        #view-quick .calc-toolbar-compact .filter-field{flex:0 0 168px;width:168px;min-width:168px;max-width:168px;position:relative;z-index:1;}
+        #view-quick .calc-toolbar-compact .filter-lbl--ghost{visibility:hidden;}
+        #view-quick .calc-toolbar-compact .filter-select,
+        #view-quick .calc-toolbar-compact .calc-period-box{
+            width:100%;box-sizing:border-box;height:32px;min-height:32px;
+            padding:0 10px;display:flex;align-items:center;
+            font-size:11px;border:1px solid rgba(255,255,255,.18);
+            background:rgba(255,255,255,.96);color:var(--app-navy-d);border-radius:8px;
+            box-shadow:0 1px 4px rgba(8,15,26,.12);outline:none;font-family:'Sora',sans-serif;
+        }
+        #view-quick .calc-toolbar-compact select.filter-select{
+            width:100%;height:32px;min-height:32px;padding:0 28px 0 10px;line-height:32px;
+            display:block;appearance:auto;-webkit-appearance:menulist;
+        }
+        .page-header-bar .filter-lbl,
+        #view-quick .calc-toolbar-compact .filter-lbl{
+            font-size:8px;margin-bottom:3px;color:rgba(255,255,255,.55);font-weight:700;
+            letter-spacing:.08em;text-transform:uppercase;
+        }
+        .page-header-bar .filter-select,
+        .page-header-bar .if{
+            padding:6px 10px;font-size:11px;border:1px solid rgba(255,255,255,.18);
+            background:rgba(255,255,255,.96);color:var(--app-navy-d);border-radius:8px;
+            box-shadow:0 1px 4px rgba(8,15,26,.12);outline:none;font-family:'Sora',sans-serif;
+        }
+        .page-header-bar .filter-select:focus,
+        .page-header-bar .if:focus,
+        #view-quick .calc-toolbar-compact .filter-select:focus,
+        #view-quick .calc-toolbar-compact .calc-period-box:focus-within{
+            border-color:#93c5fd;box-shadow:0 0 0 2px rgba(147,197,253,.35);
+        }
+        .page-header-bar .page-toolbar-actions,
+        #view-quick .calc-toolbar-btns{
+            display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto;
+            margin-bottom:2px;position:relative;z-index:1;
+        }
+        .page-header-bar .page-header-spacer,
+        #view-quick .calc-toolbar-spacer{flex:1;min-width:8px;}
+        .page-header-bar .tbtn{
+            padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:8px;
+            background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:600;
+            border-style:solid;
+        }
+        .page-header-bar .tbtn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35);}
+        .page-header-bar .action-btn{
+            padding:7px 14px;font-size:11px;border-radius:8px;transform:none;
+        }
+        .page-header-bar .action-btn:hover{transform:none;}
+        .page-header-bar .action-btn--primary{
+            border:none;background:linear-gradient(180deg,#059669 0%,#047857 100%);
+            color:#fff;box-shadow:0 2px 10px rgba(4,120,87,.35),inset 0 1px 0 rgba(255,255,255,.15);
+        }
+        .page-header-bar .action-btn--primary:hover{filter:brightness(1.07);}
+        .page-header-bar .action-btn--outline,
+        .page-header-bar .action-btn--excel{
+            background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.22);
+            box-shadow:none;
+        }
+        .page-header-bar .action-btn--outline:hover,
+        .page-header-bar .action-btn--excel:hover{background:rgba(255,255,255,.18);}
+        .page-header-bar .seg-toggle{background:rgba(255,255,255,.12);border-radius:8px;padding:3px;}
+        .page-header-bar .seg-toggle-btn{color:rgba(255,255,255,.78);padding:6px 12px;font-size:11px;}
+        .page-header-bar .seg-toggle-btn.active{background:#fff;color:var(--app-navy-d);box-shadow:0 1px 4px rgba(8,15,26,.12);}
+        .page-subtoolbar,
+        .annual-filter-bar{
+            display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px;
+            padding:8px 12px;background:rgba(232,238,245,.9);
+            border:1px solid var(--app-header-border);border-radius:10px;
+        }
         /* ── TOOLBAR ── */
         .toolbar{display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px;flex-wrap:wrap;}
         .tool-sep{width:1px;height:22px;background:var(--line);margin:0 2px;}
@@ -336,7 +437,6 @@
         .lic-hint{font-size:11px;color:#94a3b8;margin-top:6px;}
         #company-list .company-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px;font-weight:600;color:var(--ink2);}
         /* ── ANNUAL / EXPENSES REPORT ── */
-        .annual-filter-bar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);}
         .annual-filter-bar .filter-field{flex:0;}
         .report-kpi-grid{margin-bottom:18px;}
         @media(max-width:900px){.report-kpi-grid.dash-kpi-grid{grid-template-columns:repeat(2,1fr);}}
@@ -413,44 +513,15 @@
         body:has(#view-quick.active){overflow:hidden;background:linear-gradient(165deg,#dfe6ef 0%,#eef2f7 45%,#e8eef5 100%);}
         #app-body:has(#view-quick.active){padding:6px 14px 6px;overflow:hidden;max-width:none;margin:0;height:calc(100vh - 93px);display:flex;flex-direction:column;}
         #view-quick.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden;min-height:0;flex:1;}
-        #view-quick .calc-toolbar-compact{
-            display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;padding:10px 14px 10px 16px;margin-bottom:8px;
-            background:linear-gradient(135deg,var(--calc-navy-d) 0%,var(--calc-navy) 55%,#1a5a8a 100%);
-            border:1px solid rgba(255,255,255,.08);border-radius:12px;flex-shrink:0;
-            box-shadow:0 4px 18px rgba(22,53,86,.22),inset 0 1px 0 rgba(255,255,255,.08);
-            position:relative;overflow:hidden;
-        }
-        #view-quick .calc-toolbar-compact::after{
-            content:'';position:absolute;top:0;right:0;width:40%;height:100%;pointer-events:none;
-            background:radial-gradient(ellipse at 100% 0%,rgba(56,189,248,.18) 0%,transparent 70%);
-        }
-        #view-quick .calc-heading-sm{
-            font-size:15px;font-weight:800;color:#fff;letter-spacing:-.2px;white-space:nowrap;margin-right:8px;line-height:32px;
-            display:inline-flex;align-items:center;gap:8px;position:relative;z-index:1;
-        }
-        #view-quick .calc-heading-sm::before{
-            content:'';width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#34d399,#14b8a6);
-            box-shadow:0 0 0 3px rgba(52,211,153,.25);
-        }
-        #view-quick .calc-toolbar-spacer{flex:1;min-width:8px;}
-        #view-quick .calc-toolbar-compact .filter-field{flex:0 1 160px;min-width:130px;position:relative;z-index:1;}
-        #view-quick .calc-toolbar-compact .filter-lbl{font-size:8px;margin-bottom:3px;color:rgba(255,255,255,.55);font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
-        #view-quick .calc-toolbar-compact .filter-select{
-            padding:6px 10px;font-size:11px;border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.96);
-            color:var(--calc-navy-d);box-shadow:0 1px 4px rgba(8,15,26,.12);
-        }
-        #view-quick .calc-toolbar-compact .filter-select:focus{border-color:#93c5fd;box-shadow:0 0 0 2px rgba(147,197,253,.35);outline:none;}
         #view-quick .calc-period-box{
-            display:inline-flex;align-items:center;gap:4px;padding:4px 8px;
-            background:rgba(255,255,255,.96);border:1px solid rgba(255,255,255,.2);border-radius:8px;
-            box-shadow:0 1px 4px rgba(8,15,26,.12);position:relative;z-index:1;
+            gap:6px;cursor:default;
         }
-        #view-quick .calc-period-sep{width:1px;height:18px;background:var(--calc-border);flex-shrink:0;}
+        #view-quick .calc-period-sep{width:1px;align-self:stretch;height:auto;min-height:18px;background:var(--calc-border);flex-shrink:0;margin:6px 0;}
         #view-quick .calc-period-box select{
-            padding:5px 6px;font-size:11px;border:none;outline:none;background:transparent;
-            font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--calc-navy-d);cursor:pointer;
+            flex:1 1 0;min-width:0;height:100%;padding:0;border:none;outline:none;background:transparent;
+            font-size:11px;font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--calc-navy-d);cursor:pointer;
+            appearance:auto;-webkit-appearance:menulist;
         }
-        #view-quick .calc-toolbar-btns{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px;position:relative;z-index:1;}
         #view-quick .calc-btn-save{
             padding:7px 16px;border:none;border-radius:8px;
             background:linear-gradient(180deg,#059669 0%,#047857 100%);
@@ -469,16 +540,23 @@
             border-color:rgba(255,255,255,.5)!important;font-weight:700!important;
         }
         #view-quick .calc-btn-proj:hover{background:#fff!important;box-shadow:0 2px 8px rgba(8,15,26,.12)!important;}
-        #view-quick .calc-grid{gap:8px;grid-template-columns:minmax(0,1fr) 320px;align-items:stretch;flex:1;min-height:0;overflow:hidden;height:auto!important;}
-        #view-quick .calc-center{gap:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
+        #view-quick .calc-grid{
+            display:grid;gap:8px;grid-template-columns:minmax(0,1fr);
+            grid-template-rows:minmax(0,1fr);align-items:stretch;
+            flex:1;min-height:0;overflow:hidden;
+        }
+        #view-quick .calc-center{
+            gap:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;
+            height:100%;align-self:stretch;
+        }
         #view-quick .calc-right{min-width:0;overflow:hidden;display:flex;flex-direction:column;}
-        #view-quick .calc-workspace{display:none;width:100%;box-sizing:border-box;flex:1;min-height:0;overflow:hidden;margin:0;}
-        #view-quick .calc-workspace.cw-visible{display:flex;flex-direction:column;min-height:0;}
+        #view-quick .calc-workspace{display:none;width:100%;box-sizing:border-box;flex:1 1 0;min-height:0;overflow:hidden;margin:0;}
+        #view-quick .calc-workspace.cw-visible{display:flex;flex-direction:column;min-height:0;flex:1 1 0;}
         #view-quick .cw-mock-shell{
             background:linear-gradient(180deg,#fff 0%,var(--calc-navy-xl) 100%);
             border:1px solid var(--calc-border);border-radius:12px;
             box-shadow:0 4px 20px rgba(22,53,86,.08),inset 0 1px 0 #fff;
-            padding:8px 10px 6px;max-width:100%;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+            padding:8px 10px 6px;max-width:100%;flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden;
         }
         #view-quick .cw-mock-header{display:none!important;}
         #view-quick .cw-mock-bottom{display:none!important;}
@@ -540,55 +618,142 @@
         #view-quick .cw-kpi--tier .cw-kpi-tier-ln > div{min-width:0;flex:1;}
         #view-quick .cw-kpi--tier .cw-btn-outline{display:none;}
         #view-quick .cw-mock-mid{
-            display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:1;min-height:0;overflow:hidden;margin-bottom:0;
+            display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(240px,280px);
+            grid-template-rows:minmax(0,1fr);gap:6px;flex:1 1 0;min-height:0;overflow:hidden;
+            margin-bottom:0;align-items:stretch;
+        }
+        #view-quick .cw-mock-mid > .cw-mock-tile{
+            min-height:0;max-height:100%;align-self:stretch;display:flex;flex-direction:column;overflow:hidden;
         }
         #view-quick .cw-mock-tile{
             padding:0;border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden;
             background:#fff;border:1px solid var(--calc-border);
             box-shadow:0 2px 8px rgba(22,53,86,.05);
         }
-        #view-quick .cw-mock-tile .cw-panel-hd{
-            font-size:8px;margin:0;padding:8px 10px 7px;
-            color:#fff;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
-            border-bottom:none;
-            background:linear-gradient(90deg,var(--calc-navy-d),var(--calc-navy));
-        }
         #view-quick .cw-tile-inputs .cw-panel-hd{background:linear-gradient(90deg,#0f766e,#0d9488);}
         #view-quick .cw-panel-accent .cw-panel-hd{background:linear-gradient(90deg,#1d4ed8,#2563eb);}
-        #view-quick .cw-tile-inputs > .cw-mock-inputs-host,
-        #view-quick .cw-panel-accent > .cw-steps,
-        #view-quick .cw-panel-accent > .cw-net-box,
-        #view-quick .cw-panel-accent > .cw-tier-section{padding-left:10px;padding-right:10px;}
-        #view-quick .cw-tile-inputs > .cw-mock-inputs-host{padding-top:8px;padding-bottom:8px;}
-        #view-quick .cw-panel-accent > .cw-steps{padding-top:8px;}
-        #view-quick .cw-panel-accent > .cw-tier-section{padding-bottom:8px;}
-        #view-quick .cw-tile-inputs{overflow-y:auto;min-height:0;}
-        #view-quick .cw-panel-accent{overflow-y:auto;min-height:0;background:linear-gradient(180deg,#f8fafc 0%,#eff6ff 100%);}
-        #view-quick .cw-steps{font-size:9px;line-height:1.35;margin:0 0 6px;padding-left:14px;color:#334155;}
-        #view-quick .cw-steps li{margin-bottom:2px;}
-        #view-quick .cw-net-box{
-            margin-top:4px;padding:8px 10px;border-radius:8px;
+        #view-quick .cw-mock-mid .cw-panel-hd{
+            font-size:8px;margin:0;padding:0 10px;height:28px;min-height:28px;max-height:28px;
+            box-sizing:border-box;color:#fff;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+            border-bottom:none;flex-shrink:0;display:flex;align-items:center;line-height:1.2;
+            background:linear-gradient(90deg,var(--calc-navy-d),var(--calc-navy));
+            overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+        }
+        #view-quick .cw-mock-mid .cw-tile-body{
+            flex:1 1 0;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;
+            padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;background:#fff;
+            align-items:stretch;justify-content:flex-start;
+        }
+        #view-quick .cw-tile-payslip .cw-panel-hd{
+            background:linear-gradient(90deg,var(--calc-navy-d),var(--calc-navy))!important;
+        }
+        #view-quick .cw-tile-payslip .cw-tile-body{padding:8px 8px 10px;gap:0;overflow:hidden;}
+        #view-quick .cw-tile-payslip .live-payslip-card{
+            flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
+            background:transparent!important;border:none!important;border-radius:0!important;
+            box-shadow:none!important;margin:0!important;font-size:10px!important;
+        }
+        #view-quick .ps-ach-strip{display:none!important;}
+        #view-quick .cw-tile-inputs .calc-person-card{padding:0!important;border:none!important;box-shadow:none!important;background:transparent!important;}
+        #view-quick .cw-tile-inputs .calc-person-card .calc-card-hd{margin-top:0;padding-top:0;margin-bottom:8px;padding-bottom:8px;}
+        #view-quick .cw-tile-inputs,
+        #view-quick .cw-panel-accent{overflow:hidden;min-height:0;display:flex;flex-direction:column;background:#fff;}
+        #view-quick .cw-panel-accent .cw-tile-body{background:linear-gradient(180deg,#f8fafc 0%,#eff6ff 100%);}
+        /* Commission panel: scroll inside fixed-height tile (same as left) */
+        #view-quick .cw-panel-accent .cw-calc-body{
+            flex:1 1 0;min-height:0;max-height:100%;justify-content:flex-start;gap:6px;padding:0;overflow:visible;
+        }
+        #view-quick .cw-prev-month{
+            flex:0 0 auto;margin:0;padding:8px 10px;border-radius:8px;
+            background:rgba(255,255,255,.85);border:1px solid var(--calc-border);
+        }
+        #view-quick .cw-prev-month-hd{
+            font-size:8px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;
+            text-transform:uppercase;margin:0 0 6px;
+        }
+        #view-quick .cw-prev-month-grid{
+            display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;
+        }
+        #view-quick .cw-prev-month-item{display:flex;flex-direction:column;gap:1px;min-width:0;}
+        #view-quick .cw-prev-month-lbl{
+            font-size:8px;font-weight:700;color:var(--calc-muted);letter-spacing:.04em;text-transform:uppercase;
+        }
+        #view-quick .cw-prev-month-val{
+            font-size:11px;font-weight:800;color:var(--calc-navy-d);font-family:'IBM Plex Mono',monospace;line-height:1.2;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        }
+        #view-quick .cw-prev-month-val.cw-prev-month-ach{color:#0f766e;}
+        #view-quick .cw-prev-month-foot{
+            margin-top:6px;padding-top:6px;border-top:1px solid rgba(212,220,232,.7);
+            font-size:9px;font-weight:600;color:var(--calc-muted);line-height:1.35;
+        }
+        #view-quick .cw-prev-month-foot .cw-trend-pos,
+        #view-quick .cw-prev-month-foot .cw-trend-neg{font-family:'IBM Plex Mono',monospace;font-weight:800;}
+        #view-quick .cw-prev-month-empty{font-size:9px;color:var(--calc-muted);font-weight:600;line-height:1.4;}
+        #view-quick .cw-panel-accent .cw-steps{
+            flex:0 0 auto;margin:0;padding:8px 10px 8px 16px;
+            font-size:10px;line-height:1.45;color:#334155;
+            background:rgba(255,255,255,.72);border:1px solid var(--calc-border);border-radius:8px;
+        }
+        #view-quick .cw-panel-accent .cw-steps li{margin-bottom:4px;}
+        #view-quick .cw-panel-accent .cw-steps li:last-child{margin-bottom:0;}
+        #view-quick .cw-panel-accent .cw-step-lbl{font-size:10px;font-weight:700;color:var(--calc-navy);}
+        #view-quick .cw-panel-accent .cw-net-box{
+            flex:0 0 auto;margin:0;padding:9px 12px;border-radius:8px;
+            display:flex;align-items:center;justify-content:space-between;gap:10px;
             background:linear-gradient(135deg,var(--calc-navy) 0%,#1a5a8a 50%,var(--calc-navy-d) 100%);
             border:none;box-shadow:0 3px 12px rgba(22,53,86,.2);
         }
-        #view-quick .cw-net-val{font-size:14px;color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:800;}
-        #view-quick .cw-tier-section{margin-top:6px;padding-top:6px;border-top:1px solid var(--calc-border);}
-        #view-quick .cw-tier-table th,#view-quick .cw-tier-table td{padding:3px 5px;font-size:8px;}
+        #view-quick .cw-panel-accent .cw-net-lbl{font-size:9px;font-weight:800;color:rgba(255,255,255,.82);letter-spacing:.07em;text-transform:uppercase;}
+        #view-quick .cw-panel-accent .cw-net-val{font-size:16px;color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:800;white-space:nowrap;line-height:1.1;}
+        #view-quick .cw-panel-accent .cw-tier-section{
+            flex:0 0 auto;margin:0;padding:8px 0 0;border-top:1px solid var(--calc-border);
+        }
+        #view-quick .cw-panel-accent .cw-tier-section-hd{
+            font-size:9px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;
+            text-transform:uppercase;margin:0 0 5px;
+        }
+        #view-quick .cw-panel-accent .cw-tier-table{width:100%;border-collapse:collapse;margin:0;table-layout:fixed;}
+        #view-quick .cw-panel-accent .cw-tier-table th,
+        #view-quick .cw-panel-accent .cw-tier-table td{
+            padding:5px 8px!important;font-size:10px!important;line-height:1.25!important;
+            text-align:left;border-bottom:1px solid #e2e8f0;height:auto!important;
+        }
+        #view-quick .cw-panel-accent .cw-tier-table th{
+            font-weight:800;color:var(--calc-navy);background:var(--calc-navy-l);
+            text-transform:uppercase;letter-spacing:.06em;font-size:9px!important;
+        }
+        #view-quick .cw-panel-accent .cw-tier-table td:nth-child(2){
+            text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--calc-navy-d);
+        }
+        #view-quick .cw-panel-accent .cw-tier-table tr.cw-tier-active td{
+            background:rgba(30,73,118,.08);font-weight:700;color:var(--calc-navy-d);
+            box-shadow:inset 0 0 0 1px var(--calc-navy);
+        }
+        #view-quick .cw-panel-accent .cw-tier-bar-wrap{
+            height:6px;border-radius:99px;overflow:hidden;margin-top:6px;
+            background:linear-gradient(90deg,#e2e8f0 0%,var(--calc-navy-l) 40%,#cbd5e1 100%);
+        }
+        #view-quick .cw-panel-accent .cw-tier-bar-lbl{
+            font-size:9px;font-weight:700;color:var(--calc-muted);margin-top:5px;text-align:center;
+        }
         #view-quick .calc-person-card{padding:10px 12px!important;}
         #view-quick .calc-person-card label.block{font-size:8px!important;margin-bottom:4px!important;min-height:0!important;}
         #view-quick .calc-person-card .input-field{padding:6px 8px!important;font-size:11px!important;}
         #view-quick .calc-person-card .calc-section-hd{font-size:9px;margin:8px 0 4px;padding-top:8px;}
         #view-quick .calc-person-card .grid{gap:6px!important;}
-        #view-quick .live-payslip-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;font-size:10px!important;}
-        #view-quick .live-payslip-card .ps-head{padding:6px 8px!important;}
-        #view-quick .live-payslip-card .ps-foot{padding:6px 8px!important;}
-        #view-quick .live-payslip-card .ps-foot-val{font-size:14px!important;}
-        #view-quick .live-payslip-card .ps-meta{padding:6px 8px!important;}
-        #view-quick .live-payslip-card .ps-mini{gap:4px;margin-top:4px;}
-        #view-quick .live-payslip-card .ps-mini-box{padding:4px 6px;}
-        #view-quick .live-payslip-card table.ps-table{font-size:9px!important;}
+        #view-quick .live-payslip-card .ps-foot{padding:6px 8px!important;flex-shrink:0;}
+        #view-quick .live-payslip-card .ps-meta{padding:6px 8px!important;flex-shrink:0;}
+        #view-quick .live-payslip-card table.ps-table{flex:0 0 auto;font-size:9px!important;}
         #view-quick .live-payslip-card .ps-th td{padding:5px 6px!important;font-size:8px!important;}
         #view-quick .live-payslip-card tbody td{padding:4px 6px!important;font-size:9px!important;}
+        #view-quick .cw-mock-mid .cw-panel-hd #ps-title{
+            display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
+            font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;
+        }
+        #view-quick .live-payslip-card .ps-mini{gap:4px;margin-top:4px;}
+        #view-quick .live-payslip-card .ps-mini-box{padding:4px 6px;}
+        #view-quick .live-payslip-card .ps-foot-val{font-size:14px!important;}
         /* legacy toolbar rules (other views) */
         #view-quick .calc-toolbar-wrap{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);}
         #view-quick .person-sidebar{border-radius:12px;box-shadow:var(--sh-md);border-color:#dfe6ee;}
@@ -723,7 +888,7 @@
         #view-quick .cw-tier-table th,#view-quick .cw-tier-table td{padding:5px 8px;text-align:left;border-bottom:1px solid #e2e8f0;}
         #view-quick .cw-tier-table th{font-size:8px;font-weight:800;color:var(--calc-navy);background:var(--calc-navy-l);text-transform:uppercase;letter-spacing:.06em;}
         #view-quick .cw-tier-table td:nth-child(2){text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--calc-navy-d);}
-        #view-quick .cw-tier-table tr.cw-tier-active{background:rgba(30,73,118,.08);outline:2px solid var(--calc-navy);outline-offset:-2px;}
+        #view-quick .cw-tier-table tr.cw-tier-active{background:rgba(30,73,118,.08);}
         #view-quick .cw-tier-table tr.cw-tier-active td{font-weight:700;color:var(--calc-navy-d);}
         #view-quick .cw-tier-section-hd{font-size:9px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;}
         #view-quick .cw-tier-bar-wrap{height:8px;border-radius:99px;overflow:hidden;margin-top:6px;
@@ -749,6 +914,19 @@
         #view-quick #calc-workspace .calc-card-del{display:none!important;}
         #view-quick #calc-workspace .calc-card-foot{display:none!important;}
         #view-quick #calc-workspace .cw-mock-inputs-host{width:100%;}
+        #view-quick #calc-workspace .cw-tile-body .calc-person-card .calc-section-hd{
+            font-size:8px!important;margin:5px 0 3px!important;padding:4px 6px!important;
+        }
+        #view-quick #calc-workspace .cw-tile-body .calc-person-card label.block{
+            font-size:8px!important;margin-bottom:3px!important;
+        }
+        #view-quick #calc-workspace .cw-tile-body .calc-person-card .input-field{
+            padding:5px 7px!important;font-size:10px!important;
+        }
+        #view-quick #calc-workspace .cw-tile-body .calc-person-card .grid{gap:5px!important;}
+        #view-quick #calc-workspace .calc-input-cell > label.block{
+            min-height:0!important;align-items:flex-start!important;line-height:1.2!important;
+        }
         /* Keep existing card styles for salespeople cards */
         .card{transition:all .3s ease;}
         .animate-fadeIn{animation:fadeIn .2s ease-out;}
@@ -761,17 +939,63 @@
         .loading-spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;}
         @keyframes spin{to{transform:rotate(360deg)}}
         /* Projection fullscreen modal (after Calculation save) */
-        .proj-fs-modal{position:fixed;inset:0;background:var(--sheet,#f8fafc);z-index:99999;display:flex;flex-direction:column;padding:0;box-sizing:border-box;}
-        .proj-fs-card{background:var(--paper,#fff);border:none;border-radius:0;box-shadow:none;width:100%;height:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;animation:fadeIn .15s ease-out;}
-        .proj-fs-head{background:linear-gradient(180deg,#1e4976 0%,#163556 100%);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;flex-shrink:0;}
-        .proj-fs-title{font-size:18px;font-weight:800;color:#fff;letter-spacing:-.3px;}
-        .proj-fs-sub{font-size:12px;color:rgba(255,255,255,.75);margin-top:3px;}
+        .proj-fs-modal{
+            position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;
+            background:var(--sheet,#f8fafc);z-index:99999;display:flex;flex-direction:column;
+            padding:0;box-sizing:border-box;overflow:hidden;
+        }
+        .proj-fs-card{
+            background:var(--paper,#fff);border:none;border-radius:0;box-shadow:none;
+            width:100%;height:100%;max-height:100%;display:flex;flex-direction:column;
+            overflow:hidden;animation:fadeIn .15s ease-out;min-height:0;
+        }
+        .proj-fs-head{
+            background:linear-gradient(180deg,#1e4976 0%,#163556 100%);
+            padding:10px 16px;display:flex;align-items:center;justify-content:space-between;
+            gap:10px;flex-wrap:wrap;flex-shrink:0;
+        }
+        .proj-fs-title{font-size:16px;font-weight:800;color:#fff;letter-spacing:-.3px;}
+        .proj-fs-sub{font-size:11px;color:rgba(255,255,255,.75);margin-top:2px;}
         .proj-fs-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-        .proj-fs-btn{padding:8px 14px;border-radius:10px;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;cursor:pointer;border:none;white-space:nowrap;}
+        .proj-fs-btn{padding:7px 12px;border-radius:10px;font-size:11px;font-weight:700;font-family:'Sora',sans-serif;cursor:pointer;border:none;white-space:nowrap;}
         .proj-fs-btn--ghost{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);}
         .proj-fs-btn--ghost:hover{background:rgba(255,255,255,.2);}
         .proj-fs-btn--close{background:#fff;color:#163556;}
-        .proj-fs-body{padding:16px 20px;overflow-y:auto;flex:1;min-height:0;background:var(--sheet,#f8fafc);}
+        .proj-fs-body{
+            flex:1;min-height:0;overflow:hidden;background:var(--sheet,#f8fafc);
+            display:flex;flex-direction:column;padding:0;
+        }
+        .proj-fs-scale-wrap{
+            flex:1;min-height:0;overflow:hidden;display:flex;justify-content:center;
+            align-items:center;padding:8px 12px;box-sizing:border-box;
+        }
+        .proj-fs-inner{
+            width:100%;max-width:1280px;flex-shrink:0;
+        }
+        .proj-fs-inner .proj-report-root{width:100%;}
+        /* Compact spacing so projection fits one screen without scroll */
+        .proj-fs-inner .proj-report-root > div{margin-bottom:5px!important;}
+        .proj-fs-inner .proj-report-root div[style*="margin-bottom:16px"],
+        .proj-fs-inner .proj-report-root div[style*="margin-bottom:14px"]{margin-bottom:5px!important;}
+        .proj-fs-inner .proj-report-root div[style*="padding:10px 12px"]{padding:5px 7px!important;}
+        .proj-fs-inner .proj-report-root div[style*="padding:10px;text-align"]{padding:5px!important;}
+        .proj-fs-inner .proj-report-root div[style*="padding:14px"]{padding:7px!important;}
+        .proj-fs-inner .proj-report-root div[style*="gap:8px"]{gap:5px!important;}
+        .proj-fs-inner .proj-report-root div[style*="height:7px"]{height:5px!important;}
+        .proj-fs-inner .proj-report-root div[style*="font-size:14px"]{font-size:12px!important;}
+        .proj-fs-inner .proj-report-root div[style*="font-size:10px"]{font-size:8px!important;}
+        .proj-fs-inner .proj-report-root div[style*="font-size:11px"]{font-size:9px!important;}
+        .proj-fs-inner .proj-report-root div[style*="font-size:13px"]{font-size:11px!important;}
+        @media (max-width:1100px){
+            .proj-fs-inner [style*="grid-template-columns:1fr 1fr 1fr 1fr 1fr"]{
+                grid-template-columns:repeat(3,minmax(0,1fr))!important;
+            }
+        }
+        @media (max-width:720px){
+            .proj-fs-inner [style*="grid-template-columns:1fr 1fr 1fr 1fr 1fr"]{
+                grid-template-columns:repeat(2,minmax(0,1fr))!important;
+            }
+        }
             .view-container { display: none !important; }
         .view-container.active { display: block !important; }
 </style>
@@ -813,10 +1037,8 @@
 
 <!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
 <div id="view-dashboard" class="view-container">
-    <div class="page-title-block" style="margin-bottom:10px;">
-        <span class="page-heading">Team Dashboard</span>
-    </div>
-    <div class="page-toolbar">
+    <div class="page-header-bar">
+        <span class="page-header-title">Team Dashboard</span>
         <div class="filter-field">
             <div class="filter-lbl">Year</div>
             <select id="dashboard-year-select" class="filter-select" onchange="renderDashboard()"></select>
@@ -851,19 +1073,22 @@
 
 <!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
 <div id="view-quick" class="view-container active" style="display:block">
-    <div class="calc-toolbar-compact">
-        <span class="calc-heading-sm">Sales Insight</span>
-        <div class="calc-period-box">
-            <select id="report-year" aria-label="Year"></select>
-            <span class="calc-period-sep" aria-hidden="true"></span>
-            <select id="report-month" aria-label="Month">
-                <option value="JAN">JAN</option><option value="FEB">FEB</option>
-                <option value="MAR">MAR</option><option value="APR">APR</option>
-                <option value="MAY">MAY</option><option value="JUN">JUN</option>
-                <option value="JUL">JUL</option><option value="AUG">AUG</option>
-                <option value="SEP">SEP</option><option value="OCT">OCT</option>
-                <option value="NOV">NOV</option><option value="DEC">DEC</option>
-            </select>
+    <div class="calc-toolbar-compact page-header-bar">
+        <span class="calc-heading-sm page-header-title">Sales Insight</span>
+        <div class="filter-field filter-field--period">
+            <div class="filter-lbl filter-lbl--ghost" aria-hidden="true">Period</div>
+            <div class="calc-period-box filter-select">
+                <select id="report-year" aria-label="Year"></select>
+                <span class="calc-period-sep" aria-hidden="true"></span>
+                <select id="report-month" aria-label="Month">
+                    <option value="JAN">JAN</option><option value="FEB">FEB</option>
+                    <option value="MAR">MAR</option><option value="APR">APR</option>
+                    <option value="MAY">MAY</option><option value="JUN">JUN</option>
+                    <option value="JUL">JUL</option><option value="AUG">AUG</option>
+                    <option value="SEP">SEP</option><option value="OCT">OCT</option>
+                    <option value="NOV">NOV</option><option value="DEC">DEC</option>
+                </select>
+            </div>
         </div>
         <div class="filter-field">
             <div class="filter-lbl">Group</div>
@@ -960,13 +1185,14 @@
                     <div class="cw-mock-mid">
                         <div class="cw-mock-tile cw-tile-inputs">
                             <div class="cw-panel-hd" id="cw-panel-hd-inputs">Sales &amp; target input</div>
-                            <div id="salespeople-container" class="cw-mock-inputs-host space-y-4"></div>
+                            <div id="salespeople-container" class="cw-mock-inputs-host cw-tile-body space-y-4"></div>
                         </div>
                         <div class="cw-mock-tile cw-panel-accent">
                             <div class="cw-panel-hd cw-panel-hd--row">
                                 <span id="cw-panel-hd-calc-title">Commission calculation (live)</span>
                                 <button type="button" class="cw-linkbtn" onclick="window.cwScrollFormula&amp;&amp;cwScrollFormula()">Formula</button>
                             </div>
+                            <div class="cw-tile-body cw-calc-body">
                             <ol class="cw-steps" id="cw-steps"></ol>
                             <div class="cw-net-box">
                                 <span class="cw-net-lbl">Net payable (this month)</span>
@@ -977,6 +1203,56 @@
                                 <table class="cw-tier-table" id="cw-tier-table" aria-label="Commission tiers"></table>
                                 <div class="cw-tier-bar-wrap"><div class="cw-tier-bar-fill" id="cw-tier-bar-fill" style="width:0%"></div></div>
                                 <div class="cw-tier-bar-lbl" id="cw-tier-bar-lbl">Your position: 0% achievement</div>
+                            </div>
+                            <div class="cw-prev-month" id="cw-prev-month-panel">
+                                <div class="cw-prev-month-hd">Last month — <span id="cw-prev-month-label">—</span></div>
+                                <div id="cw-prev-month-body" class="cw-prev-month-body"></div>
+                            </div>
+                            </div>
+                        </div>
+                        <div class="cw-mock-tile cw-tile-payslip">
+                            <div class="cw-panel-hd" id="cw-panel-hd-payslip">
+                                <span id="ps-title">— Salary report</span>
+                            </div>
+                            <div class="cw-tile-body cw-payslip-body">
+                                <div id="live-payslip" class="live-payslip-card" style="display:block;">
+                                    <div id="ps-ach-lbl" class="ps-ach-strip" aria-hidden="true">Achievement: 0%</div>
+                                    <table class="ps-table">
+                                        <colgroup><col style="width:38%"><col style="width:21%"><col style="width:20%"><col style="width:21%"></colgroup>
+                                        <thead>
+                                            <tr class="ps-th">
+                                                <td>Basic</td>
+                                                <td>Pay</td>
+                                                <td>Indv%</td>
+                                                <td>Team%</td>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ps-body"></tbody>
+                                    </table>
+                                    <div class="ps-foot">
+                                        <span class="ps-foot-lbl">Grand total payable</span>
+                                        <span id="ps-grand" class="ps-foot-val">RM 0.00</span>
+                                    </div>
+                                    <div class="ps-meta">
+                                        <div class="ps-kpi-row">
+                                            <span style="font-size:10px;color:var(--ink3);font-weight:600;">Achievement</span>
+                                            <span id="ps-ach-pct" style="font-size:11px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;">0%</span>
+                                        </div>
+                                        <div class="ps-bar">
+                                            <div id="ps-ach-bar" class="ps-bar-fill" style="width:0%;transition:width .3s;"></div>
+                                        </div>
+                                        <div class="ps-mini">
+                                            <div class="ps-mini-box personal">
+                                                <div class="ps-mini-lbl">Personal sale</div>
+                                                <div id="ps-personal" class="ps-mini-val">RM 0</div>
+                                            </div>
+                                            <div class="ps-mini-box team">
+                                                <div class="ps-mini-lbl">Team sale</div>
+                                                <div id="ps-team" class="ps-mini-val">RM 0</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1018,61 +1294,14 @@
             </div>
         </div>
 
-        <!-- Right: Summary -->
-        <div class="calc-right">
-            <!-- Live Payslip Preview -->
-            <div id="live-payslip" class="live-payslip-card" style="display:block;">
-                <div class="ps-head">
-                    <div id="ps-title" class="ps-head-title">— Salary report</div>
-                    <div id="ps-ach-lbl" class="ps-head-sub">Achievement: 0%</div>
-                </div>
-                <table class="ps-table">
-                    <colgroup><col style="width:38%"><col style="width:21%"><col style="width:20%"><col style="width:21%"></colgroup>
-                    <thead>
-                        <tr class="ps-th">
-                            <td>Basic</td>
-                            <td>Pay</td>
-                            <td>Indv%</td>
-                            <td>Team%</td>
-                        </tr>
-                    </thead>
-                    <tbody id="ps-body"></tbody>
-                </table>
-                <div class="ps-foot">
-                    <span class="ps-foot-lbl">Grand total payable</span>
-                    <span id="ps-grand" class="ps-foot-val">RM 0.00</span>
-                </div>
-                <div class="ps-meta">
-                    <div class="ps-kpi-row">
-                        <span style="font-size:10px;color:var(--ink3);font-weight:600;">Achievement</span>
-                        <span id="ps-ach-pct" style="font-size:11px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;">0%</span>
-                    </div>
-                    <div class="ps-bar">
-                        <div id="ps-ach-bar" class="ps-bar-fill" style="width:0%;transition:width .3s;"></div>
-                    </div>
-                    <div class="ps-mini">
-                        <div class="ps-mini-box personal">
-                            <div class="ps-mini-lbl">Personal sale</div>
-                            <div id="ps-personal" class="ps-mini-val">RM 0</div>
-                        </div>
-                        <div class="ps-mini-box team">
-                            <div class="ps-mini-lbl">Team sale</div>
-                            <div id="ps-team" class="ps-mini-val">RM 0</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
 <!-- ══════════════════ PEOPLE VIEW ══════════════════ -->
 <div id="view-people" class="view-container">
-    <div class="page-title-block" style="margin-bottom:10px;">
-        <span class="page-heading">Add Person</span>
-    </div>
-    <div class="page-toolbar">
-        <input id="people-search" class="if" placeholder="🔍 Search by name..." style="flex:1;min-width:200px;" oninput="filterPeopleList(this.value)">
+    <div class="page-header-bar">
+        <span class="page-header-title">Add Person</span>
+        <input id="people-search" class="if" placeholder="🔍 Search by name..." style="flex:1;min-width:180px;max-width:280px;" oninput="filterPeopleList(this.value)">
         <div class="filter-field" style="flex:0;">
             <div class="filter-lbl">Group</div>
             <select id="people-group-select" class="filter-select" onchange="filterPeopleList(document.getElementById('people-search').value)">
@@ -1108,11 +1337,11 @@
 
 <!-- ══════════════════ HISTORY VIEW ══════════════════ -->
 <div id="view-history" class="view-container">
-    <div class="page-title-block" style="margin-bottom:10px;">
-        <span class="page-heading">Report History</span>
-        <div id="history-sub" class="set-sub" style="margin-top:2px;margin-bottom:0;">Loading...</div>
-    </div>
-    <div class="page-toolbar">
+    <div class="page-header-bar">
+        <div class="page-header-title-wrap">
+            <span class="page-header-title">Report History</span>
+            <div id="history-sub" class="page-header-sub">Loading...</div>
+        </div>
         <div class="filter-field">
             <div class="filter-lbl">Year</div>
             <select id="history-year-select" class="filter-select" onchange="loadQuickCalculateHistory()"></select>
@@ -1127,11 +1356,11 @@
 
 <!-- ══════════════════ ANNUAL REPORT VIEW ══════════════════ -->
 <div id="view-annual" class="view-container">
-    <div class="page-title-block" style="margin-bottom:10px;">
-        <span class="page-heading" id="annual-page-title">Annual Report</span>
-        <div id="annual-sub" class="set-sub" style="margin-top:2px;margin-bottom:0;">Complete sales performance summary</div>
-    </div>
-    <div class="page-toolbar">
+    <div class="page-header-bar">
+        <div class="page-header-title-wrap">
+            <span class="page-header-title" id="annual-page-title">Annual Report</span>
+            <div id="annual-sub" class="page-header-sub">Complete sales performance summary</div>
+        </div>
         <div class="filter-field">
             <div class="filter-lbl">Year</div>
             <select id="annual-year-select" class="filter-select" onchange="onAnnualViewChange()"></select>
@@ -1254,6 +1483,9 @@
 
 <!-- ══════════════════ ROUTE PLANNER VIEW ══════════════════ -->
 <div id="view-routeplanner" class="view-container">
+    <div class="page-header-bar">
+        <span class="page-header-title">Route Planner</span>
+    </div>
     <div class="rp-launcher">
         <div class="rp-card">
             <div class="rp-card-head">
@@ -1277,9 +1509,11 @@
 </div>
 
 <div id="view-settings" class="view-container">
-    <div class="page-title-block" style="margin-bottom:10px;">
-        <span class="page-heading">Settings</span>
-        <div class="set-sub" style="margin-bottom:0;">Backup, license, security &amp; updates</div>
+    <div class="page-header-bar">
+        <div class="page-header-title-wrap">
+            <span class="page-header-title">Settings</span>
+            <div class="page-header-sub">Backup, license, security &amp; updates</div>
+        </div>
     </div>
     <div class="settings-grid">
         <div class="set-card">
@@ -1309,7 +1543,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.3</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.4</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>
