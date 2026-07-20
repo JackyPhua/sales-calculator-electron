@@ -612,9 +612,6 @@ async function initApp() {
         // Initialize backup system
         initBackupSystem();
         
-        // Add quick recovery button
-        setTimeout(addQuickRecoveryButton, 1000);
-        
         console.log('✅ Application initialization completed');
     } catch (error) {
         console.error('Initialization failed:', error);
@@ -1550,7 +1547,6 @@ function createBlankSalespersonCard() {
             </div>
         </div>
         <div class="calc-card-foot">
-            <button type="button" onclick="clearAllQuickCalculateData()" class="calc-foot-clear">Clear</button>
             <button type="button" onclick="manualSave()" class="calc-foot-save">Save</button>
         </div>
     `;
@@ -2210,7 +2206,6 @@ function renderAllSalespeopleCards() {
                 </div>
             </div>
             <div class="calc-card-foot">
-                <button type="button" onclick="clearAllQuickCalculateData()" class="calc-foot-clear">Clear</button>
                 <button type="button" onclick="manualSave()" class="calc-foot-save">Save</button>
             </div>
         `;
@@ -5245,7 +5240,7 @@ function loadQuickCalculateHistory() {
         historyList.innerHTML = '<div class="empty-state">'
             + '<div class="empty-state-icon">📋</div>'
             + '<div class="empty-state-title">No history for ' + emptyScope + '</div>'
-            + '<div class="empty-state-sub">Save data in the Calculate tab to create monthly records</div>'
+            + '<div class="empty-state-sub">Save data in Sales Insight to create monthly records</div>'
             + '<button type="button" class="tbtn blue" style="margin-top:16px;" onclick="switchView(\'quick\')">Go to Calculate →</button>'
             + '</div>';
         return;
@@ -5610,6 +5605,15 @@ function cwSetText(id, text) {
     var el = document.getElementById(id);
     if (el) el.textContent = text == null ? '' : String(text);
 }
+function cwFormatTierTableLabel(t, tierIndex) {
+    var n = tierIndex + 1;
+    var minP = Math.round(Number(t.min) || 0);
+    if (Number(t.max) >= 999) {
+        return 'Tier ' + n + ' (' + minP + '%+)';
+    }
+    var maxP = Math.floor(Number(t.max) + 0.001);
+    return 'Tier ' + n + ' (' + minP + '% - ' + maxP + '%)';
+}
 function cwTierTitleFromAch(ach, personName) {
     var rates = cwGetRatesForPerson(personName);
     var row = cwFindSalesTier(ach, rates);
@@ -5796,10 +5800,10 @@ function updateCalcWorkspace() {
     if (tnum) tnum.textContent = (empType === 'Sales' && tierIdx1 > 0) ? String(tierIdx1) : '\u2014';
 
     if (empType === 'Sales') {
-        cwSetText('cw-kpi-tier', tierRow && tierRow.tier ? ('Tier ' + tierIdx1 + ' (' + ratePct.toFixed(2) + '%)') : '\u2014');
+        cwSetText('cw-kpi-tier', tierRow && tierRow.tier ? cwFormatTierTableLabel(tierRow.tier, tierRow.idx) : '\u2014');
         var tierSubTxt = '';
         if (tierRow && tierRow.tier) {
-            tierSubTxt = tierRow.tier.label || (tierRow.tier.min + '\u2013' + (tierRow.tier.max >= 999 ? '\u221e' : tierRow.tier.max + '%'));
+            tierSubTxt = ratePct.toFixed(2) + '% commission rate';
         } else tierSubTxt = 'No matching band';
         cwSetText('cw-kpi-tier-sub', tierSubTxt);
     } else if (empType === 'Supervisor') {
@@ -5934,22 +5938,22 @@ function updateCalcWorkspace() {
     if (tbl) {
         if (empType === 'Sales' && rates.length) {
             var sortedR = rates.slice().sort(function(a, b) { return a.min - b.min; });
-            var body = sortedR.map(function(t) {
+            var body = sortedR.map(function(t, idx) {
                 var active = ach >= t.min && ach <= t.max;
-                var lab = t.label || (t.min + '% \u2013 ' + (t.max >= 999 ? '100%+' : t.max + '%'));
+                var lab = cwFormatTierTableLabel(t, idx);
                 return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + lab + '</td><td>' + ((t.rate || 0) * 100).toFixed(2) + '%</td></tr>';
             }).join('');
-            tbl.innerHTML = '<thead><tr><th>Achievement</th><th>Rate</th></tr></thead><tbody>' + body + '</tbody>';
+            tbl.innerHTML = '<thead><tr><th>Tier</th><th>Rate</th></tr></thead><tbody>' + body + '</tbody>';
         } else if (empType === 'Supervisor') {
             var _supCfg = window.appState.config;
             var _saleT = (_supCfg.person_supervisor_sale_tiers && _supCfg.person_supervisor_sale_tiers[person.name]) || _supCfg.supervisor_sale_tiers || [];
             var sortedS = _saleT.slice().sort(function(a, b) { return a.min - b.min; });
-            var body2 = sortedS.map(function(t) {
+            var body2 = sortedS.map(function(t, idx) {
                 var active = ach >= t.min && ach <= t.max;
-                var rng = t.min + '\u2013' + (t.max >= 999 ? '\u221e' : t.max + '%');
-                return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + rng + '</td><td>' + formatCurrency(t.amt || 0) + '</td></tr>';
+                var lab = cwFormatTierTableLabel(t, idx);
+                return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + lab + '</td><td>' + formatCurrency(t.amt || 0) + '</td></tr>';
             }).join('');
-            tbl.innerHTML = '<thead><tr><th>Team ach.</th><th>Payout (RM)</th></tr></thead><tbody>' + body2 + '</tbody>';
+            tbl.innerHTML = '<thead><tr><th>Tier</th><th>Payout (RM)</th></tr></thead><tbody>' + body2 + '</tbody>';
         } else {
             tbl.innerHTML = '<tbody><tr><td colspan="2" style="text-align:center;color:#64748b;padding:12px;">No percentage tiers \u2014 per-block rate in KPI</td></tr></tbody>';
         }
@@ -6583,7 +6587,7 @@ function showTargetModal(personName) {
     body.appendChild(yearRow);
     var yearAlignHint = document.createElement('div');
     yearAlignHint.style.cssText = 'font-size:11px;color:var(--ink4);margin:-8px 0 14px 2px;line-height:1.4;';
-    yearAlignHint.textContent = 'Default year matches Calculation / Projection \u2192 Year (same period keys as Team Target Setting).';
+    yearAlignHint.textContent = 'Default year matches Sales Insight / Projection \u2192 Year (same period keys as Team Target Setting).';
     body.appendChild(yearAlignHint);
 
     // Month grid
@@ -7721,7 +7725,7 @@ function renderProjectionReport() {
     document.getElementById('proj-month-label').textContent = month ? month + ' ' + selectedYear : 'No data';
 
     if (!personName || personName === '—' || !month) {
-        body.innerHTML = '<div style="text-align:center;padding:48px;color:var(--ink4);"><div style="font-size:32px;margin-bottom:12px;">📈</div><div style="font-size:14px;font-weight:600;">No data</div><div style="font-size:12px;margin-top:6px;">Go to Calculate tab, select a person and enter sales data first.</div></div>';
+        body.innerHTML = '<div style="text-align:center;padding:48px;color:var(--ink4);"><div style="font-size:32px;margin-bottom:12px;">📈</div><div style="font-size:14px;font-weight:600;">No data</div><div style="font-size:12px;margin-top:6px;">Go to Sales Insight, select a person and enter sales data first.</div></div>';
         return;
     }
 
@@ -7984,8 +7988,14 @@ window.printProjectionReport  = printProjectionReport;
 function syncProjectionFromCalculate() {
     var calcMonth = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
     var calcYear = ((document.getElementById('report-year') || {}).value || '') || String(new Date().getFullYear());
-    var person0 = window.appState.salespeople[0];
-    var calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+    var calcPersonSel = document.getElementById('calc-person-select');
+    var calcName = '';
+    if (calcPersonSel && calcPersonSel.value) {
+        calcName = calcPersonSel.value.toUpperCase();
+    } else {
+        var person0 = window.appState.salespeople[0];
+        calcName = person0 && person0.name ? person0.name.toUpperCase() : '';
+    }
 
     var yearSelect = document.getElementById('proj-year-select');
     if (yearSelect) {
@@ -8016,6 +8026,26 @@ function closeProjectionFullscreenModal() {
 function _projFsEscHandler(e) {
     if (e.key === 'Escape') closeProjectionFullscreenModal();
 }
+
+function openProjectionFromToolbar() {
+    var sel = document.getElementById('calc-person-select');
+    var name = (sel && sel.value) || (window.appState.salespeople[0] && window.appState.salespeople[0].name) || '';
+    if (!name) {
+        showToast('⚠️', 'Please select a person first');
+        return;
+    }
+    if (typeof getEmployeeType === 'function' && getEmployeeType(name) !== 'Sales') {
+        showToast('⚠️', 'Projection is available for Sales employees only');
+        return;
+    }
+    if (window.appState.salespeople.length > 0 && typeof updateSalespersonData === 'function') {
+        updateSalespersonData(0);
+    }
+    if (typeof showProjectionFullscreenModal === 'function') {
+        showProjectionFullscreenModal();
+    }
+}
+window.openProjectionFromToolbar = openProjectionFromToolbar;
 
 function showProjectionFullscreenModal() {
     closeProjectionFullscreenModal();
