@@ -1,9 +1,11 @@
 node_modules/
 dist/
+dist-build-*/
+dist-v*/
 *.log
 .DS_Store
 Thumbs.db
 *.exe
 *.dmg
 *.AppImage
-!resources/route-planner/*.exe
+*.zip

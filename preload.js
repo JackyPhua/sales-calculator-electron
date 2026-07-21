@@ -60,10 +60,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     applyWindowFit: (mode) => ipcRenderer.invoke('apply-window-fit', mode || 'quick'),
 
-    // ========== Route Planner ==========
-    launchRoutePlanner: () => ipcRenderer.invoke('launch-route-planner'),
-    getRoutePlannerStatus: () => ipcRenderer.invoke('get-route-planner-status'),
-
     // ========== 平台信息 ==========
     platform: process.platform
 });

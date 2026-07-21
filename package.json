@@ -1,12 +1,11 @@
 {
   "name": "sales-pro",
-  "version": "1.0.9",
-  "description": "SalesPro — Sales Commission, Reports & Route Planner",
+  "version": "1.0.10",
+  "description": "SalesPro — Sales Commission & Reports",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "prebuild:win": "node scripts/copy-route-planner.js",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
@@ -48,15 +47,9 @@
       "!**/*.md",
       "!license-generator.js",
       "!dist/**",
-      "!landing-page.html",
-      "!resources/route-planner/**"
-    ],
-    "extraResources": [
-      {
-        "from": "resources/route-planner",
-        "to": "route-planner",
-        "filter": ["**/*"]
-      }
+      "!dist-*/**",
+      "!**/*.zip",
+      "!landing-page.html"
     ],
     "win": {
       "target": [

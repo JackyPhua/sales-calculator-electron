@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
-const { spawn } = require('child_process');
 const ExcelJS = require('exceljs');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
@@ -371,8 +370,7 @@ function applySalesInsightScreenFit(win) {
 
 function syncZoomToViewMode(win) {
     if (!win || win.isDestroyed()) return;
-    if (rendererViewMode === 'quick') applyWindowFit(win);
-    else win.webContents.setZoomFactor(1);
+    applyWindowFit(win);
 }
 
 function createWindow() {
@@ -1688,50 +1686,9 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.handle('apply-window-fit', (_event, mode) => {
     if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
-    if (mode === 'quick') {
-        applySalesInsightScreenFit(mainWindow);
-    } else {
-        rendererViewMode = 'normal';
-        mainWindow.webContents.setZoomFactor(1);
-    }
+    rendererViewMode = mode === 'quick' ? 'quick' : 'normal';
+    applyWindowFit(mainWindow);
     return { success: true };
-});
-
-// ========== Bundled Route Planner ==========
-const ROUTE_PLANNER_EXE = 'Route Planner 1.1.11.exe';
-
-function getRoutePlannerExePath() {
-    const candidates = [
-        path.join(process.resourcesPath, 'route-planner', ROUTE_PLANNER_EXE),
-        path.join(__dirname, 'resources', 'route-planner', ROUTE_PLANNER_EXE),
-        path.join(__dirname, '..', 'Route Planner', 'release', ROUTE_PLANNER_EXE)
-    ];
-    for (var i = 0; i < candidates.length; i++) {
-        if (fsSync.existsSync(candidates[i])) return candidates[i];
-    }
-    return null;
-}
-
-ipcMain.handle('launch-route-planner', async () => {
-    const exePath = getRoutePlannerExePath();
-    if (!exePath) {
-        return { success: false, error: 'Route Planner not found. Please reinstall SalesPro.' };
-    }
-    try {
-        spawn(exePath, [], {
-            detached: true,
-            stdio: 'ignore',
-            cwd: path.dirname(exePath)
-        }).unref();
-        return { success: true, path: exePath };
-    } catch (err) {
-        return { success: false, error: err.message };
-    }
-});
-
-ipcMain.handle('get-route-planner-status', () => {
-    const exePath = getRoutePlannerExePath();
-    return { available: !!exePath, version: '1.1.11' };
 });
 
 // ========== Helper Functions ==========

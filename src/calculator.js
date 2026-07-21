@@ -442,7 +442,7 @@ function showLicenseModal(featureName) {
                     <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">License Key</label>
                     <input type="text" id="license-key-input" 
                            placeholder="CPRO-XXXX-XXXX-XXXX-XXXX"
-                           style="width:100%;padding:12px 14px;border:2px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:'Courier New',monospace;letter-spacing:1px;text-transform:uppercase;outline:none;transition:border 0.2s;"
+                           style="width:100%;padding:12px 14px;border:2px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:'Sora',sans-serif;letter-spacing:1px;text-transform:uppercase;outline:none;transition:border 0.2s;"
                            onfocus="this.style.borderColor='#3b82f6'"
                            onblur="this.style.borderColor='#e5e7eb'"
                            maxlength="24">
@@ -552,7 +552,7 @@ function showLicenseInfoModal() {
             <div style="padding:24px 28px;">
                 <div style="padding:12px;background:#f0fdf4;border-radius:10px;margin-bottom:16px;">
                     <p style="margin:0;font-size:12px;color:#6b7280;">License Key</p>
-                    <p style="margin:4px 0 0;font-size:14px;font-family:'Courier New',monospace;font-weight:600;color:#111827;letter-spacing:1px;">${window.licenseStatus.key || 'N/A'}</p>
+                    <p style="margin:4px 0 0;font-size:14px;font-family:'Sora',sans-serif;font-weight:600;color:#111827;letter-spacing:1px;">${window.licenseStatus.key || 'N/A'}</p>
                 </div>
                 <p style="font-size:13px;color:#6b7280;margin:0 0 20px;">All Pro features are unlocked. Thank you for your purchase!</p>
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -980,7 +980,7 @@ function showToast(icon, message, duration = 3000) {
 // View switching
 function syncWindowFitForView(view) {
     if (!window.electronAPI || typeof window.electronAPI.applyWindowFit !== 'function') return;
-    window.electronAPI.applyWindowFit(view === 'quick' ? 'quick' : 'normal').catch(function() {});
+    window.electronAPI.applyWindowFit('fit').catch(function() {});
 }
 
 function switchView(view) {
@@ -1110,17 +1110,12 @@ function switchView(view) {
             });
         }
         if (typeof renderCompanyList === 'function') renderCompanyList();
-    } else if (view === 'routeplanner') {
-        if (typeof initRoutePlannerView === 'function') initRoutePlannerView();
     } else if (view === 'salary') {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
         if (typeof initCommissionView === 'function') initCommissionView();
     }
     syncWindowFitForView(view);
-    if (view === 'quick') {
-        setTimeout(function() { syncWindowFitForView('quick'); }, 120);
-    }
 }
 
 // ==================== QUICK CALCULATE Fixed Version ====================
@@ -1978,7 +1973,7 @@ function deleteSalespersonConfig(personName) {
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
 
     var box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:14px;padding:28px 28px 20px;max-width:360px;width:90%;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:sans-serif;';
+    box.style.cssText = 'background:#fff;border-radius:14px;padding:28px 28px 20px;max-width:360px;width:90%;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:Sora,sans-serif;';
 
     var title = document.createElement('div');
     title.style.cssText = 'font-size:16px;font-weight:700;color:#111;margin-bottom:8px;';
@@ -5144,6 +5139,61 @@ function loadQuickCalculateHistory() {
             return (keyYear(r.month) || curYear) === selectedYear;
         });
 
+    var monthSel = document.getElementById('history-month-select');
+    var selectedMonth = monthSel ? monthSel.value : 'ALL';
+
+    var personSel = document.getElementById('history-person-select');
+    var prevPerson = personSel ? personSel.value : 'ALL';
+    var peopleNames = Object.keys(cfg.base_salaries || {});
+    if (personSel) {
+        personSel.innerHTML = '<option value="ALL">All People</option>'
+            + peopleNames.map(function(n) {
+                return '<option value="' + escHtml(n) + '">' + escHtml(n) + '</option>';
+            }).join('');
+        if (prevPerson === 'ALL' || peopleNames.indexOf(prevPerson) !== -1) {
+            personSel.value = prevPerson;
+        } else {
+            personSel.value = 'ALL';
+        }
+    }
+    var selectedPerson = personSel ? personSel.value : 'ALL';
+
+    function personHasDataInReport(personName, report, bm, yr) {
+        var nu = (personName || '').toUpperCase();
+        if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(personName, bm, yr)) return false;
+        var reportData = report.data || [];
+        var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === nu; });
+        if (!pd) return false;
+        var t = getEmployeeType(personName);
+        if (t === 'Sales') return (pd.target || 0) > 0 || (pd.sales || 0) > 0;
+        if (t === 'Support Staff') return (pd.collectionAmount || 0) > 0;
+        if (t === 'Supervisor') {
+            var team = calcTeamTotals(bm, yr);
+            return team.target > 0;
+        }
+        return false;
+    }
+
+    if (selectedMonth !== 'ALL') {
+        sorted = sorted.filter(function(r) { return bareMonth(r.month) === selectedMonth; });
+    }
+    if (selectedPerson !== 'ALL') {
+        sorted = sorted.filter(function(r) {
+            var bm = bareMonth(r.month);
+            var yr = keyYear(r.month) || (showAllYears ? curYear : selectedYear);
+            return personHasDataInReport(selectedPerson, r, bm, yr);
+        });
+    }
+
+    function scopeCommForReport(report, bm, yr) {
+        if (selectedPerson === 'ALL') return monthTotalComm(report, bm, yr);
+        var reportData = report.data || [];
+        var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === selectedPerson.toUpperCase(); });
+        if (!pd) pd = { name: selectedPerson };
+        if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(selectedPerson, bm, yr)) return 0;
+        return calcPersonBonus(pd, bm, yr).total;
+    }
+
     function quarterNum(bm) {
         var i = monthOrder.indexOf((bm || '').toUpperCase());
         if (i < 0) return 0;
@@ -5238,17 +5288,23 @@ function loadQuickCalculateHistory() {
     }
 
     if (subEl) {
-        var scopeLabel = showAllYears ? 'All Years' : String(selectedYear);
-        subEl.textContent = sorted.length + ' month' + (sorted.length === 1 ? '' : 's') + ' · ' + scopeLabel;
+        var scopeParts = [showAllYears ? 'All Years' : String(selectedYear)];
+        if (selectedMonth !== 'ALL') scopeParts.push(selectedMonth);
+        if (selectedPerson !== 'ALL') scopeParts.push(selectedPerson);
+        subEl.textContent = sorted.length + ' month' + (sorted.length === 1 ? '' : 's') + ' · ' + scopeParts.join(' · ');
     }
 
     if (summaryEl) summaryEl.innerHTML = '';
 
     if (sorted.length === 0) {
-        var emptyScope = showAllYears ? 'any year' : selectedYear;
+        var emptyParts = [];
+        if (!showAllYears) emptyParts.push(String(selectedYear));
+        if (selectedMonth !== 'ALL') emptyParts.push(selectedMonth);
+        if (selectedPerson !== 'ALL') emptyParts.push(selectedPerson);
+        var emptyScope = emptyParts.length ? emptyParts.join(' · ') : (showAllYears ? 'any year' : String(selectedYear));
         historyList.innerHTML = '<div class="empty-state">'
             + '<div class="empty-state-icon">📋</div>'
-            + '<div class="empty-state-title">No history for ' + emptyScope + '</div>'
+            + '<div class="empty-state-title">No history for ' + escHtml(emptyScope) + '</div>'
             + '<div class="empty-state-sub">Save data in Sales Insight to create monthly records</div>'
             + '<button type="button" class="tbtn blue" style="margin-top:16px;" onclick="switchView(\'quick\')">Go to Calculate →</button>'
             + '</div>';
@@ -5261,11 +5317,29 @@ function loadQuickCalculateHistory() {
     sorted.forEach(function(report) {
         var bm = bareMonth(report.month);
         var yr = keyYear(report.month) || (showAllYears ? curYear : selectedYear);
-        scopeCommTotal += monthTotalComm(report, bm, yr);
-        var team = calcTeamTotals(bm, yr);
-        if (team.target > 0) {
-            achSum += team.ach;
-            achCount++;
+        scopeCommTotal += scopeCommForReport(report, bm, yr);
+        if (selectedPerson !== 'ALL') {
+            var reportData = report.data || [];
+            var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === selectedPerson.toUpperCase(); });
+            if (pd) {
+                var pb = calcPersonBonus(pd, bm, yr);
+                if (pb.display === 'Sales' && (pd.target || 0) > 0) {
+                    achSum += pb.ach || 0;
+                    achCount++;
+                } else if (pb.display === 'Supervisor') {
+                    var team = calcTeamTotals(bm, yr);
+                    if (team.target > 0) {
+                        achSum += team.ach;
+                        achCount++;
+                    }
+                }
+            }
+        } else {
+            var team = calcTeamTotals(bm, yr);
+            if (team.target > 0) {
+                achSum += team.ach;
+                achCount++;
+            }
         }
     });
     var avgAch = achCount > 0 ? (achSum / achCount) : 0;
@@ -5274,13 +5348,19 @@ function loadQuickCalculateHistory() {
     var fmtRm = function(n) {
         return 'RM ' + (n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
-    var summaryScopeLabel = showAllYears ? 'All Years' : String(selectedYear);
+    var summaryScopeParts = [showAllYears ? 'All Years' : String(selectedYear)];
+    if (selectedMonth !== 'ALL') summaryScopeParts.push(selectedMonth);
+    if (selectedPerson !== 'ALL') summaryScopeParts.push(selectedPerson);
+    var summaryScopeLabel = summaryScopeParts.join(' · ');
+    var achKpiLbl = selectedPerson !== 'ALL'
+        ? (getEmployeeType(selectedPerson) === 'Supervisor' ? 'Avg Team Achievement' : 'Avg Achievement')
+        : 'Avg Team Achievement';
 
     if (summaryEl) {
         summaryEl.innerHTML = '<div class="history-summary">'
             + '<div class="dash-kpi"><div class="dash-kpi-lbl">Records</div><div class="dash-kpi-val">' + sorted.length + '</div></div>'
-            + '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">Total Comm / Inc (' + summaryScopeLabel + ')</div><div class="dash-kpi-val">' + fmtRm(scopeCommTotal) + '</div></div>'
-            + '<div class="dash-kpi ' + (avgAch >= 100 ? 'dash-kpi--good' : avgAch >= 90 ? 'dash-kpi--warn' : '') + '"><div class="dash-kpi-lbl">Avg Team Achievement</div><div class="dash-kpi-val">' + avgAch.toFixed(2) + '%</div></div>'
+            + '<div class="dash-kpi dash-kpi--good"><div class="dash-kpi-lbl">Total Comm / Inc (' + escHtml(summaryScopeLabel) + ')</div><div class="dash-kpi-val">' + fmtRm(scopeCommTotal) + '</div></div>'
+            + '<div class="dash-kpi ' + (avgAch >= 100 ? 'dash-kpi--good' : avgAch >= 90 ? 'dash-kpi--warn' : '') + '"><div class="dash-kpi-lbl">' + achKpiLbl + '</div><div class="dash-kpi-val">' + (achCount > 0 ? avgAch.toFixed(2) + '%' : '—') + '</div></div>'
             + '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Latest Month</div><div class="dash-kpi-val" style="font-family:Sora,sans-serif;">' + latestLabel + '</div></div>'
             + '</div>';
     }
@@ -5298,7 +5378,7 @@ function loadQuickCalculateHistory() {
         var month = bareMonth(report.month);
         var monthYear = keyYear(report.month) || (showAllYears ? curYear : selectedYear);
         var realIndex = history.indexOf(report);
-        var totalComm = monthTotalComm(report, month, monthYear);
+        var totalComm = scopeCommForReport(report, month, monthYear);
         var teamAch = calcTeamTotals(month, monthYear).ach;
         var achBadgeCls = teamAch >= 100 ? 'good' : teamAch >= 90 ? 'warn' : 'bad';
         var qKey = quarterKey(month);
@@ -5307,11 +5387,12 @@ function loadQuickCalculateHistory() {
             : '';
 
         var peopleWithData = people.filter(function(p) {
+            if (selectedPerson !== 'ALL' && (p.name || '').toUpperCase() !== selectedPerson.toUpperCase()) return false;
             if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return false;
             var t = getEmployeeType(p.name);
             if (t === 'Sales') return (p.target || 0) > 0 || (p.sales || 0) > 0;
             if (t === 'Support Staff') return (p.collectionAmount || 0) > 0;
-            if (t === 'Supervisor') return true;
+            if (t === 'Supervisor') return selectedPerson !== 'ALL' || teamAch > 0 || calcTeamTotals(month, monthYear).target > 0;
             return false;
         });
         peopleWithData.sort(function(a, b) {
@@ -5372,7 +5453,9 @@ function loadQuickCalculateHistory() {
     function sectionMeta(reports, yrLabel) {
         var comm = 0;
         reports.forEach(function(r) {
-            comm += monthTotalComm(r, bareMonth(r.month), keyYear(r.month) || yrLabel || curYear);
+            var bm = bareMonth(r.month);
+            var yr = keyYear(r.month) || yrLabel || curYear;
+            comm += scopeCommForReport(r, bm, yr);
         });
         return reports.length + ' month' + (reports.length === 1 ? '' : 's') + ' · ' + fmtRm(comm);
     }
@@ -5499,6 +5582,9 @@ function updateLivePayslip() {
     function tp(v){ return teamSales>0 ? (v/teamSales*100).toFixed(3)+'%' : '0.000%'; }
     function fc(v){ return formatCurrency(v); }
     function sec(l){ return '<tr style="background:#E6F1FB;"><td colspan="4" style="padding:4px 10px;font-weight:600;color:#0C447C;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">'+l+'</td></tr>'; }
+    function pctTd(v, fn) {
+        return '<td class="ps-pct" style="padding:4px 6px;">' + fn(v) + '</td>';
+    }
     function row(l,v,blue,bold){
         var fw=bold?'font-weight:600;':'', bg=bold?'background:#B5D4F4;':'';
         var tc=blue?'color:#185FA5;':bold?'color:#0C447C;':'';
@@ -5506,29 +5592,29 @@ function updateLivePayslip() {
         return '<tr style="'+bg+'border-top:0.5px solid var(--line);">'
             +'<td style="padding:4px 10px;'+fw+lc+'">'+l+'</td>'
             +'<td style="padding:4px 6px;text-align:right;'+fw+tc+'">'+fc(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+            + pctTd(v, fp)
+            + pctTd(v, tp) + '</tr>';
     }
     function erow(v){
         return '<tr style="border-top:0.5px solid var(--line);">'
             +'<td style="padding:4px 10px;color:var(--ink3);">EPF '+epfPctLabel+'%</td>'
             +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+            + pctTd(v, fp)
+            + pctTd(v, tp) + '</tr>';
     }
     function eisrow(v){
         return '<tr style="border-top:0.5px solid var(--line);">'
             +'<td style="padding:4px 10px;color:var(--ink3);">EIS 0.2%</td>'
             +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+            + pctTd(v, fp)
+            + pctTd(v, tp) + '</tr>';
     }
     function socsorow(v){
         return '<tr style="border-top:0.5px solid var(--line);">'
             +'<td style="padding:4px 10px;color:var(--ink3);">SOCSO 0.5%</td>'
             +'<td style="padding:4px 6px;text-align:right;color:#E24B4A;">'+fc(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+fp(v)+'</td>'
-            +'<td style="padding:4px 6px;text-align:right;color:var(--ink4);">'+tp(v)+'</td></tr>';
+            + pctTd(v, fp)
+            + pctTd(v, tp) + '</tr>';
     }
     var html = sec('INCOME') + row('SALARY',salary,true,false) + sec('ALLOWANCES');
     if(hp)   html += row('HP',              hp,   true, false);
@@ -5551,6 +5637,109 @@ function updateLivePayslip() {
     if(g('ps-body')) g('ps-body').innerHTML = html;
 }
 window.updateLivePayslip = updateLivePayslip;
+
+function getSalaryReportPrintCss() {
+    return 'body{font-family:Sora,sans-serif;margin:24px;color:#0f172a;}'
+        + '.cw-panel-hd{font-size:10px;padding:8px 12px;font-weight:800;color:#fff;text-transform:uppercase;background:#163556;margin-bottom:8px;}'
+        + '.live-payslip-card{font-size:10px;max-width:420px;margin:0 auto;}'
+        + '.ps-table{width:100%;border-collapse:collapse;}'
+        + '.ps-th td{padding:5px 6px;font-size:8px;font-weight:700;color:#1e4976;background:#f4f7fb;}'
+        + '.ps-th td:not(:first-child){text-align:right;}'
+        + '.ps-th td:nth-child(3),.ps-th td:nth-child(4){color:#8b5cf6;}'
+        + 'tbody td{padding:4px 6px;font-size:9px;}'
+        + '.ps-pct{color:#8b5cf6;font-weight:800;text-align:right;}'
+        + '.ps-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#059669;color:#fff;margin-top:4px;}'
+        + '.ps-foot-lbl{font-size:10px;font-weight:600;}'
+        + '.ps-foot-val{font-size:14px;font-weight:800;}'
+        + '.ps-meta{padding:12px 10px;background:#f4f7fb;}'
+        + '.ps-kpi-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}'
+        + '.ps-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}'
+        + '.ps-mini-box{border:1px solid #d4dce8;border-radius:8px;padding:10px;background:#fff;}'
+        + '.ps-mini-lbl{font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;}'
+        + '.ps-mini-val{font-size:12px;font-weight:800;color:#163556;}'
+        + '.ps-ach-strip{display:none;}';
+}
+function printSalaryReportModal() {
+    var content = document.getElementById('salary-report-modal-content');
+    if (!content) return;
+    var tile = content.querySelector('.cw-tile-payslip');
+    var titleEl = tile && tile.querySelector('.cw-panel-hd span');
+    var title = titleEl ? titleEl.textContent : 'Salary Report';
+    var win = window.open('', '_blank');
+    if (!win) {
+        showToast('⚠️', 'Pop-up blocked — allow pop-ups to print');
+        return;
+    }
+    win.document.write('<html><head><title>' + title + '</title><style>' + getSalaryReportPrintCss() + '</style></head><body>');
+    win.document.write(tile ? tile.outerHTML : content.innerHTML);
+    win.document.write('</body></html>');
+    win.document.close();
+    win.focus();
+    setTimeout(function() { win.print(); }, 300);
+}
+function openSalaryReportModal() {
+    var person = window.appState.salespeople[0];
+    if (!person || !person.name) {
+        showToast('⚠️', 'Please select a person first');
+        return;
+    }
+    if (typeof updateLivePayslip === 'function') updateLivePayslip();
+
+    var tile = document.querySelector('#view-quick .cw-tile-payslip');
+    var live = document.getElementById('live-payslip');
+    if (!tile || !live) {
+        showToast('❌', 'Salary report layout not found');
+        return;
+    }
+
+    closeSalaryReportModal();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'salary-report-modal';
+    overlay.className = 'salary-report-modal-overlay';
+    overlay.innerHTML = ''
+        + '<div class="salary-report-modal-dialog" role="dialog" aria-modal="true" aria-label="Salary report">'
+        + '<div class="salary-report-modal-content" id="salary-report-modal-content"></div>'
+        + '<div class="salary-report-modal-bar">'
+        + '<button type="button" class="salary-report-modal-btn salary-report-modal-btn--ghost" id="salary-report-close">Close</button>'
+        + '<button type="button" class="salary-report-modal-btn salary-report-modal-btn--print" id="salary-report-print">🖨️ Print</button>'
+        + '</div></div>';
+
+    document.body.appendChild(overlay);
+
+    var clone = tile.cloneNode(true);
+    clone.querySelectorAll('[id]').forEach(function(el) { el.removeAttribute('id'); });
+    document.getElementById('salary-report-modal-content').appendChild(clone);
+
+    function syncCloneText(sel, srcId) {
+        var src = document.getElementById(srcId);
+        var dst = clone.querySelector(sel);
+        if (src && dst) dst.textContent = src.textContent;
+    }
+    syncCloneText('.ps-mini-box.personal .ps-mini-val', 'ps-personal');
+    syncCloneText('.ps-mini-box.team .ps-mini-val', 'ps-team');
+    syncCloneText('.ps-foot-val', 'ps-grand');
+    syncCloneText('.ps-ach-pct-val', 'ps-ach-pct');
+    var srcBody = document.getElementById('ps-body');
+    var dstBody = clone.querySelector('#ps-body') || clone.querySelector('tbody');
+    if (srcBody && dstBody) dstBody.innerHTML = srcBody.innerHTML;
+
+    document.getElementById('salary-report-close').addEventListener('click', closeSalaryReportModal);
+    document.getElementById('salary-report-print').addEventListener('click', printSalaryReportModal);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSalaryReportModal(); });
+    document.addEventListener('keydown', salaryReportModalEscHandler);
+}
+function salaryReportModalEscHandler(e) {
+    if (e.key === 'Escape') closeSalaryReportModal();
+}
+function closeSalaryReportModal() {
+    document.removeEventListener('keydown', salaryReportModalEscHandler);
+    var modal = document.getElementById('salary-report-modal');
+    if (modal) modal.remove();
+}
+window.openSalaryReportModal = openSalaryReportModal;
+window.closeSalaryReportModal = closeSalaryReportModal;
+window.printSalaryReportModal = printSalaryReportModal;
 
 // ==================== Calculation center — commission workspace ====================
 function bareMonthToQuarterLabel(bareM) {
@@ -5619,15 +5808,48 @@ function cwFormatMomPct(cur, prev) {
     var chg = ((cur - prev) / prev) * 100;
     var cl = chg >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
     var arr = chg >= 0 ? '\u25b4' : '\u25bc';
-    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(chg).toFixed(1) + '%</span>';
+    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(chg).toFixed(2) + '%</span>';
 }
 function cwFormatMomPts(cur, prev) {
     if (prev == null || isNaN(prev)) return '\u2014';
     var diff = cur - prev;
-    if (Math.abs(diff) < 0.05) return '<span class="cw-trend-flat">\u2014</span>';
+    if (Math.abs(diff) < 0.005) return '<span class="cw-trend-flat">\u2014</span>';
     var cl = diff >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
     var arr = diff >= 0 ? '\u25b4' : '\u25bc';
-    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(diff).toFixed(1) + ' pts</span>';
+    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(diff).toFixed(2) + '%</span>';
+}
+function cwCalcOverallMomPct(rows) {
+    var pcts = [];
+    (rows || []).forEach(function(r) {
+        if (r.skipOverall) return;
+        var cur = r.curNum;
+        var prev = r.prevNum;
+        if (cur == null || isNaN(cur) || prev == null || isNaN(prev)) return;
+        if (prev === 0 && cur === 0) return;
+        if (prev === 0 && cur > 0) {
+            pcts.push(100);
+            return;
+        }
+        if (prev !== 0) pcts.push(((cur - prev) / prev) * 100);
+    });
+    if (!pcts.length) return null;
+    return pcts.reduce(function(a, b) { return a + b; }, 0) / pcts.length;
+}
+function cwRenderCompareOverall(pct) {
+    if (pct == null || isNaN(pct)) {
+        return '<div class="cw-compare-overall">'
+            + '<div class="cw-compare-overall-lbl">Overall comparison</div>'
+            + '<div class="cw-compare-overall-val" style="font-size:11px;color:var(--calc-muted);">\u2014</div>'
+            + '<div class="cw-compare-overall-sub">Not enough prior-month data</div>'
+            + '</div>';
+    }
+    var cl = pct >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
+    var arr = pct >= 0 ? '\u25b4' : '\u25bc';
+    return '<div class="cw-compare-overall">'
+        + '<div class="cw-compare-overall-lbl">Overall comparison</div>'
+        + '<div class="cw-compare-overall-val ' + cl + '">' + arr + ' ' + Math.abs(pct).toFixed(2) + '%</div>'
+        + '<div class="cw-compare-overall-sub">Average MoM across metrics above</div>'
+        + '</div>';
 }
 function cwRenderCompareTable(rows, curLabel, prevLabel) {
     var html = '<table class="cw-compare-table"><thead><tr>'
@@ -5640,7 +5862,9 @@ function cwRenderCompareTable(rows, curLabel, prevLabel) {
             + '<td class="cw-compare-val' + achCls + '">' + r.prev + '</td>'
             + '<td class="cw-compare-mom">' + r.mom + '</td></tr>';
     });
-    return html + '</tbody></table>';
+    html += '</tbody></table>';
+    html += cwRenderCompareOverall(cwCalcOverallMomPct(rows));
+    return html;
 }
 function cwCompareRow(label, curNum, prevNum, fmtCur, fmtPrev, momFn, isAch) {
     var dash = '\u2014';
@@ -5650,11 +5874,18 @@ function cwCompareRow(label, curNum, prevNum, fmtCur, fmtPrev, momFn, isAch) {
         cur: fmtCur != null ? fmtCur : (curNum != null ? String(curNum) : dash),
         prev: hasPrev ? (fmtPrev != null ? fmtPrev : String(prevNum)) : dash,
         mom: hasPrev && momFn ? momFn(curNum, prevNum) : dash,
-        ach: !!isAch
+        ach: !!isAch,
+        curNum: curNum,
+        prevNum: hasPrev ? prevNum : null,
+        skipOverall: !!isAch || momFn === cwFormatMomPts
     };
 }
+function cwFmtPct(v, digits) {
+    var d = digits == null ? 2 : digits;
+    return (Number(v) || 0).toFixed(d) + '%';
+}
 function cwShortChartVal(v, isPct) {
-    if (isPct) return (v || 0).toFixed(2) + '%';
+    if (isPct) return cwFmtPct(v, 2);
     var n = v || 0;
     if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(2) + 'k';
@@ -5689,8 +5920,8 @@ function cwRenderCompareGraph(bars, achPair, curLabel, prevLabel) {
             label: 'Ach%',
             cur: achPair.cur || 0,
             prev: achPair.prev || 0,
-            curFmt: (achPair.cur || 0).toFixed(2) + '%',
-            prevFmt: (achPair.prev || 0).toFixed(2) + '%',
+            curFmt: cwFmtPct(achPair.cur, 2),
+            prevFmt: cwFmtPct(achPair.prev, 2),
             pct: true
         });
     }
@@ -5703,11 +5934,13 @@ function cwRenderCompareGraph(bars, achPair, curLabel, prevLabel) {
     var padB = 42;
     var chartW = W - padL - padR;
     var chartH = H - padT - padB;
+    var maxBarH = chartH;
     var baseY = padT + chartH;
     var n = items.length;
     var groupW = chartW / Math.max(n, 1);
-    var barW = Math.min(20, Math.max(10, groupW * 0.26));
+    var barW = Math.min(18, Math.max(9, groupW * 0.22));
     var innerGap = 3;
+    var labelPad = 4;
 
     var html = '<div class="cw-compare-graph" role="img" aria-label="This month vs last month bar chart">';
     html += '<div class="cw-compare-graph-head"><div class="cw-compare-graph-legend">'
@@ -5730,8 +5963,8 @@ function cwRenderCompareGraph(bars, achPair, curLabel, prevLabel) {
     items.forEach(function(item, i) {
         var gx = padL + i * groupW + groupW / 2;
         var max = Math.max(item.cur, item.prev, item.pct ? 100 : 1, 1);
-        var hPrev = Math.max(2, (item.prev / max) * chartH);
-        var hCur = Math.max(2, (item.cur / max) * chartH);
+        var hPrev = Math.max(2, (item.prev / max) * maxBarH);
+        var hCur = Math.max(2, (item.cur / max) * maxBarH);
         var xPrev = gx - barW - innerGap / 2;
         var xCur = gx + innerGap / 2;
         var yPrev = baseY - hPrev;
@@ -5745,14 +5978,27 @@ function cwRenderCompareGraph(bars, achPair, curLabel, prevLabel) {
         html += '<rect x="' + xCur + '" y="' + yCur + '" width="' + barW + '" height="' + hCur + '" rx="3" fill="url(#cwBarCur)">'
             + '<title>' + curLabel + ' ' + item.label + ': ' + (item.curFmt != null ? item.curFmt : item.cur) + '</title></rect>';
 
-        html += '<text x="' + (xPrev + barW / 2) + '" y="' + (yPrev - 3) + '" text-anchor="middle" fill="#64748b" font-size="7" font-weight="700" font-family="IBM Plex Mono, monospace">'
+        var pctLabelFill = item.pct ? '#7c3aed' : null;
+        var prevLabelFill = pctLabelFill || '#64748b';
+        var curLabelFill = pctLabelFill || '#1d4ed8';
+
+        var valFont = item.pct ? 9 : 7;
+        var valWeight = item.pct ? 800 : 700;
+
+        html += '<text x="' + (xPrev - labelPad) + '" y="' + (yPrev + hPrev / 2) + '" text-anchor="end" dominant-baseline="middle" fill="' + prevLabelFill + '" font-size="' + valFont + '" font-weight="' + valWeight + '" font-family="Sora, sans-serif">'
             + cwShortChartVal(item.prev, item.pct) + '</text>';
-        html += '<text x="' + (xCur + barW / 2) + '" y="' + (yCur - 3) + '" text-anchor="middle" fill="#1d4ed8" font-size="7" font-weight="800" font-family="IBM Plex Mono, monospace">'
+        html += '<text x="' + (xCur + barW + labelPad) + '" y="' + (yCur + hCur / 2) + '" text-anchor="start" dominant-baseline="middle" fill="' + curLabelFill + '" font-size="' + valFont + '" font-weight="800" font-family="Sora, sans-serif">'
             + cwShortChartVal(item.cur, item.pct) + '</text>';
+
+        if (item.pct) {
+            html += '<circle cx="' + (xPrev + barW / 2) + '" cy="' + yPrev + '" r="2.2" fill="#64748b" stroke="#fff" stroke-width="0.6"/>';
+            html += '<circle cx="' + (xCur + barW / 2) + '" cy="' + yCur + '" r="2.2" fill="#1d4ed8" stroke="#fff" stroke-width="0.6"/>';
+        }
 
         html += '<text x="' + gx + '" y="' + (baseY + 12) + '" text-anchor="middle" fill="#64748b" font-size="7" font-weight="800" font-family="Sora, sans-serif">' + item.label + '</text>';
         if (mom) {
-            html += '<text x="' + gx + '" y="' + (baseY + 24) + '" text-anchor="middle" fill="' + momColor + '" font-size="7" font-weight="800" font-family="IBM Plex Mono, monospace">' + mom + '</text>';
+            var momFill = item.pct ? '#7c3aed' : momColor;
+            html += '<text x="' + gx + '" y="' + (baseY + 24) + '" text-anchor="middle" fill="' + momFill + '" font-size="9" font-weight="800" font-family="Sora, sans-serif">' + mom + '</text>';
         }
     });
 
@@ -5771,15 +6017,12 @@ function cwGraphBar(label, cur, prev, curFmt, prevFmt) {
 function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
     var panel = document.getElementById('cw-prev-month-panel');
     var bodyEl = document.getElementById('cw-prev-month-body');
-    var graphEl = document.getElementById('cw-compare-graph');
     if (!panel || !bodyEl) return;
 
     var keys = cwPrevMonthKey(selMonth, selYear);
     var pm = keys.pm;
     var py = keys.py;
     var rows = [];
-    var graphBars = [];
-    var achPair = null;
 
     if (empType === 'Supervisor') {
         var teamCur = cwSupervisorTeamTotals(selMonth, String(selYear));
@@ -5787,18 +6030,13 @@ function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
         var curAch = teamCur.teamTarget > 0 ? (teamCur.teamSales / teamCur.teamTarget) * 100 : 0;
         var prevAch = teamPrev.teamTarget > 0 ? (teamPrev.teamSales / teamPrev.teamTarget) * 100 : 0;
         var hasPrev = teamPrev.teamSales > 0 || teamPrev.teamTarget > 0;
-        graphBars.push(cwGraphBar('Team sales', teamCur.teamSales, hasPrev ? teamPrev.teamSales : 0,
-            formatCurrency(teamCur.teamSales), hasPrev ? formatCurrency(teamPrev.teamSales) : '\u2014'));
-        graphBars.push(cwGraphBar('Team tgt', teamCur.teamTarget, hasPrev ? teamPrev.teamTarget : 0,
-            formatCurrency(teamCur.teamTarget), hasPrev ? formatCurrency(teamPrev.teamTarget) : '\u2014'));
-        achPair = { cur: curAch, prev: hasPrev && teamPrev.teamTarget > 0 ? prevAch : 0 };
         rows.push(cwCompareRow('Team sales', teamCur.teamSales, hasPrev ? teamPrev.teamSales : null,
             formatCurrency(teamCur.teamSales), hasPrev ? formatCurrency(teamPrev.teamSales) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Team target', teamCur.teamTarget, hasPrev ? teamPrev.teamTarget : null,
             formatCurrency(teamCur.teamTarget), hasPrev ? formatCurrency(teamPrev.teamTarget) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Achievement', curAch, hasPrev && teamPrev.teamTarget > 0 ? prevAch : null,
-            teamCur.teamTarget > 0 ? curAch.toFixed(1) + '%' : '\u2014',
-            hasPrev && teamPrev.teamTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014',
+            teamCur.teamTarget > 0 ? cwFmtPct(curAch, 2) : '\u2014',
+            hasPrev && teamPrev.teamTarget > 0 ? cwFmtPct(prevAch, 2) : '\u2014',
             cwFormatMomPts, true));
     } else if (empType === 'Support Staff') {
         var rowS = cwPersonRowFromHistory(person.name, pm, String(py));
@@ -5810,8 +6048,6 @@ function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
         var prevBlockTgt = rowS ? (parseFloat(rowS.collectionTarget) || 0) : null;
         var prevCallAct = rowS ? (parseFloat(rowS.callActual) || 0) : null;
         var prevCallTgt = rowS ? (parseFloat(rowS.callTarget) || 0) : null;
-        graphBars.push(cwGraphBar('Blocks', curBlocks, prevBlocks, String(curBlocks), rowS ? String(prevBlocks) : '\u2014'));
-        graphBars.push(cwGraphBar('Call act', curCallAct, prevCallAct, String(curCallAct), rowS ? String(prevCallAct) : '\u2014'));
         rows.push(cwCompareRow('Blocks', curBlocks, prevBlocks, String(curBlocks), rowS ? String(prevBlocks) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Block target', curBlockTgt, prevBlockTgt, String(curBlockTgt), rowS ? String(prevBlockTgt) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Call actual', curCallAct, prevCallAct, String(curCallAct), rowS ? String(prevCallAct) : null, cwFormatMomPct));
@@ -5827,18 +6063,13 @@ function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
         var prevAch = row && prevTarget > 0 ? (prevSales / prevTarget) * 100 : null;
         var prevComm = row ? calculateCommission(prevSales || 0, prevTarget || 0, person.name) : null;
 
-        graphBars.push(cwGraphBar('Sales', sales, prevSales, formatCurrency(sales), row ? formatCurrency(prevSales) : '\u2014'));
-        graphBars.push(cwGraphBar('Target', target, prevTarget, formatCurrency(target), row ? formatCurrency(prevTarget) : '\u2014'));
-        graphBars.push(cwGraphBar('Comm', curComm, prevComm, formatCurrency(curComm), row ? formatCurrency(prevComm) : '\u2014'));
-        achPair = { cur: curAch, prev: prevAch != null ? prevAch : 0 };
-
         rows.push(cwCompareRow('Sales', sales, prevSales,
             formatCurrency(sales), row ? formatCurrency(prevSales) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Target', target, prevTarget,
             formatCurrency(target), row ? formatCurrency(prevTarget) : null, cwFormatMomPct));
         rows.push(cwCompareRow('Achievement', curAch, prevAch,
-            target > 0 ? curAch.toFixed(1) + '%' : '\u2014',
-            row && prevTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014',
+            target > 0 ? cwFmtPct(curAch, 2) : '\u2014',
+            row && prevTarget > 0 ? cwFmtPct(prevAch, 2) : '\u2014',
             cwFormatMomPts, true));
         rows.push(cwCompareRow('Commission', curComm, prevComm,
             formatCurrency(curComm), row ? formatCurrency(prevComm) : null, cwFormatMomPct));
@@ -5857,7 +6088,9 @@ function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
                 label: 'Collection',
                 cur: formatCurrency(curCollAmt) + ' / ' + formatCurrency(curCollTgt),
                 prev: row ? formatCurrency(prevCollAmt) + ' / ' + formatCurrency(prevCollTgt) : '\u2014',
-                mom: row ? cwFormatMomPct(curCollAmt, prevCollAmt) : '\u2014'
+                mom: row ? cwFormatMomPct(curCollAmt, prevCollAmt) : '\u2014',
+                curNum: curCollAmt,
+                prevNum: row ? prevCollAmt : null
             });
         }
         if (curCallAct > 0 || curCallTgt > 0 || (prevCallAct != null && (prevCallAct > 0 || prevCallTgt > 0))) {
@@ -5865,15 +6098,13 @@ function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
                 label: 'Active call',
                 cur: String(curCallAct) + ' / ' + String(curCallTgt),
                 prev: row ? String(prevCallAct) + ' / ' + String(prevCallTgt) : '\u2014',
-                mom: row ? cwFormatMomPct(curCallAct, prevCallAct) : '\u2014'
+                mom: row ? cwFormatMomPct(curCallAct, prevCallAct) : '\u2014',
+                curNum: curCallAct,
+                prevNum: row ? prevCallAct : null
             });
         }
     }
 
-    if (graphEl) {
-        graphEl.innerHTML = cwRenderCompareGraph(graphBars, achPair, keys.curLabel, keys.prevLabel);
-        graphEl.setAttribute('aria-hidden', graphBars.length ? 'false' : 'true');
-    }
     bodyEl.innerHTML = cwRenderCompareTable(rows, keys.curLabel, keys.prevLabel);
 }
 function cwBindWhatIf() {
@@ -6115,14 +6346,14 @@ function updateCalcWorkspace() {
             if (momPct != null) {
                 var cl = momPct >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
                 var arr = momPct >= 0 ? '\u25b4' : '\u25bc';
-                salesSubEl.innerHTML = '<span class="cw-kpi-trend-lbl">vs last month</span><span class="' + cl + '">' + arr + '\u00a0' + Math.abs(momPct).toFixed(1) + '%</span>';
+                salesSubEl.innerHTML = '<span class="cw-kpi-trend-lbl">vs last month</span><span class="' + cl + '">' + arr + '\u00a0' + Math.abs(momPct).toFixed(2) + '%</span>';
             } else if (prevSales !== null && prevSales === 0 && sales > 0) salesSubEl.textContent = 'Up from RM 0 last month';
             else salesSubEl.textContent = '';
         }
     }
 
     if (empType === 'Sales') {
-        cwSetText('cw-kpi-rate', (sales > 0 && ratePct > 0) ? ratePct.toFixed(2) + '%' : (sales <= 0 ? '\u2014' : '0%'));
+        cwSetText('cw-kpi-rate', (sales > 0 && ratePct > 0) ? ratePct.toFixed(2) + '%' : (sales <= 0 ? '\u2014' : '0.00%'));
         cwSetText('cw-kpi-rate-sub', 'Current tier rate');
     } else if (empType === 'Supervisor') {
         cwSetText('cw-kpi-rate', '\u2014');
@@ -6228,6 +6459,8 @@ function updateCalcWorkspace() {
     }
 
     var tbl = document.getElementById('cw-tier-table');
+    var tierTableHead = '<caption class="cw-tier-caption">Commission tier table</caption>'
+        + '<colgroup><col class="cw-tier-col-name"><col class="cw-tier-col-val"></colgroup>';
     if (tbl) {
         if (empType === 'Sales' && rates.length) {
             var sortedR = rates.slice().sort(function(a, b) { return a.min - b.min; });
@@ -6236,7 +6469,7 @@ function updateCalcWorkspace() {
                 var lab = cwFormatTierTableLabel(t, idx);
                 return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + lab + '</td><td>' + ((t.rate || 0) * 100).toFixed(2) + '%</td></tr>';
             }).join('');
-            tbl.innerHTML = '<thead><tr><th>Tier</th><th>Rate</th></tr></thead><tbody>' + body + '</tbody>';
+            tbl.innerHTML = tierTableHead + '<thead><tr><th>Tier band</th><th>Rate</th></tr></thead><tbody>' + body + '</tbody>';
         } else if (empType === 'Supervisor') {
             var _supCfg = window.appState.config;
             var _saleT = (_supCfg.person_supervisor_sale_tiers && _supCfg.person_supervisor_sale_tiers[person.name]) || _supCfg.supervisor_sale_tiers || [];
@@ -6246,16 +6479,16 @@ function updateCalcWorkspace() {
                 var lab = cwFormatTierTableLabel(t, idx);
                 return '<tr class="' + (active ? 'cw-tier-active' : '') + '"><td>' + lab + '</td><td>' + formatCurrency(t.amt || 0) + '</td></tr>';
             }).join('');
-            tbl.innerHTML = '<thead><tr><th>Tier</th><th>Payout (RM)</th></tr></thead><tbody>' + body2 + '</tbody>';
+            tbl.innerHTML = tierTableHead + '<thead><tr><th>Tier band</th><th>Payout (RM)</th></tr></thead><tbody>' + body2 + '</tbody>';
         } else {
-            tbl.innerHTML = '<tbody><tr><td colspan="2" style="text-align:center;color:#64748b;padding:12px;">No percentage tiers \u2014 per-block rate in KPI</td></tr></tbody>';
+            tbl.innerHTML = tierTableHead + '<tbody><tr><td colspan="2" style="text-align:center;color:#64748b;padding:12px;">No percentage tiers \u2014 per-block rate in KPI</td></tr></tbody>';
         }
     }
 
     var bar = document.getElementById('cw-tier-bar-fill');
     var barLbl = document.getElementById('cw-tier-bar-lbl');
     if (bar) bar.style.width = Math.min(Math.max(ach, 0), 100) + '%';
-    if (barLbl) barLbl.textContent = 'Your position: ' + ach.toFixed(1) + '% achievement';
+    if (barLbl) barLbl.textContent = 'Your position: ' + ach.toFixed(2) + '% achievement';
 
     var wrap = document.getElementById('cw-whatif-wrap');
     if (wrap && rng) {
@@ -6282,7 +6515,7 @@ function updateCalcWorkspace() {
                 if (readEl) {
                     readEl.innerHTML = ''
                         + '<div class="cw-wif-line">If sales = <strong>' + formatCurrency(hSales) + '</strong></div>'
-                        + '<div class="cw-wif-line">Achievement: <strong>' + hAch.toFixed(1) + '%</strong> (' + tierTit + ')</div>'
+                        + '<div class="cw-wif-line">Achievement: <strong>' + hAch.toFixed(2) + '%</strong> (' + tierTit + ')</div>'
                         + '<div class="cw-wif-line cw-wif-net">Net payable: ' + formatCurrency(hGrand) + '</div>';
                 }
             };
@@ -6303,7 +6536,7 @@ function promptAddPerson() {
 
     // Build card - stops propagation so clicks inside don't close modal
     var card = document.createElement('div');
-    card.style.cssText = 'background:#fff;border-radius:16px;width:420px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;font-family:sans-serif;';
+    card.style.cssText = 'background:#fff;border-radius:16px;width:420px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;font-family:Sora,sans-serif;';
 
     // Header
     var hdr = document.createElement('div');
@@ -6910,7 +7143,7 @@ function showTargetModal(personName) {
             var inp = document.createElement('input');
             inp.type = 'number'; inp.placeholder = '0'; inp.value = val;
             inp.dataset.key = key; inp.dataset.fieldtype = 'target';
-            inp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
+            inp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;font-family:Sora,sans-serif;font-weight:600;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
             inp.addEventListener('focus', function(){ this.style.borderColor='var(--blue)'; });
             inp.addEventListener('blur',  function(){ this.style.borderColor='var(--line)'; });
             cell.appendChild(inp);
@@ -6923,7 +7156,7 @@ function showTargetModal(personName) {
             var outInp = document.createElement('input');
             outInp.type = 'number'; outInp.placeholder = '0'; outInp.value = outletVal;
             outInp.dataset.key = key; outInp.dataset.fieldtype = 'outlet';
-            outInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #fde68a;border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:#fffbeb;color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
+            outInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #fde68a;border-radius:8px;font-size:15px;font-family:Sora,sans-serif;font-weight:600;outline:none;background:#fffbeb;color:var(--ink);box-sizing:border-box;margin-bottom:10px;';
             outInp.addEventListener('focus', function(){ this.style.borderColor='var(--am)'; });
             outInp.addEventListener('blur',  function(){ this.style.borderColor='#fde68a'; });
             cell.appendChild(outInp);
@@ -6938,7 +7171,7 @@ function showTargetModal(personName) {
             var callInp = document.createElement('input');
             callInp.type = 'number'; callInp.placeholder = '0'; callInp.value = callVal;
             callInp.dataset.key = key; callInp.dataset.fieldtype = 'call';
-            callInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #ddd6fe;border-radius:8px;font-size:15px;font-family:"IBM Plex Mono",monospace;font-weight:600;outline:none;background:#f5f3ff;color:var(--ink);box-sizing:border-box;';
+            callInp.style.cssText = 'width:100%;padding:9px 12px;border:1.5px solid #ddd6fe;border-radius:8px;font-size:15px;font-family:Sora,sans-serif;font-weight:600;outline:none;background:#f5f3ff;color:var(--ink);box-sizing:border-box;';
             callInp.addEventListener('focus', function(){ this.style.borderColor='var(--vi)'; });
             callInp.addEventListener('blur',  function(){ this.style.borderColor='#ddd6fe'; });
             cell.appendChild(callInp);
@@ -7261,7 +7494,7 @@ function showTeamTargetAllocationModal() {
     totalInp.placeholder = '0';
     var _initSaved = currentSaved();
     totalInp.value = _initSaved.teamTotal > 0 ? String(_initSaved.teamTotal) : '';
-    totalInp.style.cssText = 'width:100%;padding:10px 14px;border:2px solid #bfdbfe;border-radius:10px;font-size:18px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;background:#eff6ff;color:#1e40af;box-sizing:border-box;';
+    totalInp.style.cssText = 'width:100%;padding:10px 14px;border:2px solid #bfdbfe;border-radius:10px;font-size:18px;font-weight:700;font-family:\'Sora\',sans-serif;background:#eff6ff;color:#1e40af;box-sizing:border-box;';
     totalWrap.appendChild(totalInp);
     scopeRow.appendChild(totalWrap);
 
@@ -7351,7 +7584,7 @@ function showTeamTargetAllocationModal() {
     var tblTop = document.createElement('div');
     tblTop.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--sheet);border-bottom:1px solid var(--line);';
     tblTop.innerHTML = '<span style="font-size:12px;font-weight:800;color:var(--ink);">\ud83d\udcca Allocation</span>'
-        + '<span id="tta-team-sum-lbl" style="font-size:12px;font-weight:700;color:#0369a1;font-family:\'IBM Plex Mono\',monospace;">Total Team Target: RM 0</span>';
+        + '<span id="tta-team-sum-lbl" style="font-size:12px;font-weight:700;color:#0369a1;font-family:\'Sora\',sans-serif;">Total Team Target: RM 0</span>';
     tableWrap.appendChild(tblTop);
 
     var table = document.createElement('table');
@@ -7366,7 +7599,7 @@ function showTeamTargetAllocationModal() {
         + '<td style="padding:10px 12px;font-weight:800;color:#0f172a;">Grand Total</td>'
         + '<td id="tta-foot-pct" style="padding:10px;text-align:right;font-weight:800;color:#059669;">0%</td>'
         + '<td></td>'
-        + '<td id="tta-foot-rm" style="padding:10px 12px;text-align:right;font-weight:800;color:#0369a1;font-family:\'IBM Plex Mono\',monospace;">RM 0.00</td>'
+        + '<td id="tta-foot-rm" style="padding:10px 12px;text-align:right;font-weight:800;color:#0369a1;font-family:\'Sora\',sans-serif;">RM 0.00</td>'
         + '</tr></tfoot>';
     tableWrap.appendChild(table);
     body.appendChild(tableWrap);
@@ -7571,7 +7804,7 @@ function showTeamTargetAllocationModal() {
                 + 'style="width:92px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;text-align:right;font-weight:700;"></td>'
                 + '<td style="padding:6px 12px;"><div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
                 + '<div class="tta-bar" style="height:100%;width:' + Math.min(pct, 100) + '%;background:' + barBg + ';border-radius:4px;"></div></div></td>'
-                + '<td class="tta-rm-cell" style="padding:8px 12px;text-align:right;font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:' + col[1] + ';">RM ' + rmShown.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>';
+                + '<td class="tta-rm-cell" style="padding:8px 12px;text-align:right;font-family:\'Sora\',sans-serif;font-weight:700;color:' + col[1] + ';">RM ' + rmShown.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>';
             tbody.appendChild(tr);
         });
 
@@ -8263,7 +8496,7 @@ function printProjectionReport() {
 
     var win = window.open('', '_blank');
     win.document.write('<html><head><title>Projection Report — '+name+'</title>');
-    win.document.write('<style>body{font-family:sans-serif;padding:24px;max-width:900px;margin:0 auto;}');
+    win.document.write('<style>body{font-family:Sora,sans-serif;padding:24px;max-width:900px;margin:0 auto;}');
     win.document.write('h1{font-size:20px;font-weight:700;margin-bottom:4px;}');
     win.document.write('.sub{font-size:13px;color:#64748b;margin-bottom:20px;}');
     win.document.write('</style></head><body>');
@@ -8536,67 +8769,10 @@ function printProjectionExcel() {
 }
 window.printProjectionExcel = printProjectionExcel;
 
-async function initRoutePlannerView() {
-    var statusEl = document.getElementById('rp-status');
-    var btn = document.getElementById('btn-launch-route-planner');
-    if (!window.electronAPI || !window.electronAPI.getRoutePlannerStatus) {
-        if (statusEl) {
-            statusEl.textContent = 'Route Planner launcher unavailable in this environment.';
-            statusEl.className = 'rp-status err';
-        }
-        if (btn) btn.disabled = true;
-        return;
-    }
-    try {
-        var info = await window.electronAPI.getRoutePlannerStatus();
-        if (statusEl) {
-            if (info.available) {
-                statusEl.textContent = 'Route Planner is bundled and ready to launch.';
-                statusEl.className = 'rp-status ok';
-            } else {
-                statusEl.textContent = 'Route Planner not found. Please reinstall SalesPro.';
-                statusEl.className = 'rp-status err';
-            }
-        }
-        if (btn) btn.disabled = !info.available;
-        var verEl = document.getElementById('rp-version-label');
-        if (verEl && info.version) verEl.textContent = 'v' + info.version;
-    } catch (e) {
-        if (statusEl) {
-            statusEl.textContent = 'Could not check Route Planner: ' + e.message;
-            statusEl.className = 'rp-status err';
-        }
-        if (btn) btn.disabled = true;
-    }
-}
-
-async function launchRoutePlanner() {
-    if (!window.electronAPI || !window.electronAPI.launchRoutePlanner) {
-        showToast('❌', 'Route Planner launcher unavailable');
-        return;
-    }
-    var btn = document.getElementById('btn-launch-route-planner');
-    if (btn) btn.disabled = true;
-    try {
-        var result = await window.electronAPI.launchRoutePlanner();
-        if (result && result.success) {
-            showToast('✅', 'Route Planner opened');
-        } else {
-            showToast('❌', (result && result.error) || 'Failed to launch Route Planner');
-        }
-    } catch (e) {
-        showToast('❌', e.message);
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
-
 // ==================== Global Function Export ====================
 
 window.initApp = initApp;
 window.switchView = switchView;
-window.launchRoutePlanner = launchRoutePlanner;
-window.initRoutePlannerView = initRoutePlannerView;
 // ==================== Payslip Preview Modal ====================
 function showPayslipPreview(index) {
     var person = window.appState.salespeople[index];
@@ -8926,7 +9102,7 @@ function printHistoryReport(index) {
 
     var win = window.open('', '_blank');
     win.document.write('<html><head><title>'+month+' Report</title>');
-    win.document.write('<style>body{font-family:sans-serif;padding:20px;max-width:800px;margin:0 auto;}h2{font-size:20px;margin-bottom:16px;}</style></head><body>');
+    win.document.write('<style>body{font-family:Sora,sans-serif;padding:20px;max-width:800px;margin:0 auto;}h2{font-size:20px;margin-bottom:16px;}</style></head><body>');
     win.document.write('<h2>Commission Report — '+month+' 2026</h2>');
     win.document.write(html);
     win.document.write('</body></html>');
@@ -9023,8 +9199,8 @@ function renderPeopleList() {
     var cfg = window.appState.config;
     var people = Object.keys(cfg.base_salaries || {});
     if (people.length === 0) {
-        container.innerHTML = '<div class="empty-state" style="padding:48px 20px;">'
-            + '<div class="empty-state-icon" style="font-size:40px;">👥</div>'
+        container.innerHTML = '<div class="empty-state">'
+            + '<div class="empty-state-icon">👥</div>'
             + '<div class="empty-state-title">No salespeople yet</div>'
             + '<div class="empty-state-sub">Add a person above to get started</div></div>';
         return;
@@ -9041,32 +9217,32 @@ function renderPeopleList() {
         var item = document.createElement('div');
         item.className = 'people-list-row';
         item.setAttribute('data-type', empType);
-        item.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(90deg,'+tc.bg+' 0%,var(--paper) 40%);border:1px solid var(--line);border-left:3px solid '+tc.c+';border-radius:var(--r);box-shadow:var(--sh);transition:box-shadow .15s,opacity .15s;margin-bottom:8px;cursor:grab;';
+        item.style.cssText = 'background:linear-gradient(90deg,'+tc.bg+' 0%,var(--paper) 40%);border-left:3px solid '+tc.c+';';
         if (!active) { item.style.opacity = '0.55'; item.style.filter = 'grayscale(0.6)'; }
         item.setAttribute('draggable', 'true');
         item.setAttribute('data-name', name);
         item.innerHTML =
-            '<div style="color:#cbd5e1;font-size:16px;cursor:grab;flex-shrink:0;" title="Drag to reorder">⠿</div>'
-            + '<div style="width:38px;height:38px;border-radius:50%;background:'+tc.bg+';color:'+tc.c+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">'+name[0]+'</div>'
-            + '<div style="flex:1;">'
-            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">'
-            + '<div style="font-size:14px;font-weight:700;color:'+tc.c+';">'+name+'</div>'
-            + '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">'+tc.icon+' '+empType+'</span>'
+            '<div class="pi-drag" title="Drag to reorder">⠿</div>'
+            + '<div class="pi-avatar" style="background:'+tc.bg+';color:'+tc.c+';">'+name[0]+'</div>'
+            + '<div class="pi-main">'
+            + '<div class="pi-name-row">'
+            + '<div class="pi-name" style="color:'+tc.c+';">'+name+'</div>'
+            + '<span class="pi-badge" style="background:'+tc.bg+';color:'+tc.c+';">'+tc.icon+' '+empType+'</span>'
             + (active
-                ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">● Active</span>'
-                : '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">○ Inactive</span>')
+                ? '<span class="pi-badge" style="background:#dcfce7;color:#166534;">● Active</span>'
+                : '<span class="pi-badge" style="background:#fee2e2;color:#b91c1c;">○ Inactive</span>')
             + '</div>'
-            + '<div style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
-            + 'Base: RM '+salary.toLocaleString()+' &nbsp;·&nbsp; Allowances: RM '+totalAllow.toLocaleString()
+            + '<div class="pi-meta">'
+            + 'Base: RM '+salary.toLocaleString()+' · Allowances: RM '+totalAllow.toLocaleString()
             + (cfg.salary_history&&cfg.salary_history[name]&&cfg.salary_history[name].length>1
-                ? ' &nbsp;·&nbsp; <span style="color:var(--am);font-size:10px;font-weight:700;">'+cfg.salary_history[name].length+' salary records</span>'
+                ? ' · <span style="color:var(--am);font-size:9px;font-weight:700;">'+cfg.salary_history[name].length+' salary records</span>'
                 : '')
-            + ' &nbsp;·&nbsp; '
+            + ' · '
             + (hasPersonal
-                ? '<span style="background:var(--vi-l);color:var(--vi);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;">✦ Personal</span>'
-                : '<span style="background:var(--sheet);color:var(--ink4);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--line);">Company Rate</span>')
+                ? '<span class="pi-badge" style="background:var(--vi-l);color:var(--vi);border-radius:20px;">✦ Personal</span>'
+                : '<span class="pi-badge" style="background:var(--sheet);color:var(--ink4);border:1px solid var(--line);border-radius:20px;">Company Rate</span>')
             + '</div></div>'
-            + '<select id="type-select-'+i+'" class="filter-select" style="padding:5px 10px;font-size:11px;">'
+            + '<select id="type-select-'+i+'" class="filter-select">'
             + '<option value="Sales"'+(empType==='Sales'?' selected':'')+'>💼 Sales</option>'
             + '<option value="Supervisor"'+(empType==='Supervisor'?' selected':'')+'>👔 Supervisor</option>'
             + '<option value="Support Staff"'+(empType==='Support Staff'?' selected':'')+'>🛠️ Support Staff</option>'
@@ -9077,9 +9253,9 @@ function renderPeopleList() {
                 var empCompany = getEmployeeCompany(name);
                 var opts = '<option value=""'+(empCompany===''?' selected':'')+'>— No Company —</option>';
                 companies.forEach(function(c){ opts += '<option value="'+c+'"'+(empCompany===c?' selected':'')+'>🏢 '+c+'</option>'; });
-                return '<select id="company-select-'+i+'" class="filter-select" style="padding:5px 10px;font-size:11px;">'+opts+'</select>';
+                return '<select id="company-select-'+i+'" class="filter-select">'+opts+'</select>';
             })()
-            + '<div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap;width:520px;" id="pi-btns-'+i+'"></div>';
+            + '<div class="pi-btns" id="pi-btns-'+i+'"></div>';
         container.appendChild(item);
         var typeSel = item.querySelector('#type-select-'+i);
         if (typeSel) typeSel.addEventListener('change', (function(n){ return function(e){ setEmployeeType(n, e.target.value); renderPeopleList(); showToast('✅', n+' type changed to '+e.target.value); };})(name));
@@ -9481,7 +9657,7 @@ function renderTempRates() {
     (window._tempRates||[]).forEach(function(t,i){
         var row=document.createElement('div');
         row.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:8px;margin-bottom:5px;';
-        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:IBM Plex Mono,monospace;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
+        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:Sora,sans-serif;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
         row.innerHTML='<input type="text" value="'+(t.label||'')+'" placeholder="Label" style="'+IS+';font-family:Sora,sans-serif;">'
             +'<input type="number" value="'+t.min+'" step="0.01" style="'+IS+'">'
             +'<input type="number" value="'+t.max+'" step="0.01" style="'+IS+'">'
@@ -9506,7 +9682,7 @@ function renderTempIncentive(type,tiers) {
         var arr=type==='qtr'?window._tempQtr:type==='coll'?window._tempColl:window._tempCall;
         var row=document.createElement('div');
         row.style.cssText='display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;align-items:center;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:8px;margin-bottom:5px;';
-        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:IBM Plex Mono,monospace;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
+        var IS='padding:7px 9px;border:1.5px solid var(--line);border-radius:7px;font-size:12px;font-family:Sora,sans-serif;width:100%;box-sizing:border-box;outline:none;background:var(--paper);';
         row.innerHTML='<input type="text" value="'+(t.label||'')+'" placeholder="Label" style="'+IS+';font-family:Sora,sans-serif;">'
             +'<input type="number" value="'+(t.min||0)+'" step="1" style="'+IS+'">'
             +'<input type="number" value="'+(t.incentive||0)+'" step="50" style="'+IS+'">';
@@ -9870,44 +10046,43 @@ function renderDashboard() {
         var typeLabel = '<span style="background:'+tc.bg+';color:'+tc.c+';padding:2px 8px;border-radius:6px;font-size:9px;font-weight:700;margin-left:6px;">'+typeIcon+' '+typeDisplay+'</span>';
         var maxSale = Math.max.apply(null, p.salesByMonth.concat([1]));
         var bars = p.salesByMonth.map(function(v,mi){
-            var h = maxSale>0?Math.max(3,(v/maxSale)*28):3;
-            return '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:24px;"><div style="width:20px;height:'+h+'px;background:'+(v>0?tc.c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.35)+';"></div><div style="font-size:6px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
+            var h = maxSale>0?Math.max(2,(v/maxSale)*22):2;
+            return '<div style="display:flex;flex-direction:column;align-items:center;gap:0;width:20px;"><div style="width:16px;height:'+h+'px;background:'+(v>0?tc.c:'#e2e8f0')+';border-radius:2px 2px 0 0;opacity:'+(v>0?1:0.35)+';"></div><div style="font-size:5px;color:#94a3b8;">'+MONTHS[mi][0]+'</div></div>';
         }).join('');
-        html += '<div style="background:linear-gradient(90deg,'+tc.bg+' 0%,#fff 38%);border:1px solid #e5e7eb;border-left:3px solid '+tc.c+';border-radius:14px;padding:16px 18px;margin-bottom:8px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) minmax(0,1.05fr);align-items:center;gap:10px 12px;max-width:100%;box-sizing:border-box;">';
-        html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;"><div style="width:36px;height:36px;flex-shrink:0;border-radius:50%;background:'+tc.bg+';color:'+tc.c+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;">'+p.name[0]+'</div><div style="min-width:0;"><div style="font-size:13px;font-weight:700;overflow-wrap:break-word;line-height:1.25;"><span style="color:'+tc.c+';">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+'</span>'+typeLabel+'</div><div style="font-size:11px;color:#94a3b8;">'+p.monthCount+' months</div></div></div>';
-        html += '<div style="min-width:0;display:flex;align-items:end;gap:2px;height:35px;overflow-x:auto;">'+bars+'</div>';
-        var monoAmt = 'font-size:13px;font-weight:700;font-family:\'IBM Plex Mono\',monospace;text-align:right;overflow-wrap:break-word;word-break:break-word;line-height:1.25;';
+        html += '<div class="dash-rank-row" style="background:linear-gradient(90deg,'+tc.bg+' 0%,#fff 38%);border-left:3px solid '+tc.c+';">';
+        html += '<div class="dash-rank-person"><div class="dash-rank-avatar" style="background:'+tc.bg+';color:'+tc.c+';">'+p.name[0]+'</div><div style="min-width:0;"><div class="dash-rank-name"><span style="color:'+tc.c+';">'+(p.type==='Sales'?(medals[i]||''):'')+' '+p.name+'</span>'+typeLabel+'</div><div class="dash-rank-sub">'+p.monthCount+' months</div></div></div>';
+        html += '<div class="dash-rank-bars">'+bars+'</div>';
+        var monoAmt = 'dash-rank-col-val';
         // Column 1: Total Sales or Total Blocks or "—"
         if (p.type === 'Sales') {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Sales</div><div style="'+monoAmt+'">'+fmt(p.totalSales)+'</div></div>';
+            html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">Total Sales</div><div class="'+monoAmt+'">'+fmt(p.totalSales)+'</div></div>';
         } else if (p.type === 'Support Staff') {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Total Blocks</div><div style="'+monoAmt+'">'+p.totalBlocks+'</div></div>';
+            html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">Total Blocks</div><div class="'+monoAmt+'">'+p.totalBlocks+'</div></div>';
         } else {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Earns From</div><div style="font-size:11px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;">Team</div></div>';
+            html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">Earns From</div><div style="font-size:11px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;">Team</div></div>';
         }
-        // Column 2: Achievement or "—"
         if (p.type === 'Sales') {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Achievement</div><div class="dash-kpi-val '+achC+'" style="font-size:13px;margin-top:0;">'+p.ach.toFixed(2)+'%</div></div>';
+            html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">Achievement</div><div class="dash-rank-col-val '+achC+'">'+p.ach.toFixed(2)+'%</div></div>';
         } else {
-            html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">Type</div><div style="font-size:13px;font-weight:700;color:'+tc.c+';overflow-wrap:break-word;line-height:1.25;">'+typeIcon+' '+typeDisplay+'</div></div>';
+            html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">Type</div><div class="dash-rank-col-val" style="color:'+tc.c+';">'+typeIcon+' '+typeDisplay+'</div></div>';
         }
         var commLabel = p.type==='Supervisor'?'Sale Incentive':p.type==='Support Staff'?'Block Incentive':'Commission';
-        html += '<div style="min-width:0;text-align:right;"><div style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+commLabel+'</div><div style="'+monoAmt+'color:'+tc.c+';">'+fmt(p.totalComm)+'</div></div>';
+        html += '<div class="dash-rank-col"><div class="dash-rank-col-lbl">'+commLabel+'</div><div class="'+monoAmt+'" style="color:'+tc.c+';">'+fmt(p.totalComm)+'</div></div>';
         html += '</div>';
     });
     // Monthly Sales Trend - only show for ALL or Sales group
     if (selectedGroup === 'ALL' || selectedGroup === 'Sales') {
-    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-top:12px;">';
-    html += '<div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:16px;">📈 Monthly Sales Trend</div>';
-    html += '<div style="display:flex;align-items:end;gap:4px;height:100px;padding:0 4px;">';
+    html += '<div class="dash-trend-panel">';
+    html += '<div class="dash-trend-title">📈 Monthly Sales Trend</div>';
+    html += '<div class="dash-trend-bars">';
     var monthTotals = MONTHS.map(function(m){return salesPeople.reduce(function(s,p){var mi=MONTHS.indexOf(m);return s+p.salesByMonth[mi];},0);});
     var maxMonth = Math.max.apply(null, monthTotals.concat([1]));
     MONTHS.forEach(function(m,mi){
-        var total = monthTotals[mi]; var h = maxMonth>0?Math.max(6,(total/maxMonth)*80):6; var hasData = total>0;
+        var total = monthTotals[mi]; var h = maxMonth>0?Math.max(4,(total/maxMonth)*58):4; var hasData = total>0;
         var salesBarC = getRoleBadgeStyle('Sales').c;
-        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;">';
-        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,'+salesBarC+','+salesBarC+'cc)':'#f1f5f9')+';border-radius:4px 4px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
-        html += '<div style="font-size:9px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';text-align:center;white-space:nowrap;">'+m+(hasData?'<br><span style="font-family:\'IBM Plex Mono\',monospace;font-size:8px;color:#475569;">'+fmt(total)+'</span>':'')+'</div></div>';
+        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">';
+        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,'+salesBarC+','+salesBarC+'cc)':'#f1f5f9')+';border-radius:3px 3px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
+        html += '<div style="font-size:8px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';text-align:center;white-space:nowrap;">'+m+(hasData?'<br><span style="font-family:\'Sora\',sans-serif;font-size:7px;color:#475569;">'+fmt(total)+'</span>':'')+'</div></div>';
     });
     html += '</div></div>';
     }
@@ -9985,6 +10160,7 @@ function renderAnnualReport() {
             : (selectedMonth === 'RANGE' ? rangeLabel : selectedMonth));
     if (subEl) subEl.textContent = selectedYear + ' · ' + monthLabel + ' · ' + (selectedPerson === 'ALL' ? displayPeople.length + ' employees' : selectedPerson) + groupLabel;
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function fmtNum(n) { return (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     var peopleData = {}; configPeople.forEach(function(name) { peopleData[name] = {}; });
 
     // Helper: calc team totals for a month (Sales only)
@@ -10090,8 +10266,8 @@ function renderAnnualReport() {
         salesDisplay.forEach(function(p) { html += '<th colspan="3" class="rt-num rt-border">'+p+'</th>'; });
         html += '<th colspan="3" class="rt-num rt-border">Total</th>';
         html += '</tr><tr><th></th>';
-        salesDisplay.forEach(function() { html += '<th class="rt-num rt-border">Target</th><th class="rt-num">Sales</th><th class="rt-num">Ach%</th>'; });
-        html += '<th class="rt-num rt-border">Target</th><th class="rt-num">Sales</th><th class="rt-num">Ach%</th>';
+        salesDisplay.forEach(function() { html += '<th class="rt-num rt-border">Target RM</th><th class="rt-num">Sales RM</th><th class="rt-num">Ach%</th>'; });
+        html += '<th class="rt-num rt-border">Target RM</th><th class="rt-num">Sales RM</th><th class="rt-num">Ach%</th>';
         html += '</tr></thead><tbody>';
         displayMonths.forEach(function(m) {
             var hasData = salesDisplay.some(function(p){return peopleData[p][m];});
@@ -10101,13 +10277,13 @@ function renderAnnualReport() {
             salesDisplay.forEach(function(p) {
                 var d = peopleData[p][m];
                 if (d) { monthTarget += d.target || 0; monthSales += d.sales || 0; }
-                html += '<td class="rt-num rt-mono rt-border">'+(d?fmt(d.target):'—')+'</td>';
-                html += '<td class="rt-num rt-mono" style="font-weight:600;">'+(d?fmt(d.sales):'—')+'</td>';
+                html += '<td class="rt-num rt-mono rt-border">'+(d?fmtNum(d.target):'—')+'</td>';
+                html += '<td class="rt-num rt-mono" style="font-weight:600;">'+(d?fmtNum(d.sales):'—')+'</td>';
                 html += '<td class="rt-num rt-mono '+(d?achCls(d.ach):'')+'" style="font-weight:700;">'+(d?d.ach.toFixed(2)+'%':'—')+'</td>';
             });
             var monthAch = monthTarget > 0 ? (monthSales / monthTarget * 100) : 0;
-            html += '<td class="rt-num rt-mono rt-border" style="font-weight:700;">'+(monthTarget > 0 ? fmt(monthTarget) : '—')+'</td>';
-            html += '<td class="rt-num rt-mono" style="font-weight:800;">'+(monthSales > 0 ? fmt(monthSales) : '—')+'</td>';
+            html += '<td class="rt-num rt-mono rt-border" style="font-weight:700;">'+(monthTarget > 0 ? fmtNum(monthTarget) : '—')+'</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:800;">'+(monthSales > 0 ? fmtNum(monthSales) : '—')+'</td>';
             html += '<td class="rt-num rt-mono '+(monthTarget > 0 ? achCls(monthAch) : '')+'" style="font-weight:800;">'+(monthTarget > 0 ? monthAch.toFixed(2)+'%' : '—')+'</td>';
             html += '</tr>';
         });
@@ -10118,13 +10294,13 @@ function renderAnnualReport() {
             grandTarget += tT;
             grandSales += tS;
             var tA = tT>0?(tS/tT*100):0;
-            html += '<td class="rt-num rt-mono rt-border">'+fmt(tT)+'</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(tS)+'</td>';
+            html += '<td class="rt-num rt-mono rt-border">'+fmtNum(tT)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(tS)+'</td>';
             html += '<td class="rt-num rt-mono '+achCls(tA)+'">'+tA.toFixed(2)+'%</td>';
         });
         var grandAch = grandTarget > 0 ? (grandSales / grandTarget * 100) : 0;
-        html += '<td class="rt-num rt-mono rt-border">'+fmt(grandTarget)+'</td>';
-        html += '<td class="rt-num rt-mono">'+fmt(grandSales)+'</td>';
+        html += '<td class="rt-num rt-mono rt-border">'+fmtNum(grandTarget)+'</td>';
+        html += '<td class="rt-num rt-mono">'+fmtNum(grandSales)+'</td>';
         html += '<td class="rt-num rt-mono '+achCls(grandAch)+'">'+grandAch.toFixed(2)+'%</td>';
         html += '</tr></tbody></table></div></div>';
     }
@@ -10133,14 +10309,14 @@ function renderAnnualReport() {
     if (salesDisplay.length > 0) {
         html += '<div class="report-panel"><div class="report-panel-head report-panel-head--em">💰 Commission &amp; Incentive Summary (Sales)</div>';
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
-        html += '<th>Person</th><th class="rt-num">Commission</th><th class="rt-num">Collection</th><th class="rt-num">Call Bonus</th><th class="rt-num">Quarterly</th><th class="rt-num">Total</th>';
+        html += '<th>Person</th><th class="rt-num">Commission RM</th><th class="rt-num">Collection RM</th><th class="rt-num">Call Bonus RM</th><th class="rt-num">Quarterly RM</th><th class="rt-num">Total RM</th>';
         html += '</tr></thead><tbody>';
         salesDisplay.forEach(function(p) {
             var comm=0,coll=0,call=0,qtr=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}});
             html += '<tr><td style="font-weight:700;">'+p+'</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(comm)+'</td><td class="rt-num rt-mono">'+fmt(coll)+'</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(call)+'</td><td class="rt-num rt-mono">'+fmt(qtr)+'</td>';
-            html += '<td class="rt-num rt-mono ach-good" style="font-weight:800;">'+fmt(comm+coll+call+qtr)+'</td></tr>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(comm)+'</td><td class="rt-num rt-mono">'+fmtNum(coll)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(call)+'</td><td class="rt-num rt-mono">'+fmtNum(qtr)+'</td>';
+            html += '<td class="rt-num rt-mono ach-good" style="font-weight:800;">'+fmtNum(comm+coll+call+qtr)+'</td></tr>';
         });
         html += '</tbody></table></div></div>';
     }
@@ -10148,14 +10324,14 @@ function renderAnnualReport() {
     if (supervisorDisplay.length > 0) {
         html += '<div class="report-panel"><div class="report-panel-head">👔 Management Staff Incentive Summary</div>';
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
-        html += '<th>Management Staff</th><th class="rt-num">Sale Inc</th><th class="rt-num">Collection Inc</th><th class="rt-num">Call Inc</th><th class="rt-num">Quarterly</th><th class="rt-num">Total</th>';
+        html += '<th>Management Staff</th><th class="rt-num">Sale Inc RM</th><th class="rt-num">Collection Inc RM</th><th class="rt-num">Call Inc RM</th><th class="rt-num">Quarterly RM</th><th class="rt-num">Total RM</th>';
         html += '</tr></thead><tbody>';
         supervisorDisplay.forEach(function(p) {
             var sI=0,cI=0,caI=0,qI=0; displayMonths.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}});
             html += '<tr><td style="font-weight:700;">👔 '+p+'</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(sI)+'</td><td class="rt-num rt-mono">'+fmt(cI)+'</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(caI)+'</td><td class="rt-num rt-mono">'+fmt(qI)+'</td>';
-            html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--vi);">'+fmt(sI+cI+caI+qI)+'</td></tr>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(sI)+'</td><td class="rt-num rt-mono">'+fmtNum(cI)+'</td>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(caI)+'</td><td class="rt-num rt-mono">'+fmtNum(qI)+'</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--vi);">'+fmtNum(sI+cI+caI+qI)+'</td></tr>';
         });
         html += '</tbody></table></div></div>';
     }
@@ -10163,15 +10339,15 @@ function renderAnnualReport() {
     if (merchandiserDisplay.length > 0) {
         html += '<div class="report-panel"><div class="report-panel-head">🛠️ Support Staff Incentive Summary</div>';
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
-        html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block</th><th class="rt-num">Months Active</th><th class="rt-num">Total Incentive</th>';
+        html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block RM</th><th class="rt-num">Months Active</th><th class="rt-num">Total Incentive RM</th>';
         html += '</tr></thead><tbody>';
         merchandiserDisplay.forEach(function(p) {
             var totBlocks=0, totInc=0, mc=0, rate=0;
             displayMonths.forEach(function(m){var d=peopleData[p][m];if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}});
             html += '<tr><td style="font-weight:700;">🛠️ '+p+'</td>';
             html += '<td class="rt-num rt-mono" style="font-weight:700;">'+totBlocks+' blocks</td>';
-            html += '<td class="rt-num rt-mono">'+fmt(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
-            html += '<td class="rt-num rt-mono ach-warn" style="font-weight:800;">'+fmt(totInc)+'</td></tr>';
+            html += '<td class="rt-num rt-mono">'+fmtNum(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
+            html += '<td class="rt-num rt-mono ach-warn" style="font-weight:800;">'+fmtNum(totInc)+'</td></tr>';
         });
         html += '</tbody></table></div></div>';
     }
@@ -10233,7 +10409,7 @@ function printAnnualReport() {
         var body = document.getElementById('employer-cost-body');
         if (!body) return;
         var win = window.open('', '_blank');
-        win.document.write('<html><head><title>Expenses Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
+        win.document.write('<html><head><title>Expenses Report '+year+'</title><style>body{font-family:Sora,sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
         win.document.write('<h1>Expenses Report — '+year+'</h1>');
         win.document.write(body.innerHTML);
         win.document.write('</body></html>');
@@ -10244,7 +10420,7 @@ function printAnnualReport() {
         var body = document.getElementById('annual-report-body');
         if (!body) return;
         var win = window.open('', '_blank');
-        win.document.write('<html><head><title>Annual Report '+year+'</title><style>body{font-family:sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
+        win.document.write('<html><head><title>Annual Report '+year+'</title><style>body{font-family:Sora,sans-serif;padding:24px;max-width:1100px;margin:0 auto;}h1{font-size:20px;font-weight:700;margin-bottom:20px;}</style></head><body>');
         win.document.write('<h1>Annual Report — '+year+'</h1>');
         win.document.write(body.innerHTML);
         win.document.write('</body></html>');
@@ -10841,7 +11017,7 @@ function showMerchandiserRateModal(personName) {
         + '<div style="padding:24px;">'
         + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px;">'
         + '<div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Rate per Block (RM)</div>'
-        + '<input id="merch-rate" type="number" step="0.01" value="'+curRate+'" style="width:100%;padding:10px 14px;border:1.5px solid #fde68a;border-radius:8px;font-size:18px;font-family:\'IBM Plex Mono\',monospace;font-weight:700;outline:none;box-sizing:border-box;">'
+        + '<input id="merch-rate" type="number" step="0.01" value="'+curRate+'" style="width:100%;padding:10px 14px;border:1.5px solid #fde68a;border-radius:8px;font-size:18px;font-family:\'Sora\',sans-serif;font-weight:700;outline:none;box-sizing:border-box;">'
         + '<div style="font-size:11px;color:#92400e;margin-top:8px;">Example: Rate RM 10 × 30 blocks = RM 300 incentive</div>'
         + '</div></div>'
         + '<div style="padding:14px 24px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;background:#f8fafc;">'
