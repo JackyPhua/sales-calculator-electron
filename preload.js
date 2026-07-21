@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installUpdate: () => ipcRenderer.invoke('install-update'),
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    applyWindowFit: (mode) => ipcRenderer.invoke('apply-window-fit', mode || 'quick'),
 
     // ========== Route Planner ==========
     launchRoutePlanner: () => ipcRenderer.invoke('launch-route-planner'),

@@ -349,12 +349,39 @@ async function deactivateLicense() {
     return { success: true };
 }
 
+const SALES_INSIGHT_WIDTH = 1920;
+const SALES_INSIGHT_HEIGHT = 1080;
+let rendererViewMode = 'quick';
+
+/** Scale Sales Insight (1920×1080 design) to the current window content area. */
+function applyWindowFit(win) {
+    if (!win || win.isDestroyed()) return;
+    const [contentW, contentH] = win.getContentSize();
+    if (contentW < 100 || contentH < 100) return;
+    const zoom = Math.min(contentW / SALES_INSIGHT_WIDTH, contentH / SALES_INSIGHT_HEIGHT);
+    win.webContents.setZoomFactor(Math.max(0.55, Math.min(zoom, 1.25)));
+}
+
+function applySalesInsightScreenFit(win) {
+    if (!win || win.isDestroyed()) return;
+    if (!win.isMaximized()) win.maximize();
+    rendererViewMode = 'quick';
+    applyWindowFit(win);
+}
+
+function syncZoomToViewMode(win) {
+    if (!win || win.isDestroyed()) return;
+    if (rendererViewMode === 'quick') applyWindowFit(win);
+    else win.webContents.setZoomFactor(1);
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        minWidth: 1200,
-        minHeight: 700,
+        width: SALES_INSIGHT_WIDTH,
+        height: SALES_INSIGHT_HEIGHT,
+        minWidth: 1024,
+        minHeight: 600,
+        show: false,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -367,21 +394,20 @@ function createWindow() {
     });
 
     mainWindow.loadFile('index.html');
-    mainWindow.maximize();
 
-    // Auto zoom to fit screen resolution
+    let resizeTimer;
+    mainWindow.on('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => syncZoomToViewMode(mainWindow), 60);
+    });
+
     mainWindow.webContents.on('did-finish-load', () => {
-        const { screen } = require('electron');
-        const display = screen.getPrimaryDisplay();
-        const { height } = display.workAreaSize;
-        // Base design is for 1080p, scale accordingly
-        let zoom = 1;
-        if (height <= 768) zoom = 0.75;
-        else if (height <= 900) zoom = 0.85;
-        else if (height <= 1080) zoom = 0.95;
-        else if (height <= 1440) zoom = 1.0;
-        else zoom = 1.1;
-        mainWindow.webContents.setZoomFactor(zoom);
+        syncZoomToViewMode(mainWindow);
+    });
+
+    mainWindow.once('ready-to-show', () => {
+        applySalesInsightScreenFit(mainWindow);
+        mainWindow.show();
     });
     
     // 开发时打开 DevTools（生产环境注释掉）
@@ -1658,6 +1684,17 @@ ipcMain.handle('readBackupFile', async (event, filePath) => {
 // ========== App Version ==========
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.handle('apply-window-fit', (_event, mode) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
+    if (mode === 'quick') {
+        applySalesInsightScreenFit(mainWindow);
+    } else {
+        rendererViewMode = 'normal';
+        mainWindow.webContents.setZoomFactor(1);
+    }
+    return { success: true };
 });
 
 // ========== Bundled Route Planner ==========

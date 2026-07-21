@@ -437,6 +437,10 @@
         .lic-hint{font-size:11px;color:#94a3b8;margin-top:6px;}
         #company-list .company-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px;font-weight:600;color:var(--ink2);}
         /* ── ANNUAL / EXPENSES REPORT ── */
+        #app-body:has(#view-annual.active){
+            max-width:none;width:100%;margin:0;padding:8px 12px 16px;box-sizing:border-box;
+        }
+        #annual-report-body,#employer-cost-body{width:100%;max-width:none;box-sizing:border-box;}
         .annual-filter-bar .filter-field{flex:0;}
         .report-kpi-grid{margin-bottom:18px;}
         @media(max-width:900px){.report-kpi-grid.dash-kpi-grid{grid-template-columns:repeat(2,1fr);}}
@@ -449,6 +453,30 @@
         }
         .report-panel-head--em{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);}
         .report-panel-body.report-scroll{overflow-x:auto;}
+        .report-panel--monthly-breakdown{width:100%;max-width:none;margin-bottom:18px;}
+        .report-panel--monthly-breakdown .report-panel-body{padding:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+        .report-table--monthly{
+            width:max-content;min-width:100%;table-layout:auto;border-collapse:collapse;
+        }
+        .report-table--monthly th,
+        .report-table--monthly td{white-space:nowrap;overflow:visible;text-overflow:clip;}
+        .report-table--monthly th:first-child,
+        .report-table--monthly td:first-child{
+            min-width:56px;position:sticky;left:0;z-index:2;
+            box-shadow:2px 0 4px rgba(15,23,42,.06);
+        }
+        .report-table--monthly thead th:first-child{background:var(--sheet);z-index:3;}
+        .report-table--monthly tbody td:first-child{background:var(--paper);}
+        .report-table--monthly tr.rt-total td:first-child{background:linear-gradient(180deg,var(--blue-l),#eff6ff);}
+        .report-table--monthly thead tr:first-child th:not(:first-child){
+            text-align:center;min-width:210px;
+        }
+        .report-table--monthly th.rt-num,
+        .report-table--monthly td.rt-num{min-width:88px;padding-left:10px;padding-right:10px;}
+        .report-table--monthly th.rt-border,
+        .report-table--monthly td.rt-border{min-width:104px;}
+        .report-table--monthly thead tr:nth-child(2) th.rt-num{font-size:9px;}
+        .report-table--monthly td.rt-mono{font-size:11px;}
         .report-table{width:100%;font-size:12px;border-collapse:collapse;}
         .report-table thead tr{background:var(--sheet);}
         .report-table th{padding:10px 14px;text-align:left;font-weight:700;color:var(--ink3);font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--line);}
@@ -510,9 +538,25 @@
             --calc-gold:#b45309;--calc-gold-l:#fef3c7;--calc-violet:#6d28d9;--calc-violet-l:#ede9fe;
             --calc-success:#047857;--calc-success-l:#d1fae5;
         }
-        body:has(#view-quick.active){overflow:hidden;background:linear-gradient(165deg,#dfe6ef 0%,#eef2f7 45%,#e8eef5 100%);}
-        #app-body:has(#view-quick.active){padding:6px 14px 6px;overflow:hidden;max-width:none;margin:0;height:calc(100vh - 93px);display:flex;flex-direction:column;}
+        html:has(#view-quick.active),
+        html:has(#view-quick.active) body{
+            height:100%;overflow:hidden;
+        }
+        body:has(#view-quick.active){
+            overflow:hidden;height:100vh;display:flex;flex-direction:column;
+            background:linear-gradient(165deg,#dfe6ef 0%,#eef2f7 45%,#e8eef5 100%);
+        }
+        body:has(#view-quick.active) #app-nav,
+        body:has(#view-quick.active) #app-tabbar{flex-shrink:0;}
+        #app-body:has(#view-quick.active){
+            padding:4px 8px 4px;overflow:hidden;max-width:none;margin:0;
+            flex:1 1 0;min-height:0;height:auto!important;display:flex;flex-direction:column;
+        }
+        #view-quick.view-container.active,
         #view-quick.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden;min-height:0;flex:1;}
+        #view-quick .calc-toolbar-compact.page-header-bar{
+            margin-bottom:4px;padding:8px 12px 8px 14px;
+        }
         #view-quick .calc-period-box{
             gap:6px;cursor:default;
         }
@@ -543,7 +587,7 @@
         #view-quick .calc-grid{
             display:grid;gap:8px;grid-template-columns:minmax(0,1fr);
             grid-template-rows:minmax(0,1fr);align-items:stretch;
-            flex:1;min-height:0;overflow:hidden;
+            flex:1;min-height:0;overflow:hidden;height:100%!important;
         }
         #view-quick .calc-center{
             gap:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;
@@ -556,7 +600,13 @@
             background:linear-gradient(180deg,#fff 0%,var(--calc-navy-xl) 100%);
             border:1px solid var(--calc-border);border-radius:12px;
             box-shadow:0 4px 20px rgba(22,53,86,.08),inset 0 1px 0 #fff;
-            padding:8px 10px 6px;max-width:100%;flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+            padding:8px 10px 8px;max-width:100%;flex:1 1 0;min-height:0;height:100%;
+            display:flex;flex-direction:column;overflow:hidden;
+        }
+        #view-quick .cw-mock-mid{
+            display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(240px,280px);
+            grid-template-rows:1fr;gap:6px;flex:1 1 0;min-height:0;height:100%;overflow:hidden;
+            margin-bottom:0;align-items:stretch;
         }
         #view-quick .cw-mock-header{display:none!important;}
         #view-quick .cw-mock-bottom{display:none!important;}
@@ -617,13 +667,8 @@
         }
         #view-quick .cw-kpi--tier .cw-kpi-tier-ln > div{min-width:0;flex:1;}
         #view-quick .cw-kpi--tier .cw-btn-outline{display:none;}
-        #view-quick .cw-mock-mid{
-            display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(240px,280px);
-            grid-template-rows:minmax(0,1fr);gap:6px;flex:1 1 0;min-height:0;overflow:hidden;
-            margin-bottom:0;align-items:stretch;
-        }
         #view-quick .cw-mock-mid > .cw-mock-tile{
-            min-height:0;max-height:100%;align-self:stretch;display:flex;flex-direction:column;overflow:hidden;
+            min-height:0;max-height:100%;height:100%;align-self:stretch;display:flex;flex-direction:column;overflow:hidden;
         }
         #view-quick .cw-mock-tile{
             padding:0;border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden;
@@ -644,33 +689,144 @@
             padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;background:#fff;
             align-items:stretch;justify-content:flex-start;
         }
+        #view-quick .cw-tile-inputs .cw-mock-inputs-host{
+            flex:1 1 0;min-height:0;display:flex;flex-direction:column;
+        }
+        #view-quick .cw-tile-inputs .cw-mock-inputs-host > .card{
+            flex:1 1 0;min-height:0;display:flex;flex-direction:column;
+        }
+        #view-quick .cw-tile-inputs .cw-mock-inputs-host > .card > .grid.grid-cols-2{
+            flex:1 1 0;align-content:space-evenly;
+        }
         #view-quick .cw-tile-payslip .cw-panel-hd{
             background:linear-gradient(90deg,var(--calc-navy-d),var(--calc-navy))!important;
         }
-        #view-quick .cw-tile-payslip .cw-tile-body{padding:8px 8px 10px;gap:0;overflow:hidden;}
+        #view-quick .cw-tile-payslip .cw-tile-body{
+            padding:0;gap:0;overflow:hidden;flex:1 1 0;min-height:0;height:100%;
+        }
+        #view-quick .cw-tile-payslip .cw-payslip-body{
+            flex:1 1 0;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden;
+        }
         #view-quick .cw-tile-payslip .live-payslip-card{
-            flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
-            background:transparent!important;border:none!important;border-radius:0!important;
+            flex:1 1 0;min-height:0;height:100%;width:100%;
+            display:flex!important;flex-direction:column;overflow:hidden;
+            background:#fff!important;border:none!important;border-radius:0!important;
             box-shadow:none!important;margin:0!important;font-size:10px!important;
         }
+        #view-quick .live-payslip-card .ps-table{
+            flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;width:100%;
+        }
+        #view-quick .live-payslip-card .ps-foot{flex:0 0 auto;flex-shrink:0;}
+        #view-quick .live-payslip-card .ps-meta{
+            flex:1 1 0;min-height:88px;margin-top:0;
+            display:flex;flex-direction:column;justify-content:stretch;gap:0;
+            padding:12px 10px 10px!important;
+            background:linear-gradient(180deg,var(--calc-navy-xl) 0%,#fff 55%)!important;
+        }
+        #view-quick .live-payslip-card .ps-ach-block{
+            flex:1 1 0;min-height:48px;display:flex;flex-direction:column;justify-content:center;gap:10px;
+            padding-bottom:10px;
+        }
+        #view-quick .live-payslip-card .ps-ach-lbl-text{
+            font-size:11px;color:var(--ink3);font-weight:600;
+        }
+        #view-quick .live-payslip-card .ps-ach-pct-val{
+            font-size:15px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;
+        }
+        #view-quick .live-payslip-card .ps-bar{height:10px;background:var(--calc-border);border-radius:99px;overflow:hidden;flex-shrink:0;}
+        #view-quick .live-payslip-card .ps-mini{
+            flex:1 1 0;min-height:72px;display:grid;grid-template-columns:1fr 1fr;gap:8px;
+            align-items:stretch;align-content:stretch;
+        }
+        #view-quick .live-payslip-card .ps-mini-box{
+            border-radius:10px;border:1px solid var(--calc-border);background:#fff;
+            padding:12px 10px;min-height:72px;height:100%;
+            display:flex;flex-direction:column;justify-content:center;
+            box-shadow:0 1px 4px rgba(22,53,86,.06);
+        }
+        #view-quick .live-payslip-card .ps-mini-lbl{font-size:9px;font-weight:700;color:var(--calc-muted);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase;}
+        #view-quick .live-payslip-card .ps-mini-val{font-size:12px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--calc-navy-d);line-height:1.25;}
         #view-quick .ps-ach-strip{display:none!important;}
         #view-quick .cw-tile-inputs .calc-person-card{padding:0!important;border:none!important;box-shadow:none!important;background:transparent!important;}
         #view-quick .cw-tile-inputs .calc-person-card .calc-card-hd{margin-top:0;padding-top:0;margin-bottom:8px;padding-bottom:8px;}
         #view-quick .cw-tile-inputs,
         #view-quick .cw-panel-accent{overflow:hidden;min-height:0;display:flex;flex-direction:column;background:#fff;}
         #view-quick .cw-panel-accent .cw-tile-body{background:linear-gradient(180deg,#f8fafc 0%,#eff6ff 100%);}
-        /* Commission panel: scroll inside fixed-height tile (same as left) */
+        /* Commission panel: fill column height — comparison pinned to bottom */
         #view-quick .cw-panel-accent .cw-calc-body{
-            flex:1 1 0;min-height:0;max-height:100%;justify-content:flex-start;gap:6px;padding:0;overflow:visible;
+            flex:1 1 0;min-height:0;max-height:100%;justify-content:flex-start;gap:6px;padding:0;
+            overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;
+        }
+        #view-quick .cw-panel-accent .cw-tier-section{
+            flex:0 0 auto;margin:0;padding:8px 0 0;border-top:1px solid var(--calc-border);
+            display:flex;flex-direction:column;justify-content:flex-start;
+        }
+        #view-quick .cw-compare-chart-wrap{
+            flex:1 1 0;min-height:108px;margin-top:6px;display:flex;flex-direction:column;
+            overflow:hidden;border-radius:8px;
+            background:linear-gradient(180deg,#fff 0%,#f8fafc 100%);
+            border:1px solid var(--calc-border);
+            box-shadow:inset 0 1px 0 rgba(255,255,255,.9);
+        }
+        #view-quick .cw-compare-chart-hd{
+            flex-shrink:0;padding:6px 10px 0;
+            font-size:8px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;text-transform:uppercase;
+        }
+        #view-quick .cw-compare-graph-host{
+            flex:1 1 0;min-height:92px;display:flex;flex-direction:column;margin:0;overflow:hidden;
+        }
+        #view-quick .cw-compare-graph{
+            flex:1 1 0;min-height:92px;display:flex;flex-direction:column;padding:2px 6px 4px;overflow:hidden;
+        }
+        #view-quick .cw-compare-graph-head{
+            display:flex;align-items:center;justify-content:space-between;gap:8px;
+            margin-bottom:2px;flex-shrink:0;padding:0 2px;
+        }
+        #view-quick .cw-compare-graph-legend{
+            display:flex;align-items:center;gap:10px;
+        }
+        #view-quick .cw-compare-leg{
+            font-size:7px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+            display:inline-flex;align-items:center;gap:4px;color:var(--calc-muted);
+        }
+        #view-quick .cw-compare-leg-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+        #view-quick .cw-compare-leg--cur{color:#1d4ed8;}
+        #view-quick .cw-compare-leg--cur .cw-compare-leg-swatch{background:linear-gradient(180deg,#60a5fa,#1d4ed8);}
+        #view-quick .cw-compare-leg--prev .cw-compare-leg-swatch{background:linear-gradient(180deg,#cbd5e1,#64748b);}
+        #view-quick .cw-compare-bar-svg{
+            flex:1 1 0;width:100%;min-height:80px;height:100%;display:block;
         }
         #view-quick .cw-prev-month{
-            flex:0 0 auto;margin:0;padding:8px 10px;border-radius:8px;
-            background:rgba(255,255,255,.85);border:1px solid var(--calc-border);
+            flex:0 0 auto;margin-top:6px;margin-bottom:0;padding:6px 8px;border-radius:8px;
+            background:rgba(255,255,255,.92);border:1px solid var(--calc-border);
         }
-        #view-quick .cw-prev-month-hd{
-            font-size:8px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;
-            text-transform:uppercase;margin:0 0 6px;
+        #view-quick .cw-prev-month-body{flex:0 0 auto;}
+        #view-quick .cw-compare-graph-empty{
+            flex:1 1 0;display:flex;align-items:center;justify-content:center;
+            font-size:9px;color:var(--calc-muted);font-weight:600;text-align:center;padding:12px 8px;
         }
+        #view-quick .cw-compare-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+        #view-quick .cw-compare-table th{
+            font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+            color:var(--calc-muted);padding:0 3px 4px;text-align:right;vertical-align:bottom;
+        }
+        #view-quick .cw-compare-table th:first-child,
+        #view-quick .cw-compare-table td.cw-compare-metric{text-align:left;width:22%;}
+        #view-quick .cw-compare-table th.cw-compare-cur{color:#1d4ed8;}
+        #view-quick .cw-compare-table th.cw-compare-prev{color:var(--calc-muted);}
+        #view-quick .cw-compare-table td{
+            padding:3px 3px;border-top:1px solid rgba(212,220,232,.55);
+            font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;
+            text-align:right;color:var(--calc-navy-d);line-height:1.25;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        }
+        #view-quick .cw-compare-table td.cw-compare-metric{
+            font-family:'Sora',sans-serif;font-size:8px;font-weight:700;color:var(--calc-muted);
+            text-transform:uppercase;letter-spacing:.03em;
+        }
+        #view-quick .cw-compare-table td.cw-compare-ach{color:#0f766e;}
+        #view-quick .cw-compare-mom{font-size:8px;}
+        #view-quick .cw-trend-flat{color:var(--calc-muted2);font-weight:600;}
         #view-quick .cw-prev-month-grid{
             display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;
         }
@@ -706,9 +862,6 @@
         }
         #view-quick .cw-panel-accent .cw-net-lbl{font-size:9px;font-weight:800;color:rgba(255,255,255,.82);letter-spacing:.07em;text-transform:uppercase;}
         #view-quick .cw-panel-accent .cw-net-val{font-size:16px;color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:800;white-space:nowrap;line-height:1.1;}
-        #view-quick .cw-panel-accent .cw-tier-section{
-            flex:0 0 auto;margin:0;padding:8px 0 0;border-top:1px solid var(--calc-border);
-        }
         #view-quick .cw-panel-accent .cw-tier-section-hd{
             font-size:9px;font-weight:800;color:var(--calc-muted);letter-spacing:.08em;
             text-transform:uppercase;margin:0 0 5px;
@@ -743,16 +896,12 @@
         #view-quick .calc-person-card .calc-section-hd{font-size:9px;margin:8px 0 4px;padding-top:8px;}
         #view-quick .calc-person-card .grid{gap:6px!important;}
         #view-quick .live-payslip-card .ps-foot{padding:6px 8px!important;flex-shrink:0;}
-        #view-quick .live-payslip-card .ps-meta{padding:6px 8px!important;flex-shrink:0;}
-        #view-quick .live-payslip-card table.ps-table{flex:0 0 auto;font-size:9px!important;}
         #view-quick .live-payslip-card .ps-th td{padding:5px 6px!important;font-size:8px!important;}
         #view-quick .live-payslip-card tbody td{padding:4px 6px!important;font-size:9px!important;}
         #view-quick .cw-mock-mid .cw-panel-hd #ps-title{
             display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
             font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;
         }
-        #view-quick .live-payslip-card .ps-mini{gap:4px;margin-top:4px;}
-        #view-quick .live-payslip-card .ps-mini-box{padding:4px 6px;}
         #view-quick .live-payslip-card .ps-foot-val{font-size:14px!important;}
         /* legacy toolbar rules (other views) */
         #view-quick .calc-toolbar-wrap{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line);}
@@ -816,6 +965,10 @@
             background:#fff!important;border:1px solid var(--calc-border)!important;border-radius:12px!important;
             box-shadow:0 4px 16px rgba(22,53,86,.1)!important;overflow:hidden;margin-top:0!important;
         }
+        #view-quick .cw-tile-payslip .live-payslip-card{
+            background:#fff!important;border:none!important;border-radius:0!important;
+            box-shadow:none!important;margin:0!important;
+        }
         #view-quick .live-payslip-card .ps-head{
             background:linear-gradient(135deg,var(--calc-navy-d) 0%,var(--calc-navy) 60%,#1a5a8a 100%)!important;
             text-align:left!important;border-bottom:2px solid rgba(52,211,153,.35)!important;
@@ -832,18 +985,12 @@
         #view-quick .live-payslip-card .ps-foot-val{font-size:14px!important;color:#ecfdf5!important;text-shadow:0 1px 2px rgba(0,0,0,.15);}
         #view-quick .live-payslip-card .ps-foot-lbl{font-size:10px!important;color:rgba(255,255,255,.9)!important;font-weight:600;}
         #view-quick .live-payslip-card .ps-meta{background:linear-gradient(180deg,var(--calc-navy-xl),#fff)!important;}
+        #view-quick .cw-tile-payslip .live-payslip-card .ps-meta{
+            background:linear-gradient(180deg,var(--calc-navy-xl) 0%,#fff 55%)!important;
+        }
         #view-quick .live-payslip-card tbody tr:nth-child(even) td{background:rgba(232,238,245,.35);}
-        #view-quick .live-payslip-card .ps-kpi-row{display:flex;justify-content:space-between;margin-bottom:4px;align-items:center;}
-        #view-quick .live-payslip-card .ps-bar{height:4px;background:var(--calc-border);border-radius:99px;overflow:hidden;}
+        #view-quick .live-payslip-card .ps-kpi-row{display:flex;justify-content:space-between;margin-bottom:0;align-items:center;}
         #view-quick .live-payslip-card .ps-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--calc-navy),var(--calc-accent));transition:width .35s ease;}
-        #view-quick .live-payslip-card .ps-mini{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
-        #view-quick .live-payslip-card .ps-mini-box{border-radius:6px;border:1px solid var(--calc-border);background:#fff;}
-        #view-quick .live-payslip-card .ps-mini-box.personal{border-color:var(--calc-border);}
-        #view-quick .live-payslip-card .ps-mini-box.team{border-color:var(--calc-border);}
-        #view-quick .live-payslip-card .ps-mini-lbl{font-size:8px;font-weight:700;color:var(--calc-muted);margin-bottom:2px;}
-        #view-quick .live-payslip-card .ps-mini-val{font-size:10px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--calc-navy-d);}
-        #view-quick .live-payslip-card .ps-mini-box.personal .ps-mini-val{color:var(--calc-navy-d);}
-        #view-quick .live-payslip-card .ps-mini-box.team .ps-mini-val{color:var(--calc-navy-d);}
         #view-quick .calc-preview-panel{display:none!important;}
         #view-quick .cw-panel-hd--row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
         #view-quick .cw-linkbtn{display:none;}
@@ -998,6 +1145,7 @@
         }
             .view-container { display: none !important; }
         .view-container.active { display: block !important; }
+        #view-quick.view-container.active { display: flex !important; flex-direction: column; }
 </style>
 </head>
 <body>
@@ -1072,7 +1220,7 @@
 </div>
 
 <!-- ══════════════════ CALCULATE VIEW ══════════════════ -->
-<div id="view-quick" class="view-container active" style="display:block">
+<div id="view-quick" class="view-container active" style="display:flex">
     <div class="calc-toolbar-compact page-header-bar">
         <span class="calc-heading-sm page-header-title">Sales Insight</span>
         <div class="filter-field filter-field--period">
@@ -1204,8 +1352,11 @@
                                 <div class="cw-tier-bar-wrap"><div class="cw-tier-bar-fill" id="cw-tier-bar-fill" style="width:0%"></div></div>
                                 <div class="cw-tier-bar-lbl" id="cw-tier-bar-lbl">Your position: 0% achievement</div>
                             </div>
+                            <div class="cw-compare-chart-wrap">
+                                <div class="cw-compare-chart-hd">This month vs last month</div>
+                                <div id="cw-compare-graph" class="cw-compare-graph-host" aria-hidden="true"></div>
+                            </div>
                             <div class="cw-prev-month" id="cw-prev-month-panel">
-                                <div class="cw-prev-month-hd">Last month — <span id="cw-prev-month-label">—</span></div>
                                 <div id="cw-prev-month-body" class="cw-prev-month-body"></div>
                             </div>
                             </div>
@@ -1215,7 +1366,7 @@
                                 <span id="ps-title">— Salary report</span>
                             </div>
                             <div class="cw-tile-body cw-payslip-body">
-                                <div id="live-payslip" class="live-payslip-card" style="display:block;">
+                                <div id="live-payslip" class="live-payslip-card">
                                     <div id="ps-ach-lbl" class="ps-ach-strip" aria-hidden="true">Achievement: 0%</div>
                                     <table class="ps-table">
                                         <colgroup><col style="width:38%"><col style="width:21%"><col style="width:20%"><col style="width:21%"></colgroup>
@@ -1234,12 +1385,14 @@
                                         <span id="ps-grand" class="ps-foot-val">RM 0.00</span>
                                     </div>
                                     <div class="ps-meta">
-                                        <div class="ps-kpi-row">
-                                            <span style="font-size:10px;color:var(--ink3);font-weight:600;">Achievement</span>
-                                            <span id="ps-ach-pct" style="font-size:11px;font-weight:800;color:var(--blue-d);font-family:'IBM Plex Mono',monospace;">0%</span>
-                                        </div>
-                                        <div class="ps-bar">
-                                            <div id="ps-ach-bar" class="ps-bar-fill" style="width:0%;transition:width .3s;"></div>
+                                        <div class="ps-ach-block">
+                                            <div class="ps-kpi-row">
+                                                <span class="ps-ach-lbl-text">Achievement</span>
+                                                <span id="ps-ach-pct" class="ps-ach-pct-val">0%</span>
+                                            </div>
+                                            <div class="ps-bar">
+                                                <div id="ps-ach-bar" class="ps-bar-fill" style="width:0%;transition:width .3s;"></div>
+                                            </div>
                                         </div>
                                         <div class="ps-mini">
                                             <div class="ps-mini-box personal">
@@ -1543,7 +1696,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.5</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.9</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>

@@ -978,6 +978,11 @@ function showToast(icon, message, duration = 3000) {
 }
 
 // View switching
+function syncWindowFitForView(view) {
+    if (!window.electronAPI || typeof window.electronAPI.applyWindowFit !== 'function') return;
+    window.electronAPI.applyWindowFit(view === 'quick' ? 'quick' : 'normal').catch(function() {});
+}
+
 function switchView(view) {
     document.querySelectorAll('.tab-button').forEach(function(btn) {
         btn.classList.remove('active');
@@ -991,7 +996,7 @@ function switchView(view) {
     });
     var viewEl = document.getElementById('view-' + view);
     if (viewEl) {
-        viewEl.style.display = 'block';
+        viewEl.style.display = (view === 'quick') ? 'flex' : 'block';
         viewEl.classList.add('active');
         viewEl.classList.remove('hidden');
     }
@@ -1111,6 +1116,10 @@ function switchView(view) {
         if (typeof initSalaryView === 'function') initSalaryView();
     } else if (view === 'commission') {
         if (typeof initCommissionView === 'function') initCommissionView();
+    }
+    syncWindowFitForView(view);
+    if (view === 'quick') {
+        setTimeout(function() { syncWindowFitForView('quick'); }, 120);
     }
 }
 
@@ -5421,7 +5430,8 @@ window.loadQuickCalculateHistory = loadQuickCalculateHistory;
 function updateLivePayslip() {
     var ps = document.getElementById('live-payslip');
     if (!ps) return;
-    ps.style.display = 'block';
+    ps.style.display = 'flex';
+    ps.style.flexDirection = 'column';
     var person = window.appState.salespeople[0];
     if (!person || !person.name) { 
         // Show empty state
@@ -5590,87 +5600,281 @@ function cwPersonRowFromHistory(name, month, yearStr) {
     }
     return null;
 }
-function cwRenderPrevMonthItem(lbl, val, extraClass) {
-    return '<div class="cw-prev-month-item"><span class="cw-prev-month-lbl">' + lbl + '</span>'
-        + '<span class="cw-prev-month-val' + (extraClass ? ' ' + extraClass : '') + '">' + val + '</span></div>';
-}
-function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear, curSales) {
-    var panel = document.getElementById('cw-prev-month-panel');
-    var lblEl = document.getElementById('cw-prev-month-label');
-    var bodyEl = document.getElementById('cw-prev-month-body');
-    if (!panel || !bodyEl) return;
-
+function cwPrevMonthKey(selMonth, selYear) {
     var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var mi = months.indexOf((selMonth || '').toUpperCase());
     var pm = mi <= 0 ? months[11] : months[mi - 1];
     var py = mi <= 0 ? selYear - 1 : selYear;
-    var monthLabel = pm + ' ' + py;
-    if (lblEl) lblEl.textContent = monthLabel;
+    return {
+        pm: pm,
+        py: py,
+        curLabel: (selMonth || 'JAN').toUpperCase() + ' ' + selYear,
+        prevLabel: pm + ' ' + py
+    };
+}
+function cwFormatMomPct(cur, prev) {
+    if (prev == null || isNaN(prev)) return '\u2014';
+    if (prev === 0 && cur === 0) return '\u2014';
+    if (prev === 0 && cur > 0) return '<span class="cw-trend-pos">\u25b4 new</span>';
+    var chg = ((cur - prev) / prev) * 100;
+    var cl = chg >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
+    var arr = chg >= 0 ? '\u25b4' : '\u25bc';
+    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(chg).toFixed(1) + '%</span>';
+}
+function cwFormatMomPts(cur, prev) {
+    if (prev == null || isNaN(prev)) return '\u2014';
+    var diff = cur - prev;
+    if (Math.abs(diff) < 0.05) return '<span class="cw-trend-flat">\u2014</span>';
+    var cl = diff >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
+    var arr = diff >= 0 ? '\u25b4' : '\u25bc';
+    return '<span class="' + cl + '">' + arr + ' ' + Math.abs(diff).toFixed(1) + ' pts</span>';
+}
+function cwRenderCompareTable(rows, curLabel, prevLabel) {
+    var html = '<table class="cw-compare-table"><thead><tr>'
+        + '<th>Metric</th><th class="cw-compare-cur">' + curLabel + '</th>'
+        + '<th class="cw-compare-prev">' + prevLabel + '</th><th>MoM</th></tr></thead><tbody>';
+    rows.forEach(function(r) {
+        var achCls = r.ach ? ' cw-compare-ach' : '';
+        html += '<tr><td class="cw-compare-metric">' + r.label + '</td>'
+            + '<td class="cw-compare-val' + achCls + '">' + r.cur + '</td>'
+            + '<td class="cw-compare-val' + achCls + '">' + r.prev + '</td>'
+            + '<td class="cw-compare-mom">' + r.mom + '</td></tr>';
+    });
+    return html + '</tbody></table>';
+}
+function cwCompareRow(label, curNum, prevNum, fmtCur, fmtPrev, momFn, isAch) {
+    var dash = '\u2014';
+    var hasPrev = prevNum != null && !isNaN(prevNum);
+    return {
+        label: label,
+        cur: fmtCur != null ? fmtCur : (curNum != null ? String(curNum) : dash),
+        prev: hasPrev ? (fmtPrev != null ? fmtPrev : String(prevNum)) : dash,
+        mom: hasPrev && momFn ? momFn(curNum, prevNum) : dash,
+        ach: !!isAch
+    };
+}
+function cwShortChartVal(v, isPct) {
+    if (isPct) return (v || 0).toFixed(2) + '%';
+    var n = v || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(2) + 'k';
+    return (n).toFixed(2);
+}
+function cwMomBadge(cur, prev) {
+    if (prev == null || isNaN(prev)) return '';
+    if (prev === 0 && cur === 0) return '';
+    if (prev === 0 && cur > 0) return '\u25b4';
+    var chg = ((cur - prev) / prev) * 100;
+    return (chg >= 0 ? '\u25b4' : '\u25bc') + Math.abs(chg).toFixed(2) + '%';
+}
+function cwRenderCompareGraph(bars, achPair, curLabel, prevLabel) {
+    if (!bars || !bars.length) return '';
+    var hasAny = bars.some(function(b) { return (b.cur || 0) > 0 || (b.prev || 0) > 0; });
+    if (!hasAny && !(achPair && ((achPair.cur || 0) > 0 || (achPair.prev || 0) > 0))) {
+        return '<div class="cw-compare-graph-empty">Enter data to see month comparison chart</div>';
+    }
 
-    var html = '';
-    var foot = '';
+    var items = bars.map(function(b) {
+        return {
+            label: b.label,
+            cur: b.cur || 0,
+            prev: b.prev != null && !isNaN(b.prev) ? b.prev : 0,
+            curFmt: b.curFmt,
+            prevFmt: b.prevFmt,
+            pct: false
+        };
+    });
+    if (achPair && ((achPair.cur || 0) > 0 || (achPair.prev || 0) > 0)) {
+        items.push({
+            label: 'Ach%',
+            cur: achPair.cur || 0,
+            prev: achPair.prev || 0,
+            curFmt: (achPair.cur || 0).toFixed(2) + '%',
+            prevFmt: (achPair.prev || 0).toFixed(2) + '%',
+            pct: true
+        });
+    }
+
+    var W = 480;
+    var H = 200;
+    var padL = 8;
+    var padR = 8;
+    var padT = 8;
+    var padB = 42;
+    var chartW = W - padL - padR;
+    var chartH = H - padT - padB;
+    var baseY = padT + chartH;
+    var n = items.length;
+    var groupW = chartW / Math.max(n, 1);
+    var barW = Math.min(20, Math.max(10, groupW * 0.26));
+    var innerGap = 3;
+
+    var html = '<div class="cw-compare-graph" role="img" aria-label="This month vs last month bar chart">';
+    html += '<div class="cw-compare-graph-head"><div class="cw-compare-graph-legend">'
+        + '<span class="cw-compare-leg cw-compare-leg--prev"><span class="cw-compare-leg-swatch"></span>' + prevLabel + '</span>'
+        + '<span class="cw-compare-leg cw-compare-leg--cur"><span class="cw-compare-leg-swatch"></span>' + curLabel + '</span>'
+        + '</div></div>';
+
+    html += '<svg class="cw-compare-bar-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">';
+    html += '<defs>'
+        + '<linearGradient id="cwBarPrev" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#94a3b8"/><stop offset="100%" stop-color="#64748b"/></linearGradient>'
+        + '<linearGradient id="cwBarCur" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient>'
+        + '</defs>';
+
+    [0.25, 0.5, 0.75, 1].forEach(function(t) {
+        var gy = padT + chartH * (1 - t);
+        html += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="#eef2f7" stroke-width="1"/>';
+    });
+    html += '<line x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '" stroke="#cbd5e1" stroke-width="1.2"/>';
+
+    items.forEach(function(item, i) {
+        var gx = padL + i * groupW + groupW / 2;
+        var max = Math.max(item.cur, item.prev, item.pct ? 100 : 1, 1);
+        var hPrev = Math.max(2, (item.prev / max) * chartH);
+        var hCur = Math.max(2, (item.cur / max) * chartH);
+        var xPrev = gx - barW - innerGap / 2;
+        var xCur = gx + innerGap / 2;
+        var yPrev = baseY - hPrev;
+        var yCur = baseY - hCur;
+        var mom = cwMomBadge(item.cur, item.prev);
+        var momUp = mom.indexOf('\u25b4') === 0;
+        var momColor = !mom ? '#94a3b8' : (momUp ? '#047857' : '#be123c');
+
+        html += '<rect x="' + xPrev + '" y="' + yPrev + '" width="' + barW + '" height="' + hPrev + '" rx="3" fill="url(#cwBarPrev)">'
+            + '<title>' + prevLabel + ' ' + item.label + ': ' + (item.prevFmt != null ? item.prevFmt : item.prev) + '</title></rect>';
+        html += '<rect x="' + xCur + '" y="' + yCur + '" width="' + barW + '" height="' + hCur + '" rx="3" fill="url(#cwBarCur)">'
+            + '<title>' + curLabel + ' ' + item.label + ': ' + (item.curFmt != null ? item.curFmt : item.cur) + '</title></rect>';
+
+        html += '<text x="' + (xPrev + barW / 2) + '" y="' + (yPrev - 3) + '" text-anchor="middle" fill="#64748b" font-size="7" font-weight="700" font-family="IBM Plex Mono, monospace">'
+            + cwShortChartVal(item.prev, item.pct) + '</text>';
+        html += '<text x="' + (xCur + barW / 2) + '" y="' + (yCur - 3) + '" text-anchor="middle" fill="#1d4ed8" font-size="7" font-weight="800" font-family="IBM Plex Mono, monospace">'
+            + cwShortChartVal(item.cur, item.pct) + '</text>';
+
+        html += '<text x="' + gx + '" y="' + (baseY + 12) + '" text-anchor="middle" fill="#64748b" font-size="7" font-weight="800" font-family="Sora, sans-serif">' + item.label + '</text>';
+        if (mom) {
+            html += '<text x="' + gx + '" y="' + (baseY + 24) + '" text-anchor="middle" fill="' + momColor + '" font-size="7" font-weight="800" font-family="IBM Plex Mono, monospace">' + mom + '</text>';
+        }
+    });
+
+    html += '</svg></div>';
+    return html;
+}
+function cwGraphBar(label, cur, prev, curFmt, prevFmt) {
+    return {
+        label: label,
+        cur: cur || 0,
+        prev: prev != null && !isNaN(prev) ? prev : 0,
+        curFmt: curFmt,
+        prevFmt: prevFmt
+    };
+}
+function cwUpdatePrevMonthPanel(person, empType, selMonth, selYear) {
+    var panel = document.getElementById('cw-prev-month-panel');
+    var bodyEl = document.getElementById('cw-prev-month-body');
+    var graphEl = document.getElementById('cw-compare-graph');
+    if (!panel || !bodyEl) return;
+
+    var keys = cwPrevMonthKey(selMonth, selYear);
+    var pm = keys.pm;
+    var py = keys.py;
+    var rows = [];
+    var graphBars = [];
+    var achPair = null;
 
     if (empType === 'Supervisor') {
+        var teamCur = cwSupervisorTeamTotals(selMonth, String(selYear));
         var teamPrev = cwSupervisorTeamTotals(pm, String(py));
-        var hasData = teamPrev.teamSales > 0 || teamPrev.teamTarget > 0;
-        if (!hasData) {
-            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved team data for ' + monthLabel + '.</div>';
-            return;
-        }
+        var curAch = teamCur.teamTarget > 0 ? (teamCur.teamSales / teamCur.teamTarget) * 100 : 0;
         var prevAch = teamPrev.teamTarget > 0 ? (teamPrev.teamSales / teamPrev.teamTarget) * 100 : 0;
-        html += cwRenderPrevMonthItem('Team sales', formatCurrency(teamPrev.teamSales));
-        html += cwRenderPrevMonthItem('Team target', formatCurrency(teamPrev.teamTarget));
-        html += cwRenderPrevMonthItem('Achievement', prevAch.toFixed(1) + '%', 'cw-prev-month-ach');
-        html += cwRenderPrevMonthItem('Commission', '\u2014');
+        var hasPrev = teamPrev.teamSales > 0 || teamPrev.teamTarget > 0;
+        graphBars.push(cwGraphBar('Team sales', teamCur.teamSales, hasPrev ? teamPrev.teamSales : 0,
+            formatCurrency(teamCur.teamSales), hasPrev ? formatCurrency(teamPrev.teamSales) : '\u2014'));
+        graphBars.push(cwGraphBar('Team tgt', teamCur.teamTarget, hasPrev ? teamPrev.teamTarget : 0,
+            formatCurrency(teamCur.teamTarget), hasPrev ? formatCurrency(teamPrev.teamTarget) : '\u2014'));
+        achPair = { cur: curAch, prev: hasPrev && teamPrev.teamTarget > 0 ? prevAch : 0 };
+        rows.push(cwCompareRow('Team sales', teamCur.teamSales, hasPrev ? teamPrev.teamSales : null,
+            formatCurrency(teamCur.teamSales), hasPrev ? formatCurrency(teamPrev.teamSales) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Team target', teamCur.teamTarget, hasPrev ? teamPrev.teamTarget : null,
+            formatCurrency(teamCur.teamTarget), hasPrev ? formatCurrency(teamPrev.teamTarget) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Achievement', curAch, hasPrev && teamPrev.teamTarget > 0 ? prevAch : null,
+            teamCur.teamTarget > 0 ? curAch.toFixed(1) + '%' : '\u2014',
+            hasPrev && teamPrev.teamTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014',
+            cwFormatMomPts, true));
     } else if (empType === 'Support Staff') {
         var rowS = cwPersonRowFromHistory(person.name, pm, String(py));
-        if (!rowS) {
-            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved data for ' + monthLabel + '.</div>';
-            return;
-        }
-        var blocks = parseFloat(rowS.collectionAmount) || 0;
-        html += cwRenderPrevMonthItem('Blocks', String(blocks));
-        html += cwRenderPrevMonthItem('Block target', String(parseFloat(rowS.collectionTarget) || 0));
-        html += cwRenderPrevMonthItem('Call actual', String(parseFloat(rowS.callActual) || 0));
-        html += cwRenderPrevMonthItem('Call target', String(parseFloat(rowS.callTarget) || 0));
+        var curBlocks = parseFloat(person.collectionAmount) || 0;
+        var curBlockTgt = parseFloat(person.collectionTarget) || 0;
+        var curCallAct = parseFloat(person.callActual) || 0;
+        var curCallTgt = parseFloat(person.callTarget) || 0;
+        var prevBlocks = rowS ? (parseFloat(rowS.collectionAmount) || 0) : null;
+        var prevBlockTgt = rowS ? (parseFloat(rowS.collectionTarget) || 0) : null;
+        var prevCallAct = rowS ? (parseFloat(rowS.callActual) || 0) : null;
+        var prevCallTgt = rowS ? (parseFloat(rowS.callTarget) || 0) : null;
+        graphBars.push(cwGraphBar('Blocks', curBlocks, prevBlocks, String(curBlocks), rowS ? String(prevBlocks) : '\u2014'));
+        graphBars.push(cwGraphBar('Call act', curCallAct, prevCallAct, String(curCallAct), rowS ? String(prevCallAct) : '\u2014'));
+        rows.push(cwCompareRow('Blocks', curBlocks, prevBlocks, String(curBlocks), rowS ? String(prevBlocks) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Block target', curBlockTgt, prevBlockTgt, String(curBlockTgt), rowS ? String(prevBlockTgt) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Call actual', curCallAct, prevCallAct, String(curCallAct), rowS ? String(prevCallAct) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Call target', curCallTgt, prevCallTgt, String(curCallTgt), rowS ? String(prevCallTgt) : null, cwFormatMomPct));
     } else {
+        var sales = parseFloat(person.sales) || 0;
+        var target = parseFloat(person.target) || 0;
+        var curAch = target > 0 ? (sales / target) * 100 : 0;
+        var curComm = parseFloat(person.commission) || calculateCommission(sales, target, person.name);
         var row = cwPersonRowFromHistory(person.name, pm, String(py));
-        if (!row) {
-            bodyEl.innerHTML = '<div class="cw-prev-month-empty">No saved data for ' + monthLabel + '.</div>';
-            return;
-        }
-        var prevSales = parseFloat(row.sales) || 0;
-        var prevTarget = parseFloat(row.target) || 0;
-        var prevAch = prevTarget > 0 ? (prevSales / prevTarget) * 100 : 0;
-        var prevComm = calculateCommission(prevSales, prevTarget, person.name);
-        html += cwRenderPrevMonthItem('Sales', formatCurrency(prevSales));
-        html += cwRenderPrevMonthItem('Target', formatCurrency(prevTarget));
-        html += cwRenderPrevMonthItem('Achievement', prevTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014', 'cw-prev-month-ach');
-        html += cwRenderPrevMonthItem('Commission', formatCurrency(prevComm));
+        var prevSales = row ? (parseFloat(row.sales) || 0) : null;
+        var prevTarget = row ? (parseFloat(row.target) || 0) : null;
+        var prevAch = row && prevTarget > 0 ? (prevSales / prevTarget) * 100 : null;
+        var prevComm = row ? calculateCommission(prevSales || 0, prevTarget || 0, person.name) : null;
 
-        var prevCollAmt = parseFloat(row.collectionAmount) || 0;
-        var prevCollTgt = parseFloat(row.collectionTarget) || 0;
-        var prevCallAct = parseFloat(row.callActual) || 0;
-        var prevCallTgt = parseFloat(row.callTarget) || 0;
-        if (prevCollAmt > 0 || prevCollTgt > 0) {
-            html += cwRenderPrevMonthItem('Collection', formatCurrency(prevCollAmt) + ' / ' + formatCurrency(prevCollTgt));
-        }
-        if (prevCallAct > 0 || prevCallTgt > 0) {
-            html += cwRenderPrevMonthItem('Active call', String(prevCallAct) + ' / ' + String(prevCallTgt));
-        }
+        graphBars.push(cwGraphBar('Sales', sales, prevSales, formatCurrency(sales), row ? formatCurrency(prevSales) : '\u2014'));
+        graphBars.push(cwGraphBar('Target', target, prevTarget, formatCurrency(target), row ? formatCurrency(prevTarget) : '\u2014'));
+        graphBars.push(cwGraphBar('Comm', curComm, prevComm, formatCurrency(curComm), row ? formatCurrency(prevComm) : '\u2014'));
+        achPair = { cur: curAch, prev: prevAch != null ? prevAch : 0 };
 
-        if (prevSales > 0 && curSales > 0) {
-            var chg = ((curSales - prevSales) / prevSales) * 100;
-            var cl = chg >= 0 ? 'cw-trend-pos' : 'cw-trend-neg';
-            var arr = chg >= 0 ? '\u25b4' : '\u25bc';
-            foot = 'vs this month sales: <span class="' + cl + '">' + arr + ' ' + Math.abs(chg).toFixed(1) + '%</span>';
-        } else if (prevSales === 0 && curSales > 0) {
-            foot = 'vs this month: up from RM 0 last month';
+        rows.push(cwCompareRow('Sales', sales, prevSales,
+            formatCurrency(sales), row ? formatCurrency(prevSales) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Target', target, prevTarget,
+            formatCurrency(target), row ? formatCurrency(prevTarget) : null, cwFormatMomPct));
+        rows.push(cwCompareRow('Achievement', curAch, prevAch,
+            target > 0 ? curAch.toFixed(1) + '%' : '\u2014',
+            row && prevTarget > 0 ? prevAch.toFixed(1) + '%' : '\u2014',
+            cwFormatMomPts, true));
+        rows.push(cwCompareRow('Commission', curComm, prevComm,
+            formatCurrency(curComm), row ? formatCurrency(prevComm) : null, cwFormatMomPct));
+
+        var curCollAmt = parseFloat(person.collectionAmount) || 0;
+        var curCollTgt = parseFloat(person.collectionTarget) || 0;
+        var curCallAct = parseFloat(person.callActual) || 0;
+        var curCallTgt = parseFloat(person.callTarget) || 0;
+        var prevCollAmt = row ? (parseFloat(row.collectionAmount) || 0) : null;
+        var prevCollTgt = row ? (parseFloat(row.collectionTarget) || 0) : null;
+        var prevCallAct = row ? (parseFloat(row.callActual) || 0) : null;
+        var prevCallTgt = row ? (parseFloat(row.callTarget) || 0) : null;
+
+        if (curCollAmt > 0 || curCollTgt > 0 || (prevCollAmt != null && (prevCollAmt > 0 || prevCollTgt > 0))) {
+            rows.push({
+                label: 'Collection',
+                cur: formatCurrency(curCollAmt) + ' / ' + formatCurrency(curCollTgt),
+                prev: row ? formatCurrency(prevCollAmt) + ' / ' + formatCurrency(prevCollTgt) : '\u2014',
+                mom: row ? cwFormatMomPct(curCollAmt, prevCollAmt) : '\u2014'
+            });
+        }
+        if (curCallAct > 0 || curCallTgt > 0 || (prevCallAct != null && (prevCallAct > 0 || prevCallTgt > 0))) {
+            rows.push({
+                label: 'Active call',
+                cur: String(curCallAct) + ' / ' + String(curCallTgt),
+                prev: row ? String(prevCallAct) + ' / ' + String(prevCallTgt) : '\u2014',
+                mom: row ? cwFormatMomPct(curCallAct, prevCallAct) : '\u2014'
+            });
         }
     }
 
-    bodyEl.innerHTML = '<div class="cw-prev-month-grid">' + html + '</div>'
-        + (foot ? '<div class="cw-prev-month-foot">' + foot + '</div>' : '');
+    if (graphEl) {
+        graphEl.innerHTML = cwRenderCompareGraph(graphBars, achPair, keys.curLabel, keys.prevLabel);
+        graphEl.setAttribute('aria-hidden', graphBars.length ? 'false' : 'true');
+    }
+    bodyEl.innerHTML = cwRenderCompareTable(rows, keys.curLabel, keys.prevLabel);
 }
 function cwBindWhatIf() {
     if (window._cwWhatIfBound) return;
@@ -5878,7 +6082,7 @@ function updateCalcWorkspace() {
         cwSetText('cw-kpi-ach-sub', '');
         if (achBar) achBar.style.width = '0%';
     } else {
-        cwSetText('cw-kpi-ach', (target > 0 || sales > 0) ? ach.toFixed(0) + '%' : '\u2014');
+        cwSetText('cw-kpi-ach', (target > 0 || sales > 0) ? ach.toFixed(2) + '%' : '\u2014');
         cwSetText('cw-kpi-ach-sub', target > 0 ? formatCurrency(sales) + ' / ' + formatCurrency(target) : 'Enter sales & target');
         if (achBar) achBar.style.width = (target > 0 || sales > 0) ? Math.min(Math.max(ach, 0), 100) + '%' : '0%';
     }
@@ -5958,7 +6162,7 @@ function updateCalcWorkspace() {
     cwSetText('cw-kpi-proj', formatCurrency(totalInc));
     cwSetText('cw-net-val', formatCurrency(grand));
 
-    cwUpdatePrevMonthPanel(person, empType, selMonth, selYear, sales);
+    cwUpdatePrevMonthPanel(person, empType, selMonth, selYear);
 
     var upEl = document.getElementById('cw-mock-updated');
     if (upEl) {
@@ -9880,8 +10084,8 @@ function renderAnnualReport() {
 
     // ── Monthly Breakdown (Sales only) ──
     if (salesDisplay.length > 0) {
-        html += '<div class="report-panel"><div class="report-panel-head">📊 Sales Monthly Breakdown — '+selectedYear+' (Sales)</div>';
-        html += '<div class="report-panel-body report-scroll"><table class="report-table">';
+        html += '<div class="report-panel report-panel--monthly-breakdown"><div class="report-panel-head">📊 Sales Monthly Breakdown — '+selectedYear+' (Sales)</div>';
+        html += '<div class="report-panel-body"><table class="report-table report-table--monthly">';
         html += '<thead><tr><th>Month</th>';
         salesDisplay.forEach(function(p) { html += '<th colspan="3" class="rt-num rt-border">'+p+'</th>'; });
         html += '<th colspan="3" class="rt-num rt-border">Total</th>';
