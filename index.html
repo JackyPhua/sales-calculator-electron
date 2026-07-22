@@ -437,7 +437,8 @@
         .lic-hint{font-size:10px;color:#94a3b8;margin-top:4px;}
         #company-list .company-row{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--sheet);border:1px solid var(--line);border-radius:8px;margin-bottom:5px;font-size:11px;font-weight:600;color:var(--ink2);}
         /* ── ANNUAL / EXPENSES REPORT ── */
-        #annual-report-body,#employer-cost-body{width:100%;max-width:none;box-sizing:border-box;}
+        #annual-content-area{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
+        #annual-panel-host{width:100%;max-width:none;box-sizing:border-box;}
         .annual-filter-bar .filter-field{flex:0;}
         .report-kpi-grid{margin-bottom:8px;}
         @media(max-width:900px){.report-kpi-grid.dash-kpi-grid{grid-template-columns:repeat(2,1fr);}}
@@ -450,9 +451,9 @@
         }
         .report-panel-head--em{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);}
         .report-panel-body.report-scroll{overflow-x:auto;}
-        .report-panel--monthly-breakdown{width:100%;max-width:none;margin-bottom:18px;}
-        .report-panel--monthly-breakdown .report-panel-body{padding:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-        .report-table--monthly{
+        .report-panel--monthly-breakdown{width:100%;max-width:100%;margin-bottom:18px;}
+        .report-panel--monthly-breakdown .report-panel-body{padding:0;overflow-x:auto;overflow-y:visible;width:100%;-webkit-overflow-scrolling:touch;}
+        .report-table.report-table--monthly{
             width:max-content;min-width:100%;table-layout:auto;border-collapse:collapse;
         }
         .report-table--monthly th,
@@ -474,7 +475,8 @@
         .report-table--monthly td.rt-border{min-width:104px;}
         .report-table--monthly thead tr:nth-child(2) th.rt-num{font-size:9px;}
         .report-table--monthly td.rt-mono{font-size:11px;}
-        .report-table{width:100%;font-size:11px;border-collapse:collapse;}
+        .report-table{font-size:11px;border-collapse:collapse;}
+        .report-table:not(.report-table--monthly){width:100%;}
         .report-table thead tr{background:var(--sheet);}
         .report-table th{padding:7px 10px;text-align:left;font-weight:700;color:var(--ink3);font-size:9px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--line);}
         .report-table th.rt-num,.report-table td.rt-num{text-align:right;}
@@ -1773,7 +1775,7 @@
 <div id="view-annual" class="view-container">
     <div class="page-header-bar">
         <div class="page-header-title-wrap">
-            <span class="page-header-title" id="annual-page-title">Annual Report</span>
+            <span class="page-header-title" id="annual-page-title">Annual Sales Report</span>
             <div id="annual-sub" class="page-header-sub">Complete sales performance summary</div>
         </div>
         <div class="filter-field">
@@ -1782,8 +1784,8 @@
         </div>
         <div class="page-toolbar-actions">
             <div class="seg-toggle">
-                <button id="btn-annual-report" class="seg-toggle-btn active" onclick="switchAnnualView('report')">📊 Annual Report</button>
-                <button id="btn-employer-cost" class="seg-toggle-btn" onclick="switchAnnualView('cost')">💰 Expenses</button>
+                <button id="btn-annual-report" class="seg-toggle-btn active" onclick="switchAnnualView('report')">📊 Annual Sales Report</button>
+                <button id="btn-employer-cost" class="seg-toggle-btn" onclick="switchAnnualView('cost')">💰 Annual Outlays Report</button>
             </div>
             <button type="button" onclick="printAnnualReport()" id="btn-annual-print" class="action-btn action-btn--primary">🖨️ Print Report</button>
         </div>
@@ -1829,6 +1831,19 @@
                 <option value="Sales">💼 Sales</option>
                 <option value="Supervisor">👔 Management Staff</option>
                 <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Cost Item</div>
+            <select id="ec-cost-select" class="filter-select" onchange="renderEmployerCostReport()">
+                <option value="ALL">All Items</option>
+                <option value="SALARY">💵 Salary</option>
+                <option value="ALLOWANCE">🏠 Allowances</option>
+                <option value="COMMISSION">💰 Commission</option>
+                <option value="INCENTIVE">🎯 Incentive</option>
+                <option value="EPF">🏛️ Employer EPF</option>
+                <option value="SOCSO">🏛️ Employer SOCSO</option>
+                <option value="EIS">🏛️ Employer EIS</option>
             </select>
         </div>
     </div>
@@ -1882,16 +1897,12 @@
             </select>
         </div>
     </div>
-    <div id="annual-report-body" class="view-scroll-body">
-        <div class="empty-state">
-            <div class="empty-state-icon">📋</div>
-            <div class="empty-state-title">Loading annual report...</div>
-        </div>
-    </div>
-    <div id="employer-cost-body" class="view-scroll-body" style="display:none;">
-        <div class="empty-state">
-            <div class="empty-state-icon">💰</div>
-            <div class="empty-state-title">Loading expenses report...</div>
+    <div id="annual-content-area">
+        <div id="annual-panel-host">
+            <div class="empty-state">
+                <div class="empty-state-icon">📋</div>
+                <div class="empty-state-title">Loading annual report...</div>
+            </div>
         </div>
     </div>
 </div>
@@ -1931,7 +1942,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.12</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.13</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>
@@ -2078,7 +2089,8 @@
                     btnCancel.addEventListener('click', function() { overlay.remove(); switchView('quick'); });
                     return;
                 }
-                if (typeof renderAnnualReport === 'function') renderAnnualReport();
+                if (typeof switchAnnualView === 'function') switchAnnualView(typeof _annualActiveView !== 'undefined' ? _annualActiveView : 'report');
+                else if (typeof renderAnnualReport === 'function') renderAnnualReport();
             } else if (view === 'settings') {
                 var lt = document.getElementById('settings-license-type');
                 if (lt) lt.textContent = (typeof isPro === 'function' && isPro()) ? 'Pro License ✓' : 'Trial';
