@@ -1,6 +1,6 @@
 {
   "name": "sales-pro",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "SalesPro — Sales Commission & Reports",
   "main": "main.js",
   "scripts": {

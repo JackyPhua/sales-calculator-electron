@@ -282,7 +282,9 @@
         .history-section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12px;font-weight:800;color:var(--ink);margin:0 0 6px;padding-bottom:5px;border-bottom:2px solid var(--line);}
         .history-section-meta{font-size:10px;font-weight:600;color:var(--ink4);}
         .history-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
-        @media(max-width:1100px){.history-grid{grid-template-columns:repeat(2,1fr);}.history-summary{grid-template-columns:repeat(2,1fr);}}
+        .history-grid--cols-1{grid-template-columns:1fr;}
+        .history-grid--cols-2{grid-template-columns:repeat(2,1fr);}
+        @media(max-width:1100px){.history-grid:not(.history-grid--cols-1):not(.history-grid--cols-2){grid-template-columns:repeat(2,1fr);}.history-summary{grid-template-columns:repeat(2,1fr);}}
         @media(max-width:640px){.history-grid,.history-summary{grid-template-columns:1fr;}}
         .h-card{border:1px solid var(--line);border-radius:10px;background:var(--paper);overflow:hidden;box-shadow:var(--sh);transition:box-shadow .2s,transform .2s;border-left:3px solid #cbd5e1;}
         .h-card--good{border-left-color:#047857;}
@@ -517,7 +519,7 @@
         @media(max-width:900px){
             .calc-grid{grid-template-columns:1fr;}
             .person-sidebar{display:none;}
-            .history-grid{grid-template-columns:1fr 1fr;}
+            .history-grid:not(.history-grid--cols-1){grid-template-columns:1fr 1fr;}
             .settings-grid{grid-template-columns:1fr;}
             .set-card--wide > div{grid-template-columns:1fr!important;}
         }
@@ -1250,13 +1252,19 @@
             display:flex;flex-direction:column;padding:0;
         }
         .proj-fs-scale-wrap{
-            flex:1;min-height:0;overflow:hidden;display:flex;justify-content:center;
-            align-items:center;padding:8px 12px;box-sizing:border-box;
+            flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;display:flex;flex-direction:column;
+            align-items:stretch;justify-content:flex-start;padding:10px 12px 12px;box-sizing:border-box;width:100%;
         }
         .proj-fs-inner{
-            width:100%;max-width:1280px;flex-shrink:0;
+            width:100%;max-width:none;flex-shrink:0;
         }
         .proj-fs-inner .proj-report-root{width:100%;}
+        .proj-report-meta{
+            display:flex;align-items:baseline;justify-content:flex-start;gap:10px;flex-wrap:nowrap;
+            margin-bottom:10px;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;
+        }
+        .proj-report-name{font-size:18px;font-weight:800;color:#163556;letter-spacing:-.3px;font-family:'Sora',sans-serif;}
+        .proj-report-period{font-size:13px;font-weight:600;color:#64748b;font-family:'Sora',sans-serif;}
         /* Compact spacing so projection fits one screen without scroll */
         .proj-fs-inner .proj-report-root > div{margin-bottom:5px!important;}
         .proj-fs-inner .proj-report-root div[style*="margin-bottom:16px"],
@@ -1276,16 +1284,20 @@
             z-index:99999;padding:20px 16px;box-sizing:border-box;overflow-y:auto;
         }
         .salary-report-modal-dialog{
-            max-width:440px;width:100%;height:auto;max-height:none;display:flex;flex-direction:column;
-            background:#fff;border-radius:14px;overflow:visible;box-shadow:0 25px 60px rgba(8,15,26,.28);
+            max-width:560px;width:100%;height:auto;max-height:none;display:flex;flex-direction:column;
+            background:var(--sheet);border-radius:14px;overflow:visible;box-shadow:0 25px 60px rgba(8,15,26,.28);
             margin:auto 0;
         }
-        .salary-report-modal-content{flex:0 0 auto;overflow:visible;background:#fff;}
-        .salary-report-modal-content .cw-tile-payslip{display:flex;flex-direction:column;background:#fff;height:auto;}
+        .salary-report-modal-content{flex:0 0 auto;overflow:visible;background:transparent;padding:16px 24px 0;}
+        .salary-report-modal-content .cw-tile-payslip{
+            display:flex;flex-direction:column;background:#fff;height:auto;
+            border-radius:12px;overflow:hidden;border:1px solid var(--line);
+            box-shadow:0 2px 12px rgba(22,53,86,.08);
+        }
         .salary-report-modal-content .cw-tile-body,
         .salary-report-modal-content .cw-payslip-body{overflow:visible;padding:0;height:auto!important;flex:0 0 auto!important;}
         .salary-report-modal-content .cw-panel-hd{
-            font-size:10px;margin:0;padding:0 12px;height:32px;min-height:32px;max-height:32px;
+            font-size:12px;margin:0;padding:0 16px;height:38px;min-height:38px;max-height:38px;
             box-sizing:border-box;color:#fff;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
             border-bottom:none;flex-shrink:0;display:flex;align-items:center;line-height:1.2;
             background:linear-gradient(90deg,var(--calc-navy-d),var(--calc-navy));
@@ -1294,43 +1306,43 @@
         .salary-report-modal-overlay .live-payslip-card{
             display:grid!important;grid-template-rows:auto auto auto;width:100%;height:auto!important;min-height:0!important;
             background:#fff!important;border:none!important;border-radius:0!important;box-shadow:none!important;
-            margin:0!important;font-size:10px!important;font-family:'Sora',sans-serif;overflow:visible!important;
+            margin:0!important;font-size:12px!important;font-family:'Sora',sans-serif;overflow:visible!important;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-table{
             flex:0 0 auto;overflow:visible;width:100%;border-collapse:collapse;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-th{background:var(--calc-navy-l)!important;}
         .salary-report-modal-overlay .live-payslip-card .ps-th td{
-            padding:5px 6px!important;font-size:8px!important;font-weight:700!important;color:var(--calc-navy)!important;letter-spacing:.04em;
+            padding:7px 10px!important;font-size:10px!important;font-weight:700!important;color:var(--calc-navy)!important;letter-spacing:.04em;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-th td:not(:first-child){text-align:right!important;}
         .salary-report-modal-overlay .live-payslip-card .ps-th td:nth-child(3),
         .salary-report-modal-overlay .live-payslip-card .ps-th td:nth-child(4){color:var(--vi)!important;}
-        .salary-report-modal-overlay .live-payslip-card tbody td{padding:4px 6px!important;font-size:9px!important;}
+        .salary-report-modal-overlay .live-payslip-card tbody td{padding:6px 10px!important;font-size:11px!important;}
         .salary-report-modal-overlay .live-payslip-card tbody tr:nth-child(even) td{background:rgba(232,238,245,.35);}
         .salary-report-modal-overlay .live-payslip-card .ps-pct{
             color:var(--vi)!important;font-weight:800!important;text-align:right!important;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-foot{
-            padding:6px 8px!important;flex-shrink:0;display:flex!important;justify-content:space-between!important;align-items:center!important;
+            padding:10px 14px!important;flex-shrink:0;display:flex!important;justify-content:space-between!important;align-items:center!important;
             background:linear-gradient(135deg,#047857 0%,#059669 100%)!important;
         }
-        .salary-report-modal-overlay .live-payslip-card .ps-foot-lbl{font-size:10px!important;color:rgba(255,255,255,.9)!important;font-weight:600;}
-        .salary-report-modal-overlay .live-payslip-card .ps-foot-val{font-size:14px!important;color:#ecfdf5!important;font-weight:800;}
+        .salary-report-modal-overlay .live-payslip-card .ps-foot-lbl{font-size:12px!important;color:rgba(255,255,255,.9)!important;font-weight:600;}
+        .salary-report-modal-overlay .live-payslip-card .ps-foot-val{font-size:18px!important;color:#ecfdf5!important;font-weight:800;}
         .salary-report-modal-overlay .live-payslip-card .ps-meta{
-            flex:0 0 auto;padding:12px 10px 10px!important;
+            flex:0 0 auto;padding:14px 14px 12px!important;
             background:linear-gradient(180deg,var(--calc-navy-xl) 0%,#fff 55%)!important;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-ach-block{
             display:flex;flex-direction:column;justify-content:center;gap:10px;padding-bottom:10px;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-kpi-row{display:flex;justify-content:space-between;align-items:center;}
-        .salary-report-modal-overlay .live-payslip-card .ps-ach-lbl-text{font-size:11px;color:var(--ink3);font-weight:600;}
+        .salary-report-modal-overlay .live-payslip-card .ps-ach-lbl-text{font-size:13px;color:var(--ink3);font-weight:600;}
         .salary-report-modal-overlay .live-payslip-card .ps-ach-pct-val{
-            font-size:15px;font-weight:800;color:var(--blue-d);font-family:'Sora',sans-serif;
+            font-size:18px;font-weight:800;color:var(--blue-d);font-family:'Sora',sans-serif;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-bar{
-            height:10px;background:var(--calc-border);border-radius:99px;overflow:hidden;
+            height:12px;background:var(--calc-border);border-radius:99px;overflow:hidden;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-bar-fill{
             height:100%;border-radius:99px;background:linear-gradient(90deg,var(--calc-navy),var(--calc-accent));
@@ -1339,19 +1351,19 @@
             display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;min-height:52px;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-mini-box{
-            border-radius:10px;border:1px solid var(--calc-border);background:#fff;padding:12px 10px;
+            border-radius:10px;border:1px solid var(--calc-border);background:#fff;padding:14px 12px;
             display:flex;flex-direction:column;justify-content:center;box-shadow:0 1px 4px rgba(22,53,86,.06);
         }
         .salary-report-modal-overlay .live-payslip-card .ps-mini-lbl{
-            font-size:9px;font-weight:700;color:var(--calc-muted);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase;
+            font-size:10px;font-weight:700;color:var(--calc-muted);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase;
         }
         .salary-report-modal-overlay .live-payslip-card .ps-mini-val{
-            font-size:12px;font-weight:800;font-family:'Sora',sans-serif;color:var(--calc-navy-d);line-height:1.25;
+            font-size:14px;font-weight:800;font-family:'Sora',sans-serif;color:var(--calc-navy-d);line-height:1.25;
         }
         .salary-report-modal-overlay .ps-ach-strip{display:none!important;}
         .salary-report-modal-bar{
-            flex-shrink:0;display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;
-            border-top:1px solid var(--line);background:var(--sheet);
+            flex-shrink:0;display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 16px;
+            border-top:none;background:var(--sheet);
         }
         .salary-report-modal-btn{
             padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;font-family:'Sora',sans-serif;cursor:pointer;border:none;
@@ -1735,9 +1747,18 @@
             </select>
         </div>
         <div class="filter-field">
-            <div class="filter-lbl">Person</div>
+            <div class="filter-lbl">Group</div>
+            <select id="history-group-select" class="filter-select" onchange="loadQuickCalculateHistory()">
+                <option value="ALL">All Groups</option>
+                <option value="Sales">💼 Sales</option>
+                <option value="Supervisor">👔 Management Staff</option>
+                <option value="Support Staff">🛠️ Support Staff</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <div class="filter-lbl">Staff</div>
             <select id="history-person-select" class="filter-select" onchange="loadQuickCalculateHistory()">
-                <option value="ALL">All People</option>
+                <option value="ALL">All Staff</option>
             </select>
         </div>
         <div class="page-toolbar-actions">
@@ -1910,7 +1931,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.10</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.11</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>

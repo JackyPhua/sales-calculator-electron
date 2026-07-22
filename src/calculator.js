@@ -5142,21 +5142,31 @@ function loadQuickCalculateHistory() {
     var monthSel = document.getElementById('history-month-select');
     var selectedMonth = monthSel ? monthSel.value : 'ALL';
 
+    var groupSel = document.getElementById('history-group-select');
+    var selectedGroup = groupSel ? groupSel.value : 'ALL';
+
     var personSel = document.getElementById('history-person-select');
     var prevPerson = personSel ? personSel.value : 'ALL';
     var peopleNames = Object.keys(cfg.base_salaries || {});
+    var filteredPeopleNames = peopleNames.filter(function(n) {
+        return selectedGroup === 'ALL' || getEmployeeType(n) === selectedGroup;
+    });
     if (personSel) {
-        personSel.innerHTML = '<option value="ALL">All People</option>'
-            + peopleNames.map(function(n) {
+        personSel.innerHTML = '<option value="ALL">All Staff</option>'
+            + filteredPeopleNames.map(function(n) {
                 return '<option value="' + escHtml(n) + '">' + escHtml(n) + '</option>';
             }).join('');
-        if (prevPerson === 'ALL' || peopleNames.indexOf(prevPerson) !== -1) {
+        if (prevPerson === 'ALL' || filteredPeopleNames.indexOf(prevPerson) !== -1) {
             personSel.value = prevPerson;
         } else {
             personSel.value = 'ALL';
         }
     }
     var selectedPerson = personSel ? personSel.value : 'ALL';
+
+    function personMatchesGroup(name) {
+        return selectedGroup === 'ALL' || getEmployeeType(name) === selectedGroup;
+    }
 
     function personHasDataInReport(personName, report, bm, yr) {
         var nu = (personName || '').toUpperCase();
@@ -5177,6 +5187,15 @@ function loadQuickCalculateHistory() {
     if (selectedMonth !== 'ALL') {
         sorted = sorted.filter(function(r) { return bareMonth(r.month) === selectedMonth; });
     }
+    if (selectedGroup !== 'ALL') {
+        sorted = sorted.filter(function(r) {
+            var bm = bareMonth(r.month);
+            var yr = keyYear(r.month) || (showAllYears ? curYear : selectedYear);
+            return filteredPeopleNames.some(function(n) {
+                return personHasDataInReport(n, r, bm, yr);
+            });
+        });
+    }
     if (selectedPerson !== 'ALL') {
         sorted = sorted.filter(function(r) {
             var bm = bareMonth(r.month);
@@ -5186,12 +5205,14 @@ function loadQuickCalculateHistory() {
     }
 
     function scopeCommForReport(report, bm, yr) {
-        if (selectedPerson === 'ALL') return monthTotalComm(report, bm, yr);
-        var reportData = report.data || [];
-        var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === selectedPerson.toUpperCase(); });
-        if (!pd) pd = { name: selectedPerson };
-        if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(selectedPerson, bm, yr)) return 0;
-        return calcPersonBonus(pd, bm, yr).total;
+        if (selectedPerson !== 'ALL') {
+            var reportData = report.data || [];
+            var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === selectedPerson.toUpperCase(); });
+            if (!pd) pd = { name: selectedPerson };
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(selectedPerson, bm, yr)) return 0;
+            return calcPersonBonus(pd, bm, yr).total;
+        }
+        return monthTotalComm(report, bm, yr);
     }
 
     function quarterNum(bm) {
@@ -5281,15 +5302,19 @@ function loadQuickCalculateHistory() {
         });
         var total = 0;
         people.forEach(function(p) {
+            if (!personMatchesGroup(p.name)) return;
             if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, bm, yr)) return;
             total += calcPersonBonus(p, bm, yr).total;
         });
         return total;
     }
 
+    var groupLabel = selectedGroup === 'ALL' ? '' : selectedGroup === 'Supervisor' ? 'Management Staff' : selectedGroup;
+
     if (subEl) {
         var scopeParts = [showAllYears ? 'All Years' : String(selectedYear)];
         if (selectedMonth !== 'ALL') scopeParts.push(selectedMonth);
+        if (selectedGroup !== 'ALL') scopeParts.push(groupLabel);
         if (selectedPerson !== 'ALL') scopeParts.push(selectedPerson);
         subEl.textContent = sorted.length + ' month' + (sorted.length === 1 ? '' : 's') + ' · ' + scopeParts.join(' · ');
     }
@@ -5300,6 +5325,7 @@ function loadQuickCalculateHistory() {
         var emptyParts = [];
         if (!showAllYears) emptyParts.push(String(selectedYear));
         if (selectedMonth !== 'ALL') emptyParts.push(selectedMonth);
+        if (selectedGroup !== 'ALL') emptyParts.push(groupLabel);
         if (selectedPerson !== 'ALL') emptyParts.push(selectedPerson);
         var emptyScope = emptyParts.length ? emptyParts.join(' · ') : (showAllYears ? 'any year' : String(selectedYear));
         historyList.innerHTML = '<div class="empty-state">'
@@ -5350,6 +5376,7 @@ function loadQuickCalculateHistory() {
     };
     var summaryScopeParts = [showAllYears ? 'All Years' : String(selectedYear)];
     if (selectedMonth !== 'ALL') summaryScopeParts.push(selectedMonth);
+    if (selectedGroup !== 'ALL') summaryScopeParts.push(groupLabel);
     if (selectedPerson !== 'ALL') summaryScopeParts.push(selectedPerson);
     var summaryScopeLabel = summaryScopeParts.join(' · ');
     var achKpiLbl = selectedPerson !== 'ALL'
@@ -5387,6 +5414,7 @@ function loadQuickCalculateHistory() {
             : '';
 
         var peopleWithData = people.filter(function(p) {
+            if (!personMatchesGroup(p.name)) return false;
             if (selectedPerson !== 'ALL' && (p.name || '').toUpperCase() !== selectedPerson.toUpperCase()) return false;
             if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return false;
             var t = getEmployeeType(p.name);
@@ -5460,6 +5488,12 @@ function loadQuickCalculateHistory() {
         return reports.length + ' month' + (reports.length === 1 ? '' : 's') + ' · ' + fmtRm(comm);
     }
 
+    function historyGridClass(count) {
+        if (count <= 1) return 'history-grid history-grid--cols-1';
+        if (count === 2) return 'history-grid history-grid--cols-2';
+        return 'history-grid';
+    }
+
     function buildGroupedHistoryHtml() {
         if (showAllYears) {
             var byYear = {};
@@ -5471,7 +5505,7 @@ function loadQuickCalculateHistory() {
             return Object.keys(byYear).map(Number).sort(function(a, b) { return b - a; }).map(function(y) {
                 return '<div class="history-year-group">'
                     + '<div class="history-section-title"><span>' + y + '</span><span class="history-section-meta">' + sectionMeta(byYear[y], y) + '</span></div>'
-                    + '<div class="history-grid">' + byYear[y].map(renderHistoryCard).join('') + '</div>'
+                    + '<div class="' + historyGridClass(byYear[y].length) + '">' + byYear[y].map(renderHistoryCard).join('') + '</div>'
                     + '</div>';
             }).join('');
         }
@@ -5486,7 +5520,7 @@ function loadQuickCalculateHistory() {
         return qOrder.filter(function(q) { return byQuarter[q].length > 0; }).map(function(q) {
             return '<div class="history-year-group">'
                 + '<div class="history-section-title"><span>' + qLabels[q] + '</span><span class="history-section-meta">' + sectionMeta(byQuarter[q], selectedYear) + '</span></div>'
-                + '<div class="history-grid">' + byQuarter[q].map(renderHistoryCard).join('') + '</div>'
+                + '<div class="' + historyGridClass(byQuarter[q].length) + '">' + byQuarter[q].map(renderHistoryCard).join('') + '</div>'
                 + '</div>';
         }).join('');
     }
@@ -5616,6 +5650,12 @@ function updateLivePayslip() {
             + pctTd(v, fp)
             + pctTd(v, tp) + '</tr>';
     }
+    function payablePctRow(v){
+        return '<tr class="ps-payable-pct" style="background:#B5D4F4;border-top:0.5px solid var(--line);">'
+            +'<td colspan="2"></td>'
+            + pctTd(v, fp)
+            + pctTd(v, tp) + '</tr>';
+    }
     var html = sec('INCOME') + row('SALARY',salary,true,false) + sec('ALLOWANCES');
     if(hp)   html += row('HP',              hp,   true, false);
     if(car)  html += row('CAR',             car,  true, false);
@@ -5634,30 +5674,47 @@ function updateLivePayslip() {
           + erow(epfAmt);
     if (socsoAmt > 0) html += socsorow(socsoAmt);
     if (eisAmt > 0) html += eisrow(eisAmt);
+    html += payablePctRow(grand);
     if(g('ps-body')) g('ps-body').innerHTML = html;
 }
 window.updateLivePayslip = updateLivePayslip;
 
 function getSalaryReportPrintCss() {
     return 'body{font-family:Sora,sans-serif;margin:24px;color:#0f172a;}'
-        + '.cw-panel-hd{font-size:10px;padding:8px 12px;font-weight:800;color:#fff;text-transform:uppercase;background:#163556;margin-bottom:8px;}'
-        + '.live-payslip-card{font-size:10px;max-width:420px;margin:0 auto;}'
+        + '.cw-panel-hd{font-size:12px;padding:10px 16px;font-weight:800;color:#fff;text-transform:uppercase;background:#163556;margin-bottom:8px;}'
+        + '.live-payslip-card{font-size:12px;max-width:560px;margin:0 auto;}'
         + '.ps-table{width:100%;border-collapse:collapse;}'
-        + '.ps-th td{padding:5px 6px;font-size:8px;font-weight:700;color:#1e4976;background:#f4f7fb;}'
+        + '.ps-th td{padding:7px 10px;font-size:10px;font-weight:700;color:#1e4976;background:#f4f7fb;}'
         + '.ps-th td:not(:first-child){text-align:right;}'
+        + '.ps-pay-rm{display:block;font-size:9px;font-weight:700;color:#64748b;margin-top:2px;letter-spacing:.04em;text-align:right;}'
         + '.ps-th td:nth-child(3),.ps-th td:nth-child(4){color:#8b5cf6;}'
-        + 'tbody td{padding:4px 6px;font-size:9px;}'
+        + 'tbody td{padding:6px 10px;font-size:11px;}'
+        + 'tbody td:nth-child(2){text-align:right;}'
         + '.ps-pct{color:#8b5cf6;font-weight:800;text-align:right;}'
-        + '.ps-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#059669;color:#fff;margin-top:4px;}'
-        + '.ps-foot-lbl{font-size:10px;font-weight:600;}'
-        + '.ps-foot-val{font-size:14px;font-weight:800;}'
-        + '.ps-meta{padding:12px 10px;background:#f4f7fb;}'
+        + '.ps-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#059669;color:#fff;margin-top:4px;}'
+        + '.ps-foot-lbl{font-size:12px;font-weight:600;}'
+        + '.ps-foot-val{font-size:18px;font-weight:800;}'
+        + '.ps-meta{padding:14px 14px 12px;background:#f4f7fb;}'
         + '.ps-kpi-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}'
         + '.ps-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}'
-        + '.ps-mini-box{border:1px solid #d4dce8;border-radius:8px;padding:10px;background:#fff;}'
-        + '.ps-mini-lbl{font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;}'
-        + '.ps-mini-val{font-size:12px;font-weight:800;color:#163556;}'
+        + '.ps-mini-box{border:1px solid #d4dce8;border-radius:8px;padding:14px 12px;background:#fff;}'
+        + '.ps-mini-lbl{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;}'
+        + '.ps-mini-val{font-size:14px;font-weight:800;color:#163556;}'
         + '.ps-ach-strip{display:none;}';
+}
+function stripRmPrefix(text) {
+    return String(text || '').replace(/^RM\s?/, '');
+}
+function prepareSalaryReportPrintHtml(tile) {
+    if (!tile) return '';
+    var clone = tile.cloneNode(true);
+    var payTh = clone.querySelector('.ps-th td:nth-child(2)');
+    if (payTh) payTh.innerHTML = 'Pay<br><span class="ps-pay-rm">RM</span>';
+    clone.querySelectorAll('tbody tr').forEach(function(tr) {
+        var payTd = tr.querySelector('td:nth-child(2)');
+        if (payTd) payTd.textContent = stripRmPrefix(payTd.textContent);
+    });
+    return clone.outerHTML;
 }
 function printSalaryReportModal() {
     var content = document.getElementById('salary-report-modal-content');
@@ -5671,7 +5728,7 @@ function printSalaryReportModal() {
         return;
     }
     win.document.write('<html><head><title>' + title + '</title><style>' + getSalaryReportPrintCss() + '</style></head><body>');
-    win.document.write(tile ? tile.outerHTML : content.innerHTML);
+    win.document.write(prepareSalaryReportPrintHtml(tile) || content.innerHTML);
     win.document.write('</body></html>');
     win.document.close();
     win.focus();
@@ -8368,6 +8425,11 @@ function renderProjectionReport() {
 
     var html = '';
 
+    html += '<div class="proj-report-meta">'
+        + '<div class="proj-report-name">' + personName + '</div>'
+        + '<div class="proj-report-period">' + month + ' ' + selectedYear + '</div>'
+        + '</div>';
+
     // ── Header stats ──────────────────────────────────────────────────────────
     var barW  = Math.min(100, sPct).toFixed(2);
     var barC  = sPct>=106?'#16a34a':sPct>=100?'#2563eb':sPct>=90?'#d97706':'#dc2626';
@@ -8488,20 +8550,28 @@ function renderProjectionReport() {
     body.innerHTML = '<div class="proj-report-root">' + html + '</div>';
 }
 
+function getProjectionPrintCss() {
+    return 'body{font-family:Sora,sans-serif;padding:16px 12px;margin:0;color:#0f172a;}'
+        + '.proj-report-root{width:100%;}'
+        + '.proj-report-meta{display:flex;align-items:baseline;justify-content:flex-start;gap:10px;flex-wrap:nowrap;'
+        + 'margin-bottom:14px;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;}'
+        + '.proj-report-name{font-size:18px;font-weight:800;color:#163556;letter-spacing:-.3px;}'
+        + '.proj-report-period{font-size:13px;font-weight:600;color:#64748b;}';
+}
+
 function printProjectionReport() {
-    var name  = document.getElementById('proj-person-name').textContent;
-    var month = document.getElementById('proj-month-label').textContent;
     var body  = document.getElementById('projection-report-body');
-    if (!body) return;
+    if (!body || !body.innerHTML) return;
+    var name  = (document.getElementById('proj-person-name') || {}).textContent || '—';
+    var month = (document.getElementById('proj-month-label') || {}).textContent || '';
 
     var win = window.open('', '_blank');
-    win.document.write('<html><head><title>Projection Report — '+name+'</title>');
-    win.document.write('<style>body{font-family:Sora,sans-serif;padding:24px;max-width:900px;margin:0 auto;}');
-    win.document.write('h1{font-size:20px;font-weight:700;margin-bottom:4px;}');
-    win.document.write('.sub{font-size:13px;color:#64748b;margin-bottom:20px;}');
-    win.document.write('</style></head><body>');
-    win.document.write('<h1>'+name+' — Projection Report</h1>');
-    win.document.write('<div class="sub">'+month+'</div>');
+    if (!win) {
+        showToast('⚠️', 'Pop-up blocked — allow pop-ups to print');
+        return;
+    }
+    win.document.write('<html><head><title>Projection Report — ' + name + '</title>');
+    win.document.write('<style>' + getProjectionPrintCss() + '</style></head><body>');
     win.document.write(body.innerHTML);
     win.document.write('</body></html>');
     win.document.close();
@@ -8558,7 +8628,7 @@ function _projFsResizeHandler() {
     if (document.getElementById('projection-fullscreen-modal')) fitProjectionToScreen();
 }
 
-/** Scale projection card to fit viewport — no scroll. */
+/** Keep projection full width; scroll vertically if content exceeds viewport. */
 function fitProjectionToScreen() {
     var wrap = document.querySelector('#projection-fullscreen-modal .proj-fs-scale-wrap');
     var inner = document.getElementById('proj-fs-inner');
@@ -8568,22 +8638,7 @@ function fitProjectionToScreen() {
     inner.style.transform = 'none';
     inner.style.marginBottom = '0';
     inner.style.width = '100%';
-    inner.style.maxWidth = '1280px';
-
-    requestAnimationFrame(function() {
-        requestAnimationFrame(function() {
-            var availW = wrap.clientWidth;
-            var availH = wrap.clientHeight;
-            var contentW = inner.offsetWidth;
-            var contentH = inner.scrollHeight;
-            if (!contentW || !contentH || !availW || !availH) return;
-
-            var scale = Math.min(1, availW / contentW, availH / contentH);
-            scale = Math.max(0.01, Math.floor(scale * 1000) / 1000);
-
-            inner.style.zoom = String(scale);
-        });
-    });
+    inner.style.maxWidth = 'none';
 }
 window.fitProjectionToScreen = fitProjectionToScreen;
 
