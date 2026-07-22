@@ -10830,39 +10830,128 @@ function renderEmployerCostReport() {
     html += '<div class="dash-kpi dash-kpi--ratio"><div class="dash-kpi-lbl">Expenses / Sales</div><div class="dash-kpi-val">'+pct(displayTotalCost, teamSales)+'</div></div>';
     html += '</div>';
 
-    // Per person tables
-    displayPeople.forEach(function(name) {
-        var p = allPeopleData[name];
-        if (!p || p.months === 0) return;
-        var empType = p.type || 'Sales';
-        var profit = p.totalSales - p.totalCost;
-        var profitColor = profit >= 0 ? '#4ade80' : '#fb7185';
+    function aggregateGroupTotals(members) {
+        var g = {
+            salary: 0, allow: 0, comm: 0, collInc: 0, callInc: 0, qtrBonus: 0,
+            pay: 0, epf: 0, socso: 0, eis: 0, cost: 0, sales: 0, months: 0, headcount: 0
+        };
+        members.forEach(function(n) {
+            var p = allPeopleData[n];
+            if (!p || p.months === 0) return;
+            g.headcount++;
+            g.months += p.months;
+            g.sales += p.totalSales;
+            g.salary += p.totalSalary;
+            g.allow += p.totalAllow;
+            g.comm += p.totalComm;
+            g.collInc += p.totalCollInc;
+            g.callInc += p.totalCallInc;
+            g.qtrBonus += p.totalQtrBonus;
+            g.pay += p.totalPay;
+            g.epf += p.employerEpf;
+            g.socso += p.employerSocso;
+            g.eis += p.employerEis;
+            g.cost += p.totalCost;
+        });
+        return g;
+    }
 
-        html += '<div class="report-panel">';
-        var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
-        html += '<div class="ec-card-head">';
-        html += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
-        if (empType === 'Sales') {
-            html += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Sales</div><div class="ec-card-sales-val">'+fmt(p.totalSales)+'</div></div>';
+    function ecGroupRow(label, val, hasIndv, indvBase, rowCls) {
+        rowCls = rowCls || 'rt-expense';
+        if (hasIndv) {
+            return '<tr class="'+rowCls+'"><td>'+label+'</td><td class="rt-num rt-mono">'+fmt(val)+'</td><td class="rt-num rt-mono">'+pct(val, indvBase)+'</td><td class="rt-num rt-mono">'+pct(val, teamSales)+'</td></tr>';
         }
-        html += '</div>';
+        return '<tr class="'+rowCls+'"><td>'+label+'</td><td class="rt-num rt-mono">'+fmt(val)+'</td><td class="rt-num rt-mono">'+pct(val, teamSales)+'</td></tr>';
+    }
+
+    function renderGroupGrandTotal(groupCfg, members) {
+        if (!members.length) return '';
+        var g = aggregateGroupTotals(members);
+        if (g.cost <= 0) return '';
+
+        var empType = groupCfg.type;
+        var hasIndv = empType === 'Sales' && g.sales > 0;
+        var indvBase = g.sales;
+        var colspan = hasIndv ? 4 : 3;
+        var subLbl = g.headcount + ' staff · ' + ecMonthLabel + ' ' + selectedYear;
+
+        var out = '<div class="report-panel">';
+        out += '<div class="ec-card-head">';
+        out += '<div><div class="ec-card-title">'+groupCfg.icon+' '+groupCfg.title+' — Grand Total</div>';
+        out += '<div class="ec-card-sub" style="font-size:10px;color:rgba(255,255,255,.75);margin-top:2px;">'+subLbl+'</div></div>';
+        if (empType === 'Sales') {
+            out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Team Sales</div><div class="ec-card-sales-val">'+fmt(g.sales)+'</div></div>';
+        } else {
+            out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Total Expenses</div><div class="ec-card-sales-val">'+fmt(g.cost)+'</div></div>';
+        }
+        out += '</div>';
+        out += '<table class="report-table">';
+        if (hasIndv) {
+            out += '<thead><tr><th style="width:40%;">Cost Item</th><th class="rt-num" style="width:25%;">Amount</th><th class="rt-num" style="width:17%;">INDV%</th><th class="rt-num" style="width:18%;">TEAM%</th></tr></thead>';
+        } else {
+            out += '<thead><tr><th style="width:45%;">Cost Item</th><th class="rt-num" style="width:30%;">Amount</th><th class="rt-num" style="width:25%;">TEAM%</th></tr></thead>';
+        }
+        out += '<tbody>';
+        if (empType === 'Sales') {
+            out += '<tr class="rt-revenue"><td>📈 Sales Revenue</td><td class="rt-num rt-mono">'+fmt(g.sales)+'</td><td class="rt-num rt-mono">100.000%</td><td class="rt-num rt-mono">'+pct(g.sales, teamSales)+'</td></tr>';
+        }
+        out += '<tr class="rt-section"><td colspan="'+colspan+'">Payroll &amp; Incentives</td></tr>';
+        out += ecGroupRow('💵 Basic Salary', g.salary, hasIndv, indvBase);
+        out += ecGroupRow('🏠 Allowances', g.allow, hasIndv, indvBase);
+
+        if (empType === 'Sales') {
+            out += ecGroupRow('💰 Commission', g.comm, hasIndv, indvBase);
+            out += ecGroupRow('📦 Collection Incentive', g.collInc, hasIndv, indvBase);
+            out += ecGroupRow('📞 Call Incentive', g.callInc, hasIndv, indvBase);
+            out += ecGroupRow('🏆 Quarterly Incentive', g.qtrBonus, hasIndv, indvBase);
+        } else if (empType === 'Supervisor') {
+            out += ecGroupRow('💰 Sale Incentive', g.comm, hasIndv, indvBase);
+            out += ecGroupRow('📦 Collection Incentive', g.collInc, hasIndv, indvBase);
+            out += ecGroupRow('📞 Call Incentive', g.callInc, hasIndv, indvBase);
+            out += ecGroupRow('🏆 Quarterly Incentive', g.qtrBonus, hasIndv, indvBase);
+        } else if (empType === 'Support Staff') {
+            out += ecGroupRow('📦 Block Incentive', g.comm, hasIndv, indvBase);
+        }
+
+        out += ecGroupRow('Total Pay', g.pay, hasIndv, indvBase, 'rt-highlight');
+        out += '<tr class="rt-section"><td colspan="'+colspan+'">Employer Statutory</td></tr>';
+        out += ecGroupRow('🏛️ Employer EPF', g.epf, hasIndv, indvBase);
+        if (g.socso > 0) out += ecGroupRow('🏛️ Employer SOCSO', g.socso, hasIndv, indvBase);
+        if (g.eis > 0) out += ecGroupRow('🏛️ Employer EIS (0.2%)', g.eis, hasIndv, indvBase);
+        out += ecGroupRow('⚠️ GRAND TOTAL EXPENSES', g.cost, hasIndv, indvBase, 'rt-total-dark');
+        out += '</tbody></table></div>';
+        return out;
+    }
+
+    function renderPersonExpenseTable(name) {
+        var p = allPeopleData[name];
+        if (!p || p.months === 0) return '';
+        var empType = p.type || 'Sales';
+
+        var out = '<div class="report-panel">';
+        var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
+        out += '<div class="ec-card-head">';
+        out += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub" style="font-size:10px;color:rgba(255,255,255,.75);margin-top:2px;">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
+        if (empType === 'Sales') {
+            out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Sales</div><div class="ec-card-sales-val">'+fmt(p.totalSales)+'</div></div>';
+        }
+        out += '</div>';
 
         var hasIndv = (empType === 'Sales');
-        html += '<table class="report-table">';
+        out += '<table class="report-table">';
         if (hasIndv) {
-            html += '<thead><tr><th style="width:40%;">Cost Item</th><th class="rt-num" style="width:25%;">Amount</th><th class="rt-num" style="width:17%;">INDV%</th><th class="rt-num" style="width:18%;">TEAM%</th></tr></thead>';
+            out += '<thead><tr><th style="width:40%;">Cost Item</th><th class="rt-num" style="width:25%;">Amount</th><th class="rt-num" style="width:17%;">INDV%</th><th class="rt-num" style="width:18%;">TEAM%</th></tr></thead>';
         } else {
-            html += '<thead><tr><th style="width:45%;">Cost Item</th><th class="rt-num" style="width:30%;">Amount</th><th class="rt-num" style="width:25%;">TEAM%</th></tr></thead>';
+            out += '<thead><tr><th style="width:45%;">Cost Item</th><th class="rt-num" style="width:30%;">Amount</th><th class="rt-num" style="width:25%;">TEAM%</th></tr></thead>';
         }
-        html += '<tbody>';
+        out += '<tbody>';
 
         if (empType === 'Sales') {
-            html += '<tr class="rt-revenue"><td>📈 Sales Revenue</td><td class="rt-num rt-mono">'+fmt(p.totalSales)+'</td><td class="rt-num rt-mono">100.000%</td><td class="rt-num rt-mono">'+pct(p.totalSales,teamSales)+'</td></tr>';
+            out += '<tr class="rt-revenue"><td>📈 Sales Revenue</td><td class="rt-num rt-mono">'+fmt(p.totalSales)+'</td><td class="rt-num rt-mono">100.000%</td><td class="rt-num rt-mono">'+pct(p.totalSales,teamSales)+'</td></tr>';
         }
 
-        html += '<tr class="rt-section"><td colspan="'+(hasIndv?4:3)+'">Expenses</td></tr>';
+        out += '<tr class="rt-section"><td colspan="'+(hasIndv?4:3)+'">Expenses</td></tr>';
 
-        // Cost rows — build based on type
         var costRows = [];
         costRows.push({label:'💵 Basic Salary', val:p.totalSalary, bg:'#fff'});
         costRows.push({label:'🏠 Allowances', val:p.totalAllow, bg:'#f8fafc'});
@@ -10883,35 +10972,53 @@ function renderEmployerCostReport() {
 
         costRows.forEach(function(r) {
             if (hasIndv) {
-                html += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
+                out += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
             } else {
-                html += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
+                out += '<tr class="rt-expense"><td>'+r.label+'</td><td class="rt-num rt-mono">'+fmt(r.val)+'</td><td class="rt-num rt-mono">'+pct(r.val,teamSales)+'</td></tr>';
             }
         });
 
         if (hasIndv) {
-            html += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
+            out += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
         } else {
-            html += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
+            out += '<tr class="rt-highlight"><td>Total Pay</td><td class="rt-num rt-mono">'+fmt(p.totalPay)+'</td><td class="rt-num rt-mono">'+pct(p.totalPay,teamSales)+'</td></tr>';
         }
 
         if (hasIndv) {
-            html += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
-            if (p.employerSocso > 0) html += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
-            if (p.employerEis > 0) html += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
+            out += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) out += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) out += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
         } else {
-            html += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
-            if (p.employerSocso > 0) html += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
-            if (p.employerEis > 0) html += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
+            out += '<tr class="rt-expense"><td>🏛️ Employer EPF</td><td class="rt-num rt-mono">'+fmt(p.employerEpf)+'</td><td class="rt-num rt-mono">'+pct(p.employerEpf,teamSales)+'</td></tr>';
+            if (p.employerSocso > 0) out += '<tr class="rt-expense"><td>🏛️ Employer SOCSO</td><td class="rt-num rt-mono">'+fmt(p.employerSocso)+'</td><td class="rt-num rt-mono">'+pct(p.employerSocso,teamSales)+'</td></tr>';
+            if (p.employerEis > 0) out += '<tr class="rt-expense"><td>🏛️ Employer EIS (0.2%)</td><td class="rt-num rt-mono">'+fmt(p.employerEis)+'</td><td class="rt-num rt-mono">'+pct(p.employerEis,teamSales)+'</td></tr>';
         }
 
         if (hasIndv) {
-            html += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
+            out += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,p.totalSales)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
         } else {
-            html += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
+            out += '<tr class="rt-total-dark"><td>⚠️ TOTAL EXPENSES</td><td class="rt-num rt-mono">'+fmt(p.totalCost)+'</td><td class="rt-num rt-mono">'+pct(p.totalCost,teamSales)+'</td></tr>';
         }
 
-        html += '</tbody></table></div>';
+        out += '</tbody></table></div>';
+        return out;
+    }
+
+    var GROUP_SECTIONS = [
+        { type: 'Sales', title: 'Sales Team', icon: '💼' },
+        { type: 'Supervisor', title: 'Management Staff', icon: '👔' },
+        { type: 'Support Staff', title: 'Support Staff', icon: '🛠️' }
+    ];
+
+    GROUP_SECTIONS.forEach(function(groupCfg) {
+        var members = displayPeople.filter(function(n) {
+            return getEmployeeType(n) === groupCfg.type && allPeopleData[n] && allPeopleData[n].months > 0;
+        });
+        if (!members.length) return;
+        html += renderGroupGrandTotal(groupCfg, members);
+        members.forEach(function(name) {
+            html += renderPersonExpenseTable(name);
+        });
     });
 
     body.innerHTML = html;
