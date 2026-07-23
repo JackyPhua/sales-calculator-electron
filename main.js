@@ -1,4 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+// Dev (npm start) defaults to package.json "name" (sales-pro); packaged exe uses
+// productName (SalesPro). Unify so both read/write the same userData folder.
+app.setName('SalesPro');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -112,6 +115,7 @@ let db = null;
 function getLegacyUserDataPaths() {
     const appData = app.getPath('appData');
     return [
+        path.join(appData, 'sales-pro'),
         path.join(appData, 'CommissionPro'),
         path.join(appData, 'commission-pro')
     ];

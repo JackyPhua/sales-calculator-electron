@@ -485,6 +485,7 @@
         .report-table td.rt-mono{font-family:'Sora',sans-serif;font-size:10px;}
         .report-table tr.rt-total td{background:linear-gradient(180deg,var(--blue-l),#eff6ff);font-weight:700;color:var(--blue-d);border-top:2px solid #93c5fd;}
         .report-table tr.rt-total-dark td{background:linear-gradient(180deg,#1e4976,#163556);color:#fde68a;font-weight:800;border-top:none;}
+        .report-table tr.rt-total-group td{background:linear-gradient(180deg,#f0fdfa,#ccfbf1);color:#115e59;font-weight:800;border-top:2px solid #5eead4;}
         .report-table tr.rt-section td{padding:6px 10px;font-size:9px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:1px;background:#fff5f7;}
         .report-table tr.rt-revenue td{background:var(--em-l);font-weight:700;color:#065f46;}
         .report-table tr.rt-highlight td{background:linear-gradient(180deg,var(--blue-l),#eff6ff);font-weight:700;color:var(--blue-d);}
@@ -511,6 +512,12 @@
         .ec-card-sales{text-align:right;}
         .ec-card-sales-lbl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;}
         .ec-card-sales-val{font-size:16px;font-weight:800;color:#a7f3d0;font-family:'Sora',sans-serif;}
+        /* Annual Outlays — group grand total headers only (All Staff / Sales / Management / Support) */
+        .ec-card-head--group-grand{padding:12px 14px;background:linear-gradient(180deg,#f0fdfa 0%,#ecfdf5 100%);border-bottom:2px solid #99f6e4;border-left:4px solid #0d9488;color:#134e4a;}
+        .ec-card-head--group-grand .ec-card-title{color:#134e4a;letter-spacing:-.2px;}
+        .ec-card-head--group-grand .ec-card-sub{color:#0f766e;}
+        .ec-card-head--group-grand .ec-card-sales-lbl{color:#0f766e;letter-spacing:.6px;font-weight:600;opacity:.85;}
+        .ec-card-head--group-grand .ec-card-sales-val{color:#0f766e;font-size:17px;letter-spacing:-.3px;}
         .dash-kpi--cost .dash-kpi-val{color:#be123c;}
         .dash-kpi--ratio .dash-kpi-val{color:#b45309;}
         /* ── TOAST ── */
@@ -1229,11 +1236,11 @@
         /* Projection fullscreen modal (after Calculation save) */
         .proj-fs-modal{
             position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;
-            background:var(--sheet,#f8fafc);z-index:99999;display:flex;flex-direction:column;
+            background:#fff;z-index:99999;display:flex;flex-direction:column;
             padding:0;box-sizing:border-box;overflow:hidden;
         }
         .proj-fs-card{
-            background:var(--paper,#fff);border:none;border-radius:0;box-shadow:none;
+            background:#fff;border:none;border-radius:0;box-shadow:none;
             width:100%;height:100%;max-height:100%;display:flex;flex-direction:column;
             overflow:hidden;animation:fadeIn .15s ease-out;min-height:0;
         }
@@ -1250,21 +1257,23 @@
         .proj-fs-btn--ghost:hover{background:rgba(255,255,255,.2);}
         .proj-fs-btn--close{background:#fff;color:#163556;}
         .proj-fs-body{
-            flex:1;min-height:0;overflow:hidden;background:var(--sheet,#f8fafc);
+            flex:1;min-height:0;overflow:hidden;background:#fff;
             display:flex;flex-direction:column;padding:0;
         }
         .proj-fs-scale-wrap{
-            flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;display:flex;flex-direction:column;
-            align-items:stretch;justify-content:flex-start;padding:10px 12px 12px;box-sizing:border-box;width:100%;
+            flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;
+            align-items:stretch;justify-content:flex-start;padding:0;box-sizing:border-box;width:100%;
         }
+        .proj-fs-scale-host{width:100%;overflow:hidden;flex:0 0 auto;}
         .proj-fs-inner{
-            width:100%;max-width:none;flex-shrink:0;
+            width:100%;max-width:none;flex-shrink:0;box-sizing:border-box;will-change:transform;
         }
-        .proj-fs-inner .proj-report-root{width:100%;}
+        .proj-fs-inner .proj-report-root{width:100%;box-sizing:border-box;padding:4px 8px;}
         .proj-report-meta{
             display:flex;align-items:baseline;justify-content:flex-start;gap:10px;flex-wrap:nowrap;
-            margin-bottom:10px;padding:10px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;
+            margin-bottom:8px;padding:8px 12px;background:#fff;border:none;border-bottom:1px solid #e2e8f0;border-radius:0;
         }
+        .proj-fs-inner .proj-report-meta{margin-bottom:6px;padding:6px 12px;}
         .proj-report-name{font-size:18px;font-weight:800;color:#163556;letter-spacing:-.3px;font-family:'Sora',sans-serif;}
         .proj-report-period{font-size:13px;font-weight:600;color:#64748b;font-family:'Sora',sans-serif;}
         /* Compact spacing so projection fits one screen without scroll */
@@ -1942,7 +1951,7 @@
                     <div class="set-divider">
                         <div class="set-section-lbl">App Info</div>
                         <div class="set-info-list">
-                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.15</span></div>
+                            <div class="set-info-row"><span>Version</span><span id="settings-app-version" class="set-info-val">v1.0.16</span></div>
                             <div class="set-info-row"><span>Database</span><span class="set-info-val set-info-val--ok">SQLite ✓</span></div>
                         </div>
                     </div>

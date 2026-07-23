@@ -8672,6 +8672,9 @@ function syncProjectionFromCalculate() {
 
 function closeProjectionFullscreenModal() {
     var modal = document.getElementById('projection-fullscreen-modal');
+    if (modal && modal._projFsRo) {
+        modal._projFsRo.disconnect();
+    }
     if (modal) modal.remove();
     document.body.style.overflow = '';
     document.removeEventListener('keydown', _projFsEscHandler);
@@ -8686,17 +8689,35 @@ function _projFsResizeHandler() {
     if (document.getElementById('projection-fullscreen-modal')) fitProjectionToScreen();
 }
 
-/** Keep projection full width; scroll vertically if content exceeds viewport. */
+/** Scale projection to fill viewport height; collapse layout gap below content. */
 function fitProjectionToScreen() {
     var wrap = document.querySelector('#projection-fullscreen-modal .proj-fs-scale-wrap');
+    var host = document.getElementById('proj-fs-scale-host');
     var inner = document.getElementById('proj-fs-inner');
-    if (!wrap || !inner) return;
+    if (!wrap || !host || !inner) return;
 
-    inner.style.zoom = '1';
+    inner.style.zoom = '';
     inner.style.transform = 'none';
     inner.style.marginBottom = '0';
     inner.style.width = '100%';
-    inner.style.maxWidth = 'none';
+    host.style.height = 'auto';
+
+    var availW = wrap.clientWidth;
+    var availH = wrap.clientHeight;
+    if (availW < 1 || availH < 1) return;
+
+    var contentW = inner.scrollWidth;
+    var contentH = inner.scrollHeight;
+    if (contentW < 1 || contentH < 1) return;
+
+    var scaleH = availH / contentH;
+    var scale = Math.max(0.55, Math.min(scaleH, 1.65));
+
+    inner.style.transformOrigin = 'top left';
+    inner.style.transform = 'scale(' + scale + ')';
+    inner.style.width = (100 / scale) + '%';
+    host.style.height = availH + 'px';
+    wrap.style.overflowX = (contentW * scale > availW + 2) ? 'hidden' : 'hidden';
 }
 window.fitProjectionToScreen = fitProjectionToScreen;
 
@@ -8748,7 +8769,7 @@ function showProjectionFullscreenModal() {
         + '<button type="button" class="proj-fs-btn proj-fs-btn--ghost" id="proj-fs-pdf">🖨️ Print PDF</button>'
         + '<button type="button" class="proj-fs-btn proj-fs-btn--close" id="proj-fs-close">✕ Close</button>'
         + '</div></div>'
-        + '<div class="proj-fs-body"><div class="proj-fs-scale-wrap"><div class="proj-fs-inner" id="proj-fs-inner"></div></div></div>'
+        + '<div class="proj-fs-body"><div class="proj-fs-scale-wrap"><div class="proj-fs-scale-host" id="proj-fs-scale-host"><div class="proj-fs-inner" id="proj-fs-inner"></div></div></div></div>'
         + '</div>';
 
     document.body.appendChild(overlay);
@@ -8759,6 +8780,15 @@ function showProjectionFullscreenModal() {
     fitProjectionToScreen();
     setTimeout(fitProjectionToScreen, 60);
     setTimeout(fitProjectionToScreen, 180);
+    setTimeout(fitProjectionToScreen, 400);
+    if (typeof ResizeObserver !== 'undefined') {
+        var fsBody = document.querySelector('#projection-fullscreen-modal .proj-fs-body');
+        if (fsBody) {
+            var ro = new ResizeObserver(function() { fitProjectionToScreen(); });
+            ro.observe(fsBody);
+            overlay._projFsRo = ro;
+        }
+    }
     window.addEventListener('resize', _projFsResizeHandler);
 
     document.getElementById('proj-fs-close').addEventListener('click', closeProjectionFullscreenModal);
@@ -9468,6 +9498,296 @@ function renderPeopleList() {
     });
 }
 
+function sumAllowancesBag(allow) {
+    if (!allow) return 0;
+    return Object.values(allow).reduce(function(s, v) { return s + (parseFloat(v) || 0); }, 0);
+}
+
+function formatSalaryEffectiveLabel(ym) {
+    if (!ym) return '';
+    if (ym === '2000-01') return 'From start';
+    var parts = /^(\d{4})-(\d{2})/.exec(ym);
+    if (!parts) return ym;
+    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var mo = parseInt(parts[2], 10);
+    return (monthOrder[mo - 1] || parts[2]) + ' ' + parts[1];
+}
+
+function currentEffectiveYM() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+}
+
+function getSortedSalaryHistory(history) {
+    return (history || []).slice().sort(function(a, b) {
+        return (a.effectiveFrom || '').localeCompare(b.effectiveFrom || '');
+    });
+}
+
+function getLatestSalaryHistoryEntry(history) {
+    var sorted = getSortedSalaryHistory(history);
+    return sorted.length ? sorted[sorted.length - 1] : null;
+}
+
+function smAllowancesEqual(a, b) {
+    var keys = ['HP', 'CAR', 'LOCAL FUEL', 'OUTSTATION FUEL', 'HOUSING', 'FOOD', 'OTHERS'];
+    for (var i = 0; i < keys.length; i++) {
+        if ((parseFloat((a || {})[keys[i]]) || 0) !== (parseFloat((b || {})[keys[i]]) || 0)) return false;
+    }
+    return true;
+}
+
+function smFormValuesDifferFromEntry(formVals, entry) {
+    if (!entry) return true;
+    if ((parseFloat(formVals.salary) || 0) !== (parseFloat(entry.salary) || 0)) return true;
+    if (!smAllowancesEqual(formVals.allowances, entry.allowances)) return true;
+    return false;
+}
+
+function smGetHistoryEntry(history, ym) {
+    return (history || []).find(function(h) { return h.effectiveFrom === ym; });
+}
+
+function smEnsureOriginRecord(personName, history, formVals) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    if (history.length > 0) return;
+    var effective = currentEffectiveYM();
+    var histReports = cfg.reportHistory || [];
+    var hasEarlierReports = histReports.some(function(r) {
+        var monthOrder2 = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        var rIdx = monthOrder2.indexOf(bareMonth(r.month));
+        var curYr = new Date().getFullYear();
+        var rYM = curYr + '-' + String(rIdx + 1).padStart(2, '0');
+        return rYM < effective;
+    });
+    if (hasEarlierReports) {
+        var oldSalary = (cfg.base_salaries && cfg.base_salaries[nu]) || formVals.salary;
+        var oldAllow = (cfg.allowances && cfg.allowances[nu]) || formVals.allowances;
+        var oldEpf = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || formVals.epfRate;
+        history.push({ salary: oldSalary, allowances: oldAllow, epfRate: oldEpf, effectiveFrom: '2000-01' });
+    }
+}
+
+function buildSmInlineStatusHtml(personName, kind) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    var history = (cfg.salary_history && cfg.salary_history[nu]) || [];
+    var formVals = smReadFormSalaryValues();
+    var monthEl = document.getElementById('sm-record-month');
+    var targetYm = (monthEl && monthEl.value) ? monthEl.value : currentEffectiveYM();
+    var targetEntry = smGetHistoryEntry(history, targetYm);
+    var latest = getLatestSalaryHistoryEntry(history);
+    var allowTotal = sumAllowancesBag(formVals.allowances);
+
+    if (kind === 'salary') {
+        if (targetEntry) {
+            var recSal = parseFloat(targetEntry.salary) || 0;
+            var formSal = parseFloat(formVals.salary) || 0;
+            if (Math.abs(recSal - formSal) < 0.005) {
+                return '<span class="sm-inline-status sm-inline-status--ok">✓ RM ' + recSal.toLocaleString() + ' recorded for ' + formatSalaryEffectiveLabel(targetYm) + '</span>';
+            }
+            return '<span class="sm-inline-status sm-inline-status--warn">⚠ ' + formatSalaryEffectiveLabel(targetYm) + ' has RM ' + recSal.toLocaleString() + ' — form shows RM ' + formSal.toLocaleString() + '. Click <b>Record change</b>.</span>';
+        }
+        if (latest) {
+            return '<span class="sm-inline-status sm-inline-status--muted">No record for ' + formatSalaryEffectiveLabel(targetYm) + '. Latest: RM ' + (parseFloat(latest.salary) || 0).toLocaleString() + ' from ' + formatSalaryEffectiveLabel(latest.effectiveFrom) + '.</span>';
+        }
+        return '<span class="sm-inline-status sm-inline-status--warn">⚠ No salary history yet — set amount and click <b>Record change</b>.</span>';
+    }
+
+    if (kind === 'allowance') {
+        if (targetEntry) {
+            var recAllow = sumAllowancesBag(targetEntry.allowances);
+            if (Math.abs(recAllow - allowTotal) < 0.005) {
+                return '<span class="sm-inline-status sm-inline-status--ok">✓ RM ' + recAllow.toLocaleString() + ' total recorded for ' + formatSalaryEffectiveLabel(targetYm) + '</span>';
+            }
+            return '<span class="sm-inline-status sm-inline-status--warn">⚠ ' + formatSalaryEffectiveLabel(targetYm) + ' has RM ' + recAllow.toLocaleString() + ' — form total RM ' + allowTotal.toLocaleString() + '. Click <b>Record change</b>.</span>';
+        }
+        if (latest) {
+            var latAllow = sumAllowancesBag(latest.allowances);
+            return '<span class="sm-inline-status sm-inline-status--muted">No record for ' + formatSalaryEffectiveLabel(targetYm) + '. Latest total: RM ' + latAllow.toLocaleString() + ' from ' + formatSalaryEffectiveLabel(latest.effectiveFrom) + '.</span>';
+        }
+        return '<span class="sm-inline-status sm-inline-status--warn">⚠ No allowance history yet — click <b>Record change</b> after editing.</span>';
+    }
+    return '';
+}
+
+function buildSalaryHistoryTableHtml(history) {
+    var sorted = getSortedSalaryHistory(history);
+    if (!sorted.length) {
+        return '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--ink3);font-size:12px;">No salary records yet. Edit values above and click <b>Record change</b>.</td></tr>';
+    }
+    var latestYm = sorted[sorted.length - 1].effectiveFrom;
+    return sorted.map(function(h) {
+        var ym = h.effectiveFrom || '';
+        var allowTotal = sumAllowancesBag(h.allowances);
+        var isCurrent = ym === latestYm;
+        var canDelete = sorted.length > 1;
+        return '<tr class="sm-history-row' + (isCurrent ? ' sm-history-row--current' : '') + '" data-ym="' + ym + '">'
+            + '<td>' + formatSalaryEffectiveLabel(ym)
+            + (isCurrent ? ' <span class="sm-history-current-badge">Current</span>' : '') + '</td>'
+            + '<td style="text-align:right;">RM ' + (parseFloat(h.salary) || 0).toLocaleString() + '</td>'
+            + '<td style="text-align:right;">RM ' + allowTotal.toLocaleString() + '</td>'
+            + '<td style="text-align:center;white-space:nowrap;">'
+            + '<button type="button" class="sm-history-edit" data-ym="' + ym + '" title="Load into form">Edit</button>'
+            + '<button type="button" class="sm-history-del" data-ym="' + ym + '"' + (canDelete ? '' : ' disabled') + ' title="Delete record">Del</button>'
+            + '</td></tr>';
+    }).join('');
+}
+
+function smReadFormAllowances() {
+    return {
+        HP: parseFloat((document.getElementById('sm-HP') || {}).value) || 0,
+        CAR: parseFloat((document.getElementById('sm-CAR') || {}).value) || 0,
+        'LOCAL FUEL': parseFloat((document.getElementById('sm-LOCALFUEL') || {}).value) || 0,
+        'OUTSTATION FUEL': parseFloat((document.getElementById('sm-OUTFUEL') || {}).value) || 0,
+        HOUSING: parseFloat((document.getElementById('sm-HOUSING') || {}).value) || 0,
+        FOOD: parseFloat((document.getElementById('sm-FOOD') || {}).value) || 0,
+        OTHERS: parseFloat((document.getElementById('sm-OTHERS') || {}).value) || 0
+    };
+}
+
+function smReadFormSalaryValues() {
+    var _epfEl = document.getElementById('sm-epf');
+    return {
+        salary: parseFloat((document.getElementById('sm-base') || {}).value) || 1700,
+        allowances: smReadFormAllowances(),
+        epfRate: _epfEl ? (parseFloat(_epfEl.value) || 11) : 11
+    };
+}
+
+function smLoadEntryIntoForm(entry) {
+    if (!entry) return;
+    var baseEl = document.getElementById('sm-base');
+    if (baseEl) baseEl.value = entry.salary || 1700;
+    var allow = entry.allowances || {};
+    ['HP','CAR','LOCALFUEL','OUTFUEL','HOUSING','FOOD','OTHERS'].forEach(function(id) {
+        var el = document.getElementById('sm-' + id);
+        if (!el) return;
+        var key = id === 'LOCALFUEL' ? 'LOCAL FUEL' : (id === 'OUTFUEL' ? 'OUTSTATION FUEL' : id);
+        el.value = allow[key] || 0;
+    });
+}
+
+function smRefreshSalaryModalUI(personName) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    var history = (cfg.salary_history && cfg.salary_history[nu]) || [];
+    var tbody = document.getElementById('sm-history-body');
+    var salStatus = document.getElementById('sm-salary-status');
+    var allowStatus = document.getElementById('sm-allow-status');
+    if (tbody) tbody.innerHTML = buildSalaryHistoryTableHtml(history);
+    if (salStatus) salStatus.innerHTML = buildSmInlineStatusHtml(personName, 'salary');
+    if (allowStatus) allowStatus.innerHTML = buildSmInlineStatusHtml(personName, 'allowance');
+    smBindHistoryTableActions(personName);
+}
+
+function smBindHistoryTableActions(personName) {
+    var tbody = document.getElementById('sm-history-body');
+    if (!tbody) return;
+    tbody.querySelectorAll('.sm-history-edit').forEach(function(btn) {
+        btn.onclick = function() {
+            var ym = btn.getAttribute('data-ym');
+            var cfg = window.appState.config;
+            var nu = (personName || '').toUpperCase();
+            var entry = smGetHistoryEntry((cfg.salary_history && cfg.salary_history[nu]) || [], ym);
+            if (!entry) return;
+            smLoadEntryIntoForm(entry);
+            var monthEl = document.getElementById('sm-record-month');
+            if (monthEl && ym !== '2000-01') monthEl.value = ym;
+            smRefreshSalaryModalUI(personName);
+            showToast('✏️', 'Loaded ' + formatSalaryEffectiveLabel(ym) + ' into form');
+        };
+    });
+    tbody.querySelectorAll('.sm-history-del').forEach(function(btn) {
+        btn.onclick = function() {
+            smDeleteSalaryHistoryEntry(personName, btn.getAttribute('data-ym'));
+        };
+    });
+}
+
+function smRecordSalaryChange(personName, effectiveYm) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    if (!cfg.salary_history) cfg.salary_history = {};
+    if (!cfg.salary_history[nu]) cfg.salary_history[nu] = [];
+    var history = cfg.salary_history[nu];
+    var vals = smReadFormSalaryValues();
+    var monthEl = document.getElementById('sm-record-month');
+    var effective = effectiveYm || (monthEl && monthEl.value) || currentEffectiveYM();
+    if (!effective) effective = currentEffectiveYM();
+
+    smEnsureOriginRecord(personName, history, vals);
+
+    var entry = { salary: vals.salary, allowances: vals.allowances, epfRate: vals.epfRate, effectiveFrom: effective };
+    var existingIdx = history.findIndex(function(h) { return h.effectiveFrom === effective; });
+    if (existingIdx >= 0) history[existingIdx] = entry;
+    else history.push(entry);
+    history.sort(function(a, b) { return (a.effectiveFrom || '').localeCompare(b.effectiveFrom || ''); });
+
+    smRefreshSalaryModalUI(personName);
+    showToast('✅', 'Recorded from ' + formatSalaryEffectiveLabel(effective));
+}
+
+function smDeleteSalaryHistoryEntry(personName, effectiveFrom) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    var history = cfg.salary_history && cfg.salary_history[nu];
+    if (!history || history.length <= 1) return;
+    var idx = history.findIndex(function(h) { return h.effectiveFrom === effectiveFrom; });
+    if (idx < 0) return;
+    history.splice(idx, 1);
+    var latest = getLatestSalaryHistoryEntry(history);
+    if (latest) smLoadEntryIntoForm(latest);
+    smRefreshSalaryModalUI(personName);
+    showToast('🗑', 'Removed ' + formatSalaryEffectiveLabel(effectiveFrom));
+}
+
+function smHasUnrecordedChanges(personName) {
+    var cfg = window.appState.config;
+    var nu = (personName || '').toUpperCase();
+    var history = (cfg.salary_history && cfg.salary_history[nu]) || [];
+    if (!history.length) return false;
+    var latest = getLatestSalaryHistoryEntry(history);
+    return smFormValuesDifferFromEntry(smReadFormSalaryValues(), latest);
+}
+
+function smShowSavePrompt(personName, onRecordAndSave) {
+    var bar = document.getElementById('sm-save-prompt');
+    if (!bar) { onRecordAndSave(); return; }
+    var monthEl = document.getElementById('sm-record-month');
+    var ym = (monthEl && monthEl.value) ? monthEl.value : currentEffectiveYM();
+    bar.innerHTML = '<div class="sm-save-prompt-inner">'
+        + '<span>Salary or allowances changed but not recorded for <b>' + formatSalaryEffectiveLabel(ym) + '</b>.</span>'
+        + '<div style="display:flex;gap:8px;flex-shrink:0;">'
+        + '<button type="button" id="sm-prompt-cancel" class="sm-prompt-btn sm-prompt-btn--ghost">Keep editing</button>'
+        + '<button type="button" id="sm-prompt-record" class="sm-prompt-btn sm-prompt-btn--primary">Record &amp; Save</button>'
+        + '</div></div>';
+    bar.style.display = 'block';
+    bar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    document.getElementById('sm-prompt-cancel').onclick = function() { bar.style.display = 'none'; };
+    document.getElementById('sm-prompt-record').onclick = function() {
+        bar.style.display = 'none';
+        onRecordAndSave(ym);
+    };
+}
+
+function smHideSavePrompt() {
+    var bar = document.getElementById('sm-save-prompt');
+    if (bar) bar.style.display = 'none';
+}
+
+function smBindSalaryFormListeners(personName) {
+    var modal = document.getElementById('salary-setup-modal');
+    if (!modal) return;
+    var refresh = function() { smRefreshSalaryModalUI(personName); };
+    modal.querySelectorAll('#sm-base, #sm-HP, #sm-CAR, #sm-LOCALFUEL, #sm-OUTFUEL, #sm-HOUSING, #sm-FOOD, #sm-OTHERS').forEach(function(el) {
+        el.addEventListener('input', refresh);
+    });
+    var monthEl = document.getElementById('sm-record-month');
+    if (monthEl) monthEl.addEventListener('change', refresh);
+}
+
 function showSalaryModal(personName) {
     var ex=document.getElementById('salary-setup-modal'); if(ex)ex.remove();
     var cfg=window.appState.config;
@@ -9485,15 +9805,16 @@ function showSalaryModal(personName) {
     var empNat = (typeof getEmployeeNationality === 'function') ? getEmployeeNationality(personName) : 'CITIZEN';
     var empProfile = (typeof getEmployeeProfile === 'function') ? getEmployeeProfile(personName) : { mykad: '', epfNo: '', bankAccount: '' };
     function natOpt(v,l){ return '<option value="'+v+'"'+(empNat===v?' selected':'')+'>'+l+'</option>'; }
-    // Default effectiveFrom = current month
-    var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    var now = new Date();
-    var defaultEffective = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    var history = (window.appState.config.salary_history && window.appState.config.salary_history[personName]) || [];
+    var recordMonthDefault = currentEffectiveYM();
     var IS='width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;';
     function makeRow(lbl,id,val,half){
         return '<div style="'+(half?'':'')+'margin-bottom:10px;">'
             +'<label style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;display:block;margin-bottom:5px;">'+lbl+'</label>'
             +'<input id="sm-'+id+'" type="number" value="'+val+'" style="'+IS+'"></div>';
+    }
+    function makeSectionTitle(title) {
+        return '<div style="font-size:10px;font-weight:700;color:inherit;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">'+title+'</div>';
     }
     function makeTextRow(lbl, id, val) {
         return '<div style="margin-bottom:10px;">'
@@ -9504,7 +9825,7 @@ function showSalaryModal(personName) {
     modal.id='salary-setup-modal';
     modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.6);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;box-sizing:border-box;';
     var card=document.createElement('div');
-    card.style.cssText='background:var(--paper);border-radius:16px;max-width:520px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);';
+    card.style.cssText='background:var(--paper);border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 60px rgba(8,15,26,.25);';
     card.addEventListener('click',function(e){e.stopPropagation();});
     card.innerHTML=
         '<div style="background:linear-gradient(135deg,#0f172a,#1e40af);padding:20px 24px;color:#fff;flex-shrink:0;">'
@@ -9517,16 +9838,52 @@ function showSalaryModal(personName) {
         +makeTextRow('EPF Number','epfno',empProfile.epfNo)
         +makeTextRow('Bank Account Number','bank',empProfile.bankAccount)
         +'</div>'
-        +'<div style="background:var(--em-l);border:1px solid #a7f3d0;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
-        +'<div style="font-size:10px;font-weight:700;color:#065f46;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Base Salary</div>'
-        +makeRow('Base Salary (RM)','base',salary)+'</div>'
-        +'<div style="background:var(--blue-l);border:1px solid #bae6fd;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
-        +'<div style="font-size:10px;font-weight:700;color:#075985;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Allowances (RM)</div>'
+        +'<style>'
+        +'.sm-inline-status{display:block;font-size:11px;line-height:1.45;margin-top:6px;}'
+        +'.sm-inline-status--ok{color:#059669;}'
+        +'.sm-inline-status--warn{color:#d97706;}'
+        +'.sm-inline-status--muted{color:var(--ink3);}'
+        +'.sm-history-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;}'
+        +'.sm-history-table th,.sm-history-table td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}'
+        +'.sm-history-table th{font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;text-align:left;}'
+        +'.sm-history-row--current{background:#f0fdf4;}'
+        +'.sm-history-current-badge{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:999px;font-size:9px;font-weight:700;background:#dcfce7;color:#166534;}'
+        +'.sm-history-edit,.sm-history-del{padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:var(--paper);cursor:pointer;font-size:11px;font-family:Sora,sans-serif;margin:0 2px;}'
+        +'.sm-history-del{color:#b91c1c;border-color:#fecaca;}'
+        +'.sm-history-del:disabled{opacity:.35;cursor:not-allowed;}'
+        +'.sm-record-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);}'
+        +'.sm-record-bar label{font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;}'
+        +'.sm-record-bar input[type=month]{padding:7px 10px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;background:var(--paper);}'
+        +'#sm-record-btn{padding:8px 16px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:Sora,sans-serif;}'
+        +'.sm-save-prompt-inner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);font-size:12px;color:#92400e;}'
+        +'.sm-prompt-btn{padding:7px 14px;border-radius:var(--r);font-size:12px;font-weight:600;font-family:Sora,sans-serif;cursor:pointer;}'
+        +'.sm-prompt-btn--ghost{border:1.5px solid var(--line);background:var(--paper);color:var(--ink);}'
+        +'.sm-prompt-btn--primary{border:none;background:#0f172a;color:#fff;}'
+        +'</style>'
+        +'<div style="background:var(--em-l);border:1px solid #a7f3d0;border-radius:var(--r);padding:14px;margin-bottom:14px;color:#065f46;">'
+        +makeSectionTitle('Base Salary')
+        +makeRow('Base Salary (RM)','base',salary)
+        +'<div id="sm-salary-status"></div></div>'
+        +'<div style="background:var(--blue-l);border:1px solid #bae6fd;border-radius:var(--r);padding:14px;margin-bottom:14px;color:#075985;">'
+        +makeSectionTitle('Allowances (RM)')
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
         +makeRow('HP','HP',allow.HP||0,true)+makeRow('Car','CAR',allow.CAR||0,true)
         +makeRow('Local Fuel','LOCALFUEL',allow['LOCAL FUEL']||0,true)+makeRow('Outstation Fuel','OUTFUEL',allow['OUTSTATION FUEL']||0,true)
         +makeRow('Housing','HOUSING',allow.HOUSING||0,true)+makeRow('Food','FOOD',allow.FOOD||0,true)
-        +'</div>'+makeRow('Others','OTHERS',allow.OTHERS||0)+'</div>'
+        +'</div>'+makeRow('Others','OTHERS',allow.OTHERS||0)
+        +'<div id="sm-allow-status"></div></div>'
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:var(--r);padding:14px;margin-bottom:14px;">'
+        +makeSectionTitle('Salary History')
+        +'<table class="sm-history-table"><thead><tr>'
+        +'<th>Effective</th><th style="text-align:right;">Base Salary</th><th style="text-align:right;">Allowances</th><th style="text-align:center;">Actions</th>'
+        +'</tr></thead><tbody id="sm-history-body">'+buildSalaryHistoryTableHtml(history)+'</tbody></table>'
+        +'<div class="sm-record-bar">'
+        +'<label for="sm-record-month">Effective from</label>'
+        +'<input type="month" id="sm-record-month" value="'+recordMonthDefault+'">'
+        +'<button type="button" id="sm-record-btn">Record change</button>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--ink3);margin-top:8px;line-height:1.5;">Edit salary or allowances above, choose the month they take effect, then click <b>Record change</b>. Past payroll months use the matching history row.</div>'
+        +'</div>'
         +'<div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:var(--r);padding:14px;">'
         +'<div style="font-size:10px;font-weight:700;color:#be123c;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">EPF (KWSP) — auto rate</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
@@ -9537,11 +9894,7 @@ function showSalaryModal(personName) {
         +'</div>'
         +'<div style="font-size:11px;color:#be123c;margin-top:8px;line-height:1.5;">EPF follows the official Third Schedule (eff. 1 Oct 2025). The rate is chosen automatically from age &amp; nationality — Citizen &lt;60: 11%/13%; Citizen 60+: 0%/4%; PR 60+: 5.5%/6.5%; Foreigner: 2%/2%.</div>'
         +'</div>'
-        +'<div style="background:#fefce8;border:1px solid #fde68a;border-radius:var(--r);padding:14px;margin-top:10px;">'
-        +'<div style="font-size:10px;font-weight:700;color:#92400e;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Effective From</div>'
-        +'<input id="sm-effective" type="month" value="'+defaultEffective+'" style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:13px;font-family:Sora,sans-serif;outline:none;background:var(--paper);color:var(--ink);box-sizing:border-box;">'
-        +'<div style="font-size:11px;color:#92400e;margin-top:5px;">Salary changes will only apply from this month onwards</div>'
-        +'</div>'
+        +'<div id="sm-save-prompt" style="display:none;margin-top:10px;"></div>'
         +'</div>'
         +'<div style="padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--paper);flex-shrink:0;">'
         +'<button id="sm-cancel" style="padding:9px 20px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;">Cancel</button>'
@@ -9552,9 +9905,23 @@ function showSalaryModal(personName) {
     // Only close via Cancel button — clicking background does NOT close
     document.getElementById('sm-cancel').addEventListener('click',function(){modal.remove();});
     document.getElementById('sm-save').addEventListener('click',function(){saveSalaryModal(personName);});
+    document.getElementById('sm-record-btn').addEventListener('click', function() { smRecordSalaryChange(personName); });
+    smBindSalaryFormListeners(personName);
+    smRefreshSalaryModalUI(personName);
 }
 
 function saveSalaryModal(personName) {
+    if (smHasUnrecordedChanges(personName)) {
+        smShowSavePrompt(personName, function(ym) {
+            smRecordSalaryChange(personName, ym);
+            smFinishSaveSalaryModal(personName);
+        });
+        return;
+    }
+    smFinishSaveSalaryModal(personName);
+}
+
+function smFinishSaveSalaryModal(personName) {
     var cfg=window.appState.config;
     var base=parseFloat(document.getElementById('sm-base').value)||1700;
     var hp=parseFloat(document.getElementById('sm-HP').value)||0;
@@ -9568,7 +9935,6 @@ function saveSalaryModal(personName) {
     var _empEpfEl=document.getElementById('sm-employer-epf');
     var epfR=_epfEl?(parseFloat(_epfEl.value)||11):11;
     var employerEpfR=_empEpfEl?(parseFloat(_empEpfEl.value)||13):13;
-    // EPF now follows the statutory Third Schedule, derived from DOB + nationality.
     var dobEl=document.getElementById('sm-dob');
     var natEl=document.getElementById('sm-nationality');
     if (typeof setEmployeeDOB === 'function') setEmployeeDOB(personName, dobEl?dobEl.value:'');
@@ -9580,52 +9946,10 @@ function saveSalaryModal(personName) {
             bankAccount: ((document.getElementById('sm-bank') || {}).value || '').trim()
         });
     }
-    var effectiveEl = document.getElementById('sm-effective');
-    var effective = effectiveEl ? effectiveEl.value : (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
 
     var allowances = {HP:hp,CAR:car,'LOCAL FUEL':lf,'OUTSTATION FUEL':of2,HOUSING:hs,FOOD:food,OTHERS:oth};
     var nu = personName.toUpperCase();
 
-    // Save into salary_history
-    if (!cfg.salary_history) cfg.salary_history = {};
-    if (!cfg.salary_history[nu]) cfg.salary_history[nu] = [];
-
-    var history = cfg.salary_history[nu];
-
-    // If this is the FIRST or SECOND entry and the effective date is not the earliest,
-    // auto-create an "origin" record using the current flat salary (before this change)
-    // so that earlier months still get the old salary
-    if (history.length === 0 && effective !== '') {
-        // Check if there are any history reports before this effective date
-        var histReports = cfg.reportHistory || [];
-        var hasEarlierReports = histReports.some(function(r) {
-            var monthOrder2 = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-            var rIdx = monthOrder2.indexOf(bareMonth(r.month));
-            var curYr = new Date().getFullYear();
-            var rYM = curYr + '-' + String(rIdx+1).padStart(2,'0');
-            return rYM < effective;
-        });
-        if (hasEarlierReports) {
-            // Save the OLD salary as the origin record (effective from very beginning)
-            var oldSalary   = (cfg.base_salaries && cfg.base_salaries[nu]) || base;
-            var oldAllow    = (cfg.allowances    && cfg.allowances[nu])    || allowances;
-            var oldEpf      = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || epfR;
-            history.push({ salary: oldSalary, allowances: oldAllow, epfRate: oldEpf, effectiveFrom: '2000-01' });
-        }
-    }
-
-    // Check if entry for this effectiveFrom already exists - update it
-    var existingIdx = history.findIndex(function(h){ return h.effectiveFrom === effective; });
-    var entry = { salary: base, allowances: allowances, epfRate: epfR, effectiveFrom: effective };
-    if (existingIdx >= 0) {
-        history[existingIdx] = entry;
-    } else {
-        history.push(entry);
-    }
-    // Sort by effectiveFrom ascending
-    history.sort(function(a,b){ return (a.effectiveFrom||'').localeCompare(b.effectiveFrom||''); });
-
-    // Also update flat values to reflect current (latest) salary
     if (!cfg.base_salaries)  cfg.base_salaries  = {};
     if (!cfg.allowances)     cfg.allowances      = {};
     if (!cfg.deductions)     cfg.deductions      = {};
@@ -9638,10 +9962,11 @@ function saveSalaryModal(personName) {
     if (!cfg.employer_epf_rates) cfg.employer_epf_rates = {};
     cfg.employer_epf_rates[nu] = employerEpfR;
 
+    smHideSavePrompt();
     saveConfig();
     var m=document.getElementById('salary-setup-modal'); if(m) m.remove();
     renderPeopleList();
-    showToast('✅', personName+' salary saved (effective '+effective+')!');
+    showToast('✅', personName+' saved!');
     var _empType = getEmployeeType(personName);
     setTimeout(function(){
         if (_empType === 'Supervisor') {
@@ -11075,9 +11400,9 @@ function renderEmployerCostReport() {
         var subLbl = g.headcount + ' staff · ' + ecMonthLabel + ' ' + selectedYear;
 
         var out = '<div class="report-panel">';
-        out += '<div class="ec-card-head">';
+        out += '<div class="ec-card-head ec-card-head--group-grand">';
         out += '<div><div class="ec-card-title">'+groupCfg.icon+' '+groupCfg.title+' — Grand Total</div>';
-        out += '<div class="ec-card-sub" style="font-size:10px;color:rgba(255,255,255,.75);margin-top:2px;">'+subLbl+'</div></div>';
+        out += '<div class="ec-card-sub">'+subLbl+'</div></div>';
         if (selectedCostFilter === 'ALL' && (empType === 'Sales' || empType === 'ALL')) {
             out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Team Sales</div><div class="ec-card-sales-val">'+fmt(empType === 'ALL' ? teamSales : g.sales)+'</div></div>';
         } else if (selectedCostFilter === 'ALL') {
@@ -11130,7 +11455,7 @@ function renderEmployerCostReport() {
             out += ecGroupRowIf('eis', '🏛️ Employer EIS (0.2%)', g.eis, hasIndv, teamSales);
         }
         var footerLbl = selectedCostFilter === 'ALL' ? '⚠️ GRAND TOTAL EXPENSES' : '⚠️ FILTERED TOTAL';
-        out += ecGroupRow(footerLbl, filteredTotal, hasIndv, teamSales, 'rt-total-dark');
+        out += ecGroupRow(footerLbl, filteredTotal, hasIndv, teamSales, 'rt-total-group');
         out += '</tbody></table></div>';
         return out;
     }
@@ -11145,7 +11470,7 @@ function renderEmployerCostReport() {
         var out = '<div class="report-panel">';
         var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
         out += '<div class="ec-card-head">';
-        out += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub" style="font-size:10px;color:rgba(255,255,255,.75);margin-top:2px;">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
+        out += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub" style="color:rgba(255,255,255,.75);">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
         if (selectedCostFilter === 'ALL' && empType === 'Sales') {
             out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Sales</div><div class="ec-card-sales-val">'+fmt(p.totalSales)+'</div></div>';
         } else if (selectedCostFilter !== 'ALL') {
