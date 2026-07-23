@@ -668,12 +668,26 @@ function monthYearToYM(bareM, year) {
 // Accepts "YYYY-MM" (legacy) or "YYYY-MM-DD" (with day). Returns the value as stored, or null.
 var _DATE_OR_MONTH_RE = /^\d{4}-\d{2}(-\d{2})?$/;
 
+function lookupEmployeeDateMap(map, name) {
+    if (!map) return null;
+    var nu = (name || '').toUpperCase();
+    var ym = map[nu];
+    if (ym && _DATE_OR_MONTH_RE.test(ym)) return ym;
+    var keys = Object.keys(map);
+    for (var i = 0; i < keys.length; i++) {
+        if (keys[i].toUpperCase() === nu) {
+            ym = map[keys[i]];
+            if (ym && _DATE_OR_MONTH_RE.test(ym)) return ym;
+        }
+    }
+    return null;
+}
+
 /** A person's configured start (join) date "YYYY-MM-DD" (or legacy "YYYY-MM"), or null if not set. */
 function getEmployeeStartYM(name) {
     var cfg = window.appState && window.appState.config;
     if (!cfg || !cfg.employee_start_month) return null;
-    var ym = cfg.employee_start_month[(name || '').toUpperCase()];
-    return (ym && _DATE_OR_MONTH_RE.test(ym)) ? ym : null;
+    return lookupEmployeeDateMap(cfg.employee_start_month, name);
 }
 
 function setEmployeeStartYM(name, ym) {
@@ -688,8 +702,7 @@ function setEmployeeStartYM(name, ym) {
 function getEmployeeEndYM(name) {
     var cfg = window.appState && window.appState.config;
     if (!cfg || !cfg.employee_end_month) return null;
-    var ym = cfg.employee_end_month[(name || '').toUpperCase()];
-    return (ym && _DATE_OR_MONTH_RE.test(ym)) ? ym : null;
+    return lookupEmployeeDateMap(cfg.employee_end_month, name);
 }
 
 function setEmployeeEndYM(name, ym) {
@@ -700,14 +713,45 @@ function setEmployeeEndYM(name, ym) {
     else delete cfg.employee_end_month[nu];
 }
 
-/** True if the person was employed in the given report month (bareM + year): start <= month <= end.
- *  Report visibility is month-granular, so any stored day is compared on its YYYY-MM prefix. */
+/** Last payroll month (YYYY-MM, inclusive) derived from resign / inactive date.
+ *  "Inactive from" is the first day OFF payroll → last paid month is the calendar month before that date. */
+function getLastPayrollMonthYM(name) {
+    var endYM = getEmployeeEndYM(name);
+    if (!endYM) return null;
+    var parts = endYM.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+    if (!parts) return endYM.slice(0, 7);
+    var y = parseInt(parts[1], 10);
+    var mo = parseInt(parts[2], 10);
+    var day = parts[3] ? parseInt(parts[3], 10) : new Date(y, mo, 0).getDate();
+    var d = new Date(y, mo - 1, day);
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+/** True if name appears in a reportHistory snapshot for bareM + year. */
+function personInHistMonth(name, bareM, year) {
+    var cfg = window.appState && window.appState.config;
+    var history = cfg && cfg.reportHistory;
+    if (!history || !history.length) return false;
+    var hEntry = findHistEntry(history, bareM, year);
+    if (!hEntry || !hEntry.data) return false;
+    var nu = (name || '').toUpperCase();
+    return hEntry.data.some(function(d) { return ((d.name || '') + '').toUpperCase() === nu; });
+}
+
+/** True if the person was employed in the given report month (bareM + year). */
 function isEmployeeActiveInMonth(name, bareM, year) {
     var ym = monthYearToYM(bareM, year);
     var startYM = getEmployeeStartYM(name);
-    if (startYM && ym < startYM.slice(0, 7)) return false; // not joined yet (by month)
+    if (startYM && ym < startYM.slice(0, 7)) return false;
+    var lastPayYM = getLastPayrollMonthYM(name);
     var endYM = getEmployeeEndYM(name);
-    if (endYM && ym > endYM.slice(0, 7)) return false;      // already resigned (by month)
+    var inactive = typeof isEmployeeActive === 'function' && !isEmployeeActive(name);
+    if (inactive && !endYM) {
+        // No resign date on file → only include months that still have saved history for this person.
+        return personInHistMonth(name, bareM, year);
+    }
+    if (lastPayYM && ym > lastPayYM) return false;
     return true;
 }
 
@@ -715,8 +759,13 @@ function isEmployeeActiveInMonth(name, bareM, year) {
 function isEmployeeActive(name) {
     var cfg = window.appState && window.appState.config;
     if (!cfg || !cfg.employee_active) return true; // default active
-    var v = cfg.employee_active[(name || '').toUpperCase()];
-    return v !== false; // only explicit false = inactive
+    var nu = (name || '').toUpperCase();
+    if (cfg.employee_active[nu] === false) return false;
+    var keys = Object.keys(cfg.employee_active);
+    for (var i = 0; i < keys.length; i++) {
+        if (keys[i].toUpperCase() === nu && cfg.employee_active[keys[i]] === false) return false;
+    }
+    return true;
 }
 
 function setEmployeeActive(name, active) {
@@ -741,6 +790,8 @@ window.getEmployeeStartYM = getEmployeeStartYM;
 window.setEmployeeStartYM = setEmployeeStartYM;
 window.getEmployeeEndYM = getEmployeeEndYM;
 window.setEmployeeEndYM = setEmployeeEndYM;
+window.getLastPayrollMonthYM = getLastPayrollMonthYM;
+window.personInHistMonth = personInHistMonth;
 window.isEmployeeActiveInMonth = isEmployeeActiveInMonth;
 window.isEmployeeActive = isEmployeeActive;
 window.setEmployeeActive = setEmployeeActive;
@@ -838,6 +889,9 @@ function ensureConfigStructure() {
         'deductionRates',
         'employer_epf_rates',
         'employee_types',
+        'employee_start_month',
+        'employee_end_month',
+        'employee_active',
         'employee_dob',
         'employee_nationality',
         'employee_profiles',
@@ -907,6 +961,9 @@ function getDefaultConfig() {
         deductionRates: {},
         employer_epf_rates: {},
         employee_types: {},
+        employee_start_month: {},
+        employee_end_month: {},
+        employee_active: {},
         employee_dob: {},
         employee_nationality: {},
         employee_profiles: {},
@@ -1846,7 +1903,7 @@ function showEmployeeStatusDatePicker(personName, currentlyActive) {
     var lbl    = makeActive ? 'Active from (Join date) — DD/MM/YYYY' : 'Inactive from (Resign date) — DD/MM/YYYY';
     var hint   = makeActive
         ? 'This person will appear in Records / Annual Report from this month onwards.'
-        : 'This person will not appear in Records / Annual Report after this month. Past history is kept.';
+        : 'This person will not appear in Records / Annual Report from this month onwards. Pick the 1st of the month they leave (e.g. 01/06 for last payroll in May). Past history is kept.';
     var accent = makeActive ? '#16a34a' : '#dc2626';
 
     // Build DD / MM / YYYY option lists.
@@ -10736,6 +10793,7 @@ function renderEmployerCostReport() {
     // Gather data per person
     var allPeopleData = {};
     configPeople.forEach(function(name) {
+        if (filterMonths && filterMonths.length > 0 && filterMonths.every(function(m) { return !isEmployeeActiveInMonth(name, m, selectedYear); })) return;
         var empType = getEmployeeType(name);
         var nu = personKey(name);
         var salary = cfgSalary(name);
@@ -10751,9 +10809,9 @@ function renderEmployerCostReport() {
             if (!isMonthIncluded(m)) return;
             if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(name, m, selectedYear)) return;
             var hEntry = findHistEntry(history, m, selectedYear);
-            if (!hEntry || !hEntry.data) return;
 
             if (empType === 'Sales') {
+                if (!hEntry || !hEntry.data) return;
                 var pd = histPerson(hEntry, name);
                 months++;
                 var sales = pd ? (parseFloat(pd.sales) || 0) : 0;
@@ -10774,6 +10832,7 @@ function renderEmployerCostReport() {
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgS, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgS, m, selectedYear).employer : 0;
             } else if (empType === 'Supervisor') {
+                if (!hEntry || !hEntry.data) return;
                 months++;
                 totalSalary += salary; totalAllow += allowances;
                 var team = _teamTotalsForMonth(m);
@@ -10795,7 +10854,7 @@ function renderEmployerCostReport() {
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgV, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgV, m, selectedYear).employer : 0;
             } else if (empType === 'Support Staff') {
-                var pd = histPerson(hEntry, name);
+                var pd = (hEntry && hEntry.data) ? histPerson(hEntry, name) : null;
                 months++;
                 totalSalary += salary; totalAllow += allowances;
                 var blocks = pd ? (parseFloat(pd.collectionAmount) || 0) : 0;
@@ -10839,6 +10898,12 @@ function renderEmployerCostReport() {
     // Apply group filter
     if (selectedGroup !== 'ALL') {
         displayPeople = displayPeople.filter(function(n) { return getEmployeeType(n) === selectedGroup; });
+    }
+    // When a month/quarter is selected, hide anyone not employed in that scope
+    if (filterMonths && filterMonths.length) {
+        displayPeople = displayPeople.filter(function(n) {
+            return filterMonths.some(function(m) { return isEmployeeActiveInMonth(n, m, selectedYear); });
+        });
     }
 
     var displayTotalCost = 0;
@@ -11157,7 +11222,12 @@ function renderEmployerCostReport() {
 
     function activeMembers() {
         return displayPeople.filter(function(n) {
-            return allPeopleData[n] && allPeopleData[n].months > 0;
+            var p = allPeopleData[n];
+            if (!p || p.months === 0) return false;
+            if (filterMonths && filterMonths.length && typeof isEmployeeActiveInMonth === 'function') {
+                return filterMonths.some(function(m) { return isEmployeeActiveInMonth(n, m, selectedYear); });
+            }
+            return true;
         });
     }
 
