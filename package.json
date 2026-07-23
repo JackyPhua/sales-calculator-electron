@@ -1,12 +1,13 @@
 {
   "name": "sales-pro",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "SalesPro — Sales Commission & Reports",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
+    "build:win": "electron-builder --win --publish never",
+    "release:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
@@ -83,6 +84,12 @@
         "AppImage"
       ],
       "icon": "assets/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "JackyPhua",
+      "repo": "sales-calculator-electron",
+      "releaseType": "release"
     }
   }
 }

@@ -9960,7 +9960,12 @@ function checkForAppUpdate() {
     }
 
     window.electronAPI.checkForUpdates().then(function(result) {
-        if (result && result.success && result.version) {
+        if (!result || !result.success) {
+            if (msgEl) msgEl.textContent = '❌ ' + ((result && result.error) || 'Update check failed');
+            if (btnCheck) btnCheck.disabled = false;
+            return;
+        }
+        if (result.updateAvailable && result.version) {
             if (msgEl) {
                 msgEl.innerHTML = '✅ New version <b>v' + result.version + '</b> available! Downloading...'
                     + '<div style="margin-top:8px;background:#e2e8f0;border-radius:6px;height:8px;overflow:hidden;">'
@@ -9968,7 +9973,7 @@ function checkForAppUpdate() {
                     + '<div id="update-progress-text" style="font-size:11px;color:#64748b;margin-top:4px;">Starting download...</div>';
             }
         } else {
-            if (msgEl) msgEl.textContent = '✅ You are on the latest version!';
+            if (msgEl) msgEl.textContent = '✅ You are on the latest version (v' + (result.current || '') + ')!';
         }
         if (btnCheck) btnCheck.disabled = false;
     }).catch(function(e) {
@@ -10015,6 +10020,8 @@ if (window.electronAPI && window.electronAPI.onUpdateStatus) {
                 + '<div style="height:100%;width:100%;background:linear-gradient(90deg,#059669,#10b981);border-radius:6px;"></div></div>'
                 + '<div style="font-size:11px;color:#059669;margin-top:4px;">Download complete!</div>';
             if (btnInstall) btnInstall.style.display = '';
+        } else if (data.status === 'not-available') {
+            msgEl.textContent = '✅ ' + (data.message || 'You are on the latest version.');
         }
     });
 }

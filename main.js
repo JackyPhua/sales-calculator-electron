@@ -11,6 +11,11 @@ autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function setupAutoUpdater() {
+    if (!app.isPackaged) {
+        console.log('Auto-update skipped (development mode)');
+        return;
+    }
+
     autoUpdater.on('update-available', (info) => {
         console.log('🔄 Update available:', info.version);
         if (mainWindow) {
@@ -24,6 +29,13 @@ function setupAutoUpdater() {
 
     autoUpdater.on('update-not-available', () => {
         console.log('✅ App is up to date');
+        if (mainWindow) {
+            mainWindow.webContents.send('update-status', {
+                status: 'not-available',
+                version: app.getVersion(),
+                message: 'You are on the latest version (v' + app.getVersion() + ').'
+            });
+        }
     });
 
     autoUpdater.on('download-progress', (progress) => {
@@ -73,9 +85,17 @@ function setupAutoUpdater() {
 
 // IPC: manual check for updates
 ipcMain.handle('check-for-updates', async () => {
+    if (!app.isPackaged) {
+        return { success: false, error: 'Updates are only available in the installed app.' };
+    }
     try {
         const result = await autoUpdater.checkForUpdates();
-        return { success: true, version: result?.updateInfo?.version || null };
+        const latest = result && result.updateInfo && result.updateInfo.version;
+        const current = app.getVersion();
+        if (latest && latest !== current) {
+            return { success: true, version: latest, current: current, updateAvailable: true };
+        }
+        return { success: true, version: null, current: current, updateAvailable: false };
     } catch (e) {
         return { success: false, error: e.message };
     }
