@@ -15,7 +15,8 @@ async function main() {
     }
 
     const sharp = require('sharp');
-    const pngToIco = require('png-to-ico').default;
+    const pngToIcoMod = require('png-to-ico');
+    const pngToIco = typeof pngToIcoMod === 'function' ? pngToIcoMod : pngToIcoMod.default;
 
     const meta = await sharp(logoPath).metadata();
     const w = meta.width || 512;

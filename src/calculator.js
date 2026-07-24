@@ -813,7 +813,8 @@ function getLastPayrollMonthYM(name) {
     if (!parts) return endYM.slice(0, 7);
     var y = parseInt(parts[1], 10);
     var mo = parseInt(parts[2], 10);
-    var day = parts[3] ? parseInt(parts[3], 10) : new Date(y, mo, 0).getDate();
+    // Month-only legacy values mean inactive from the 1st of that month.
+    var day = parts[3] ? parseInt(parts[3], 10) : 1;
     var d = new Date(y, mo - 1, day);
     d.setDate(d.getDate() - 1);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -5714,22 +5715,39 @@ window.loadQuickCalculateHistory = loadQuickCalculateHistory;
 
 
 // ==================== Live Payslip Preview ====================
+function getActiveCalcPersonName() {
+    var sel = document.getElementById('calc-person-select');
+    if (sel && sel.value && sel.value.trim()) return sel.value.trim();
+    var person = window.appState.salespeople && window.appState.salespeople[0];
+    if (person && person.name && person.name.trim() && person.name.trim() !== '\u2014') return person.name.trim();
+    var nd = document.getElementById('card-name-text-0');
+    if (nd && nd.textContent && nd.textContent.trim() && nd.textContent.trim() !== '\u2014') return nd.textContent.trim();
+    var nameEl = document.getElementById('name-0');
+    if (nameEl && nameEl.value && nameEl.value.trim()) return nameEl.value.trim();
+    return '';
+}
+window.getActiveCalcPersonName = getActiveCalcPersonName;
+
 function updateLivePayslip() {
     var ps = document.getElementById('live-payslip');
     if (!ps) return;
     ps.style.display = 'flex';
     ps.style.flexDirection = 'column';
-    var person = window.appState.salespeople[0];
-    if (!person || !person.name) { 
+    var person = window.appState.salespeople[0] || {};
+    var displayName = getActiveCalcPersonName();
+    if (!displayName) {
         // Show empty state
         var titleEl = document.getElementById('ps-title');
-        if (titleEl) titleEl.textContent = '— SALARY REPORT';
+        if (titleEl) titleEl.textContent = '\u2014 SALARY REPORT';
+        var empNameEl = document.getElementById('ps-employee-name');
+        if (empNameEl) empNameEl.textContent = '\u2014';
         var body = document.getElementById('ps-body');
         if (body) body.innerHTML = '';
         var grand = document.getElementById('ps-grand');
         if (grand) grand.textContent = 'RM 0.00';
-        return; 
+        return;
     }
+    if (!person.name || person.name.trim() === '' || person.name.trim() === '\u2014') person.name = displayName;
     var cfg = window.appState.config;
     var nu  = (person.name || '').toUpperCase();
     // Use salary for the current report month (not latest salary)
@@ -5762,7 +5780,8 @@ function updateLivePayslip() {
     var grand      = totalInc - epfAmt - socsoAmt - eisAmt;
     var achColor   = ach>=100 ? '#1D9E75' : ach>=90 ? '#BA7517' : '#E24B4A';
     var g = function(id){ return document.getElementById(id); };
-    if(g('ps-title'))   g('ps-title').textContent   = person.name + ' — SALARY REPORT';
+    if(g('ps-title'))   g('ps-title').textContent   = displayName + ' \u2014 SALARY REPORT';
+    if(g('ps-employee-name')) g('ps-employee-name').textContent = displayName;
     if(g('ps-ach-lbl')) g('ps-ach-lbl').textContent = 'Achievement: ' + ach.toFixed(2) + '%';
     if(g('ps-ach-pct')){ g('ps-ach-pct').textContent = ach.toFixed(2)+'%'; g('ps-ach-pct').style.color = achColor; }
     if(g('ps-ach-bar')){ g('ps-ach-bar').style.width = Math.min(ach,120)+'%'; g('ps-ach-bar').style.background = achColor; }
@@ -5905,9 +5924,9 @@ function printSalaryReportModal() {
     setTimeout(function() { win.print(); }, 300);
 }
 function openSalaryReportModal() {
-    var person = window.appState.salespeople[0];
-    if (!person || !person.name) {
-        showToast('⚠️', 'Please select a person first');
+    var displayName = getActiveCalcPersonName();
+    if (!displayName) {
+        showToast('\u26A0\uFE0F', 'Please select a person first');
         return;
     }
     if (typeof updateLivePayslip === 'function') updateLivePayslip();
@@ -5947,6 +5966,9 @@ function openSalaryReportModal() {
     syncCloneText('.ps-mini-box.team .ps-mini-val', 'ps-team');
     syncCloneText('.ps-foot-val', 'ps-grand');
     syncCloneText('.ps-ach-pct-val', 'ps-ach-pct');
+    syncCloneText('.ps-employee-name', 'ps-employee-name');
+    var titleSpan = clone.querySelector('.cw-panel-hd span');
+    if (titleSpan) titleSpan.textContent = displayName + ' \u2014 SALARY REPORT';
     var srcBody = document.getElementById('ps-body');
     var dstBody = clone.querySelector('#ps-body') || clone.querySelector('tbody');
     if (srcBody && dstBody) dstBody.innerHTML = srcBody.innerHTML;
@@ -10713,6 +10735,15 @@ function renderAnnualReport() {
         });
     }
 
+    // Hide people not employed in the selected month(s) (same rule as Annual Outlays).
+    if (displayMonths.length) {
+        displayPeople = displayPeople.filter(function(n) {
+            return displayMonths.some(function(m) {
+                return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(n, m, selectedYear);
+            });
+        });
+    }
+
     var subEl = document.getElementById('annual-sub');
     var groupLabel = selectedGroup === 'ALL' ? '' : ' · ' + selectedGroup;
     var monthLabel = selectedMonth === 'ALL' ? 'Full Year'
@@ -10740,6 +10771,7 @@ function renderAnnualReport() {
         hEntry.data.forEach(function(pd) {
             var t = getEmployeeType(pd.name);
             if (t !== 'Sales') return;
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(pd.name, m, selectedYear)) return;
             tS += parseFloat(pd.sales)||0;
             tT += parseFloat(pd.target)||0;
             tCo += parseFloat(pd.collectionAmount)||0;
@@ -10932,6 +10964,7 @@ function renderAnnualReport() {
             else if (empType === 'Supervisor') { tComm += d.total||0; mc++; }
             else if (empType === 'Support Staff') { totBlocks += d.blocks||0; tComm += d.incentive||0; mc++; }
         });
+        if (mc === 0) return;
         var tAch = tT>0?(tS/tT*100):0;
         var sal = ((cfg.base_salaries&&cfg.base_salaries[p])||1700)*mc;
         var allow = cfg.allowances&&cfg.allowances[p] ? Object.values(cfg.allowances[p]).reduce(function(s,v){return s+(parseFloat(v)||0);},0)*mc : 0;

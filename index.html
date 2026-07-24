@@ -1128,6 +1128,12 @@
         #view-quick .live-payslip-card .ps-foot-val{font-size:14px!important;color:#ecfdf5!important;text-shadow:0 1px 2px rgba(0,0,0,.15);}
         #view-quick .live-payslip-card .ps-foot-lbl{font-size:10px!important;color:rgba(255,255,255,.9)!important;font-weight:600;}
         #view-quick .live-payslip-card .ps-meta{background:linear-gradient(180deg,var(--calc-navy-xl),#fff)!important;}
+        #view-quick .live-payslip-card .ps-employee-bar{
+            display:flex;justify-content:space-between;align-items:center;gap:8px;
+            padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--calc-border);
+        }
+        #view-quick .live-payslip-card .ps-employee-lbl{font-size:9px;font-weight:700;color:var(--calc-muted);letter-spacing:.06em;text-transform:uppercase;}
+        #view-quick .live-payslip-card .ps-employee-name{font-size:13px;font-weight:800;color:var(--calc-navy-d);letter-spacing:-.02em;}
         #view-quick .cw-tile-payslip .live-payslip-card .ps-meta{
             background:linear-gradient(180deg,var(--calc-navy-xl) 0%,#fff 55%)!important;
         }
@@ -1346,6 +1352,12 @@
             flex:0 0 auto;padding:14px 14px 12px!important;
             background:linear-gradient(180deg,var(--calc-navy-xl) 0%,#fff 55%)!important;
         }
+        .salary-report-modal-overlay .live-payslip-card .ps-employee-bar{
+            display:flex;justify-content:space-between;align-items:center;gap:8px;
+            padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--calc-border);
+        }
+        .salary-report-modal-overlay .live-payslip-card .ps-employee-lbl{font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;}
+        .salary-report-modal-overlay .live-payslip-card .ps-employee-name{font-size:15px;font-weight:800;color:var(--calc-navy-d);}
         .salary-report-modal-overlay .live-payslip-card .ps-ach-block{
             display:flex;flex-direction:column;justify-content:center;gap:10px;padding-bottom:10px;
         }
@@ -1635,6 +1647,10 @@
                                         <span id="ps-grand" class="ps-foot-val">RM 0.00</span>
                                     </div>
                                     <div class="ps-meta">
+                                        <div class="ps-employee-bar">
+                                            <span class="ps-employee-lbl">Employee</span>
+                                            <span id="ps-employee-name" class="ps-employee-name">—</span>
+                                        </div>
                                         <div class="ps-ach-block">
                                             <div class="ps-kpi-row">
                                                 <span class="ps-ach-lbl-text">Achievement</span>
