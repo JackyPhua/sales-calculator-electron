@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SalesPro</title>
+    <title>Sale Pro</title>
+    <link rel="icon" type="image/png" href="assets/icon.png">
     <script>
         tailwind.config = { theme: { extend: { fontFamily: { sans: ['Sora', 'sans-serif'] } } } };
     </script>
@@ -29,8 +30,8 @@
         .dash-kpi-val,.field-val,.field-val input,.field-total-val,#summary-commission,.stat-val2,.ach-big,.report-table td.rt-mono,.report-table th.rt-num,.annual-stat-val,.set-info-val,.ec-card-sales-val{font-variant-numeric:tabular-nums;}
         /* ── NAV ── */
         #app-nav{background:var(--ink);height:52px;display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:100;}
-        .nav-logo{display:flex;align-items:center;gap:9px;color:#fff;font-weight:700;font-size:14px;letter-spacing:-.3px;user-select:none;-webkit-user-select:none;}
-        .nav-logo-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue),#38bdf8);display:flex;align-items:center;justify-content:center;font-size:14px;}
+        .nav-logo{display:flex;align-items:center;user-select:none;-webkit-user-select:none;}
+        .nav-logo-img{height:34px;width:auto;display:block;object-fit:contain;}
         .nav-spacer{flex:1;}
         #license-badge{display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;color:rgba(255,255,255,.8);font-size:11px;font-weight:600;cursor:pointer;}
         .nav-dot{width:6px;height:6px;border-radius:50%;background:var(--em);}
@@ -1231,6 +1232,7 @@
         /* Loading overlay */
         #loading-overlay{position:fixed;inset:0;background:rgba(8,15,26,.5);backdrop-filter:blur(4px);z-index:9998;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:16px;font-family:'Sora',sans-serif;}
         #loading-overlay.active{display:flex;}
+        .loading-logo{height:56px;width:auto;display:block;margin-bottom:4px;}
         .loading-spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;}
         @keyframes spin{to{transform:rotate(360deg)}}
         /* Projection fullscreen modal (after Calculation save) */
@@ -1405,15 +1407,15 @@
 
 <!-- Loading overlay -->
 <div id="loading-overlay">
+    <img src="assets/nav-logo.png" alt="Sale Pro" class="loading-logo">
     <div class="loading-spinner"></div>
     <div id="loading-text" style="font-size:14px;font-weight:600;opacity:.8;">Loading...</div>
 </div>
 
 <!-- NAV -->
 <nav id="app-nav">
-    <div class="nav-logo" id="nav-logo" title="SalesPro">
-        <div class="nav-logo-icon">💰</div>
-        SalesPro
+    <div class="nav-logo" id="nav-logo" title="Sale Pro">
+        <img src="assets/nav-logo.png" alt="Sale Pro" class="nav-logo-img">
     </div>
     <div class="nav-spacer"></div>
     <div id="license-badge" onclick="showLicenseModal()">

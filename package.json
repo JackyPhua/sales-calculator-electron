@@ -1,6 +1,6 @@
 {
   "name": "sales-pro",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "SalesPro — Sales Commission & Reports",
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win --publish never",
     "release:win": "electron-builder --win --publish never",
+    "prepare-icons": "node scripts/prepare-icons.js",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
@@ -24,7 +25,9 @@
   "devDependencies": {
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
-    "electron-rebuild": "^3.2.9"
+    "electron-rebuild": "^3.2.9",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5"
   },
   "dependencies": {
     "better-sqlite3": "^9.6.0",
