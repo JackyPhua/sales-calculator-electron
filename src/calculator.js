@@ -611,6 +611,7 @@ async function initApp() {
         
         // Initialize backup system
         initBackupSystem();
+        initNavLogoPasswordEasterEgg();
         
         console.log('✅ Application initialization completed');
     } catch (error) {
@@ -627,6 +628,96 @@ function getCurrentMonthKey() {
     var y = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
     return m ? m + '-' + y : '';
 }
+
+var _CALC_MONTH_ORDER = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+function getSelectedCalcPeriod() {
+    var month = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var year = parseInt(((document.getElementById('report-year') || {}).value || ''), 10) || new Date().getFullYear();
+    return { month: month, year: year, monthKey: month ? month + '-' + year : '' };
+}
+
+function isPastCalcPeriod(month, year) {
+    if (!month) return false;
+    var now = new Date();
+    var curY = now.getFullYear();
+    var curM = now.getMonth();
+    var mIdx = _CALC_MONTH_ORDER.indexOf(month);
+    if (mIdx < 0) return false;
+    if (year < curY) return true;
+    if (year > curY) return false;
+    return mIdx < curM;
+}
+
+function calcPeriodHasHistory(monthKey, bareMonth, year) {
+    var hist = (window.appState.config && window.appState.config.reportHistory) || [];
+    var y = parseInt(year, 10) || new Date().getFullYear();
+    var entry = findHistEntry(hist, bareMonth, y);
+    if (!entry && monthKey) {
+        entry = hist.find(function(r) { return (r.month || '').toUpperCase() === String(monthKey).toUpperCase(); });
+    }
+    return !!(entry && entry.data && entry.data.length > 0);
+}
+
+function salesInsightPeriodNeedsPasswordFor(month, year) {
+    if (window._salesInsightHistoryUnlocked) return false;
+    if (!month) return false;
+    var y = parseInt(year, 10) || new Date().getFullYear();
+    var monthKey = month + '-' + y;
+    if (isPastCalcPeriod(month, y)) return true;
+    if (calcPeriodHasHistory(monthKey, month, y)) return true;
+    return false;
+}
+
+function salesInsightEditNeedsPassword() {
+    var p = getSelectedCalcPeriod();
+    return salesInsightPeriodNeedsPasswordFor(p.month, p.year);
+}
+
+function applySalesInsightFieldLocks() {
+    var locked = salesInsightEditNeedsPassword();
+    var fields = ['sales', 'collection-amount', 'call-actual'];
+    (window.appState.salespeople || []).forEach(function(p, idx) {
+        fields.forEach(function(fid) {
+            var el = document.getElementById(fid + '-' + idx);
+            if (!el) return;
+            if (locked) {
+                el.readOnly = true;
+                el.style.backgroundColor = '#f1f5f9';
+                el.style.cursor = 'not-allowed';
+                el.title = 'Password required to edit this month\'s data';
+                if (!el._siPwFocus) {
+                    el._siPwFocus = true;
+                    el.addEventListener('focus', function(ev) {
+                        if (!salesInsightEditNeedsPassword()) return;
+                        ev.target.blur();
+                        requireSalesInsightPassword('Enter password to edit this month\'s data');
+                    });
+                }
+            } else {
+                el.readOnly = false;
+                el.style.backgroundColor = '';
+                el.style.cursor = '';
+                if (fid === 'sales') el.title = '';
+                else el.title = '';
+            }
+        });
+    });
+    document.querySelectorAll('.calc-btn-save, .calc-foot-save').forEach(function(btn) {
+        btn.style.opacity = locked ? '0.55' : '';
+        btn.title = locked ? 'Password required for past/history months' : '';
+    });
+}
+
+function requireSalesInsightPassword(actionLabel, onSuccess, onCancel) {
+    requirePeoplePassword(actionLabel, function() {
+        window._salesInsightHistoryUnlocked = true;
+        applySalesInsightFieldLocks();
+        if (typeof onSuccess === 'function') onSuccess();
+    }, onCancel);
+}
+window.applySalesInsightFieldLocks = applySalesInsightFieldLocks;
+window.requireSalesInsightPassword = requireSalesInsightPassword;
 
 // Helper: build month key from month name and optional year
 function buildMonthKey(month, year) {
@@ -1191,6 +1282,7 @@ async function initQuickCalculate() {
         if (container) container.innerHTML = '';
         renderAllSalespeopleCards();
         rerunQuickCalcDerivedFields();
+        applySalesInsightFieldLocks();
         console.log('✅ Quick Calculate restored existing cards:', window.appState.salespeople.length);
         return;
     }
@@ -1214,15 +1306,21 @@ async function initQuickCalculate() {
             yearSelect.appendChild(opt);
         });
         yearSelect.addEventListener('change', function() {
-            console.log('📅 Year changed to', this.value);
-            window._currentYear = this.value;
-            renderPersonSidebar();
-            var curPerson = window.appState.salespeople[0];
-            if (curPerson && curPerson.name) {
-                if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
-                updateSalespersonData(0);
-            }
+            window._salesInsightHistoryUnlocked = false;
+            finishCalcYearChange(String(parseInt(this.value, 10) || new Date().getFullYear()));
         });
+    }
+
+    function finishCalcYearChange(newYear) {
+        console.log('📅 Year changed to', newYear);
+        window._currentYear = newYear;
+        renderPersonSidebar();
+        var curPerson = window.appState.salespeople[0];
+        if (curPerson && curPerson.name) {
+            if (typeof applyPersonTarget === 'function') applyPersonTarget(0);
+            updateSalespersonData(0);
+        }
+        applySalesInsightFieldLocks();
     }
 
     if (monthSelect) {
@@ -1232,6 +1330,8 @@ async function initQuickCalculate() {
                 const newMonth = this.value.toUpperCase();
                 const oldMonth = window._currentMonth || '';
                 var yearVal = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
+
+                function runMonthSwitch() {
                 var oldMonthKey = oldMonth ? oldMonth + '-' + (window._currentYear || yearVal) : '';
                 var newMonthKey = newMonth + '-' + yearVal;
                 console.log('📅 Month changed from', oldMonthKey, 'to', newMonthKey);
@@ -1350,6 +1450,11 @@ async function initQuickCalculate() {
                     if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
                     showToast('📅', newMonth + (personData ? ' data restored' : ' — no data yet'));
                 }
+                applySalesInsightFieldLocks();
+                }
+
+                window._salesInsightHistoryUnlocked = false;
+                runMonthSwitch();
             });
             monthSelect._hasAutoFillListener = true;
         }
@@ -1422,6 +1527,7 @@ async function initQuickCalculate() {
     updateSummaryView();
     if (typeof renderPersonSidebar === 'function') renderPersonSidebar();
 
+    applySalesInsightFieldLocks();
     console.log('✅ Quick Calculate initialization completed');
 }
 
@@ -1987,7 +2093,7 @@ function applyEmployeeStatus(personName, makeActive, ym) {
 window.applyEmployeeStatus = applyEmployeeStatus;
 
 // Require the manager password (same as Annual Report) before running a sensitive People action.
-function requirePeoplePassword(actionLabel, onSuccess) {
+function requirePeoplePassword(actionLabel, onSuccess, onCancel) {
     var correct = (window.appState && window.appState.config && window.appState.config.annual_password) || 'boss123';
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;box-sizing:border-box;';
@@ -2017,7 +2123,10 @@ function requirePeoplePassword(actionLabel, onSuccess) {
             if (input) { input.value = ''; input.focus(); }
         }
     }
-    document.getElementById('pp-cancel').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('pp-cancel').addEventListener('click', function () {
+        overlay.remove();
+        if (typeof onCancel === 'function') onCancel();
+    });
     document.getElementById('pp-ok').addEventListener('click', submit);
     if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
 }
@@ -2087,6 +2196,7 @@ function rerunQuickCalcDerivedFields() {
     }
     if (n === 0 && typeof updateCalcWorkspace === 'function') updateCalcWorkspace();
     updateSummaryView();
+    applySalesInsightFieldLocks();
 }
 
 // Re-render all cards
@@ -2537,6 +2647,7 @@ function updateSalespersonData(index, opts) {
     // Auto-save debounced 500ms
     if (window._autoSaveTimer) clearTimeout(window._autoSaveTimer);
     window._autoSaveTimer = setTimeout(function() {
+        if (salesInsightEditNeedsPassword()) return;
         var _month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
         var _year = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
         var _monthKey = _month ? _month + '-' + _year : '';
@@ -2831,6 +2942,7 @@ function populateCalcPersonSelect(preferredName) {
 }
 
 function saveCurrentCalcPersonBeforeSwitch() {
+    if (salesInsightEditNeedsPassword()) return;
     var curPerson = window.appState.salespeople[0];
     var curNameEl = document.getElementById('name-0');
     var curNameDisp = document.getElementById('card-name-text-0');
@@ -9258,6 +9370,10 @@ window.exportHistoryToExcel = exportHistoryToExcel;
 window.printHistoryReport   = printHistoryReport;
 
 function manualSave() {
+    if (salesInsightEditNeedsPassword()) {
+        requireSalesInsightPassword('Enter password to save this month\'s data', function() { manualSave(); });
+        return;
+    }
     var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
     var year = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
     var monthKey = month ? month + '-' + year : '';
@@ -10910,12 +11026,79 @@ function saveAnnualPassword() {
     saveConfig();
     window._annualUnlocked = false;
     window._settingsUnlocked = false;
+    window._salesInsightHistoryUnlocked = false;
     oldInp.value = '';
     newInp.value = '';
     if (errEl) errEl.textContent = '';
     showToast('✅', 'Password updated (Annual & Settings)');
 }
 window.saveAnnualPassword = saveAnnualPassword;
+
+function showChangeDefaultPasswordModal() {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(8,15,26,.55);display:flex;align-items:center;justify-content:center;z-index:100001;padding:16px;box-sizing:border-box;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--paper);border-radius:14px;max-width:360px;width:100%;padding:24px;box-shadow:0 25px 60px rgba(8,15,26,.25);font-family:Sora,sans-serif;';
+    card.addEventListener('click', function (e) { e.stopPropagation(); });
+    card.innerHTML =
+        '<div style="font-size:15px;font-weight:800;color:var(--ink);margin-bottom:4px;">🔑 Reset default password</div>'
+        + '<div style="font-size:12px;color:var(--ink3);margin-bottom:14px;">Set a new password for Annual Report, Settings, Sales Insight history, and People actions.</div>'
+        + '<input id="nav-pw-new" type="password" placeholder="New password" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;margin-bottom:8px;background:var(--paper);color:var(--ink);">'
+        + '<input id="nav-pw-confirm" type="password" placeholder="Confirm new password" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);font-size:14px;font-family:Sora,sans-serif;outline:none;box-sizing:border-box;margin-bottom:8px;background:var(--paper);color:var(--ink);">'
+        + '<div id="nav-pw-err" style="font-size:12px;color:#dc2626;min-height:16px;margin-bottom:10px;"></div>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="nav-pw-cancel" style="padding:8px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;font-size:13px;font-weight:600;font-family:Sora,sans-serif;color:var(--ink);">Cancel</button>'
+        + '<button id="nav-pw-save" style="padding:8px 18px;border:none;border-radius:var(--r);background:linear-gradient(135deg,#0f172a,#1e40af);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:Sora,sans-serif;">Save</button>'
+        + '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    var newInp = document.getElementById('nav-pw-new');
+    var confirmInp = document.getElementById('nav-pw-confirm');
+    if (newInp) setTimeout(function () { newInp.focus(); }, 50);
+    function close() { overlay.remove(); }
+    function save() {
+        var errEl = document.getElementById('nav-pw-err');
+        if (!newInp || !newInp.value.trim()) {
+            if (errEl) errEl.textContent = '❌ Please enter new password';
+            return;
+        }
+        if (!confirmInp || confirmInp.value.trim() !== newInp.value.trim()) {
+            if (errEl) errEl.textContent = '❌ Passwords do not match';
+            if (confirmInp) { confirmInp.value = ''; confirmInp.focus(); }
+            return;
+        }
+        window.appState.config.annual_password = newInp.value.trim();
+        saveConfig();
+        window._annualUnlocked = false;
+        window._settingsUnlocked = false;
+        window._salesInsightHistoryUnlocked = false;
+        close();
+        showToast('✅', 'Default password reset');
+    }
+    document.getElementById('nav-pw-cancel').addEventListener('click', close);
+    document.getElementById('nav-pw-save').addEventListener('click', save);
+    if (newInp) newInp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { if (confirmInp) confirmInp.focus(); } });
+    if (confirmInp) confirmInp.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
+}
+window.showChangeDefaultPasswordModal = showChangeDefaultPasswordModal;
+
+function initNavLogoPasswordEasterEgg() {
+    var logo = document.getElementById('nav-logo');
+    if (!logo) return;
+    var clicks = 0;
+    var resetTimer = null;
+    var RESET_MS = 2500;
+    logo.addEventListener('click', function () {
+        if (resetTimer) clearTimeout(resetTimer);
+        clicks++;
+        if (clicks >= 9) {
+            clicks = 0;
+            showChangeDefaultPasswordModal();
+            return;
+        }
+        resetTimer = setTimeout(function () { clicks = 0; }, RESET_MS);
+    });
+}
 
 // Load existing password into settings field when opening settings
 (function() {
