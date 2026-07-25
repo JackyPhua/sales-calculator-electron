@@ -847,6 +847,14 @@ function isEmployeeActiveInMonth(name, bareM, year) {
     return true;
 }
 
+/** True if this person's Sales Insight / history data may be shown or saved for bareM + year. */
+function canPersistPersonToMonth(name, bareM, year) {
+    if (!name || !bareM) return false;
+    return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(name, bareM, year);
+}
+
+window.canPersistPersonToMonth = canPersistPersonToMonth;
+
 /** Roster active/inactive flag (default active). Inactive = resigned/hidden from daily entry. */
 function isEmployeeActive(name) {
     var cfg = window.appState && window.appState.config;
@@ -1349,6 +1357,10 @@ async function initQuickCalculate() {
                                 : (curNameDisp && curNameDisp.textContent !== '—') ? curNameDisp.textContent
                                 : (curNameEl ? curNameEl.value : '');
                     if (curName) {
+                        var oldYear = parseInt(window._currentYear || yearVal, 10) || new Date().getFullYear();
+                        if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(curName, oldMonth, oldYear)) {
+                            console.log('⏭️ Skip save for', curName, '— not employed in', oldMonth, oldYear);
+                        } else {
                         function getF(id) {
                             var el = document.getElementById(id + '-0');
                             if (!el) return 0;
@@ -1380,6 +1392,7 @@ async function initQuickCalculate() {
                         saveConfig();
                         dbSave('reportHistory', hist).catch(function(){});
                         console.log('💾 Saved', curName, 'data for', oldMonth);
+                        }
                     }
                 }
                 window._currentMonth = newMonth;
@@ -2670,7 +2683,10 @@ function updateSalespersonData(index, opts) {
                 if (tEl && tEl.disabled && p.target) {} // keep appState value
                 else if (tEl) p.target = parseFloat(tEl.value) || p.target || 0;
             });
-            var _valid = window.appState.salespeople.filter(function(p){ return p.name && p.name.trim() !== ''; });
+            var _valid = window.appState.salespeople.filter(function(p) {
+                return p.name && p.name.trim() !== ''
+                    && (typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(p.name, _month, parseInt(_year, 10) || new Date().getFullYear()));
+            });
             if (_valid.length > 0) {
                 var _ei = window.appState.config.reportHistory.findIndex(function(r){ return (r.month||'').toUpperCase()===_monthKey; });
                 var _hd = _valid.map(function(p){ return {name:(p.name||'').toUpperCase(),target:p.target||0,sales:p.sales||0,collectionTarget:p.collectionTarget||0,collectionAmount:p.collectionAmount||0,callTarget:p.callTarget||0,callActual:p.callActual||0}; });
@@ -2772,7 +2788,11 @@ function updateSummaryView() {
     var month = ((document.getElementById('report-month')||{}).value||'').toUpperCase();
     var _syear = ((document.getElementById('report-year')||{}).value||'') || String(new Date().getFullYear());
     var histEntry = findHistEntry(window.appState.config.reportHistory||[], month, _syear);
-    var histPeople = histEntry ? histEntry.data||[] : [];
+    var histPeople = histEntry ? (histEntry.data||[]).filter(function(p) {
+        return typeof canPersistPersonToMonth === 'function'
+            ? canPersistPersonToMonth(p.name, month, _syear)
+            : true;
+    }) : [];
 
     var dispPeople, dispCommission, dispTarget, dispSales;
 
@@ -2906,7 +2926,19 @@ function getBaseConfiguredPeople() {
 }
 
 function getCalcConfiguredPeople() {
-    var configPeople = getBaseConfiguredPeople();
+    var configPeople = Object.keys(window.appState.config.base_salaries || {});
+    if (configPeople.length === 0) {
+        configPeople = window.appState.salespeople.filter(function(p) { return p.name; }).map(function(p) { return p.name; });
+    }
+    var month = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var year = parseInt(((document.getElementById('report-year') || {}).value || ''), 10) || new Date().getFullYear();
+    if (month) {
+        configPeople = configPeople.filter(function(n) {
+            return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(n, month, year);
+        });
+    } else if (typeof isEmployeeActive === 'function') {
+        configPeople = configPeople.filter(function(n) { return isEmployeeActive(n); });
+    }
     var groupSel = document.getElementById('calc-group-select');
     var selectedGroup = groupSel ? groupSel.value : 'ALL';
     if (selectedGroup !== 'ALL') {
@@ -2951,6 +2983,9 @@ function saveCurrentCalcPersonBeforeSwitch() {
         : (curNameDisp && curNameDisp.textContent !== '—') ? curNameDisp.textContent
         : (curNameEl ? curNameEl.value : '');
     if (!curName) return;
+    var mon = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var yr = parseInt(((document.getElementById('report-year') || {}).value || ''), 10) || new Date().getFullYear();
+    if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(curName, mon, yr)) return;
 
     function getField(id) {
         var el = document.getElementById(id + '-0');
@@ -2967,8 +3002,6 @@ function saveCurrentCalcPersonBeforeSwitch() {
     var curSales = getField('sales');
     if (!(curTarget > 0 || curSales > 0)) return;
 
-    var mon = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
-    var yr = ((document.getElementById('report-year') || {}).value || '') || String(new Date().getFullYear());
     var mKey = mon + '-' + yr;
     var hist = window.appState.config.reportHistory || [];
     var hIdx = hist.findIndex(function(r) { return (r.month || '').toUpperCase() === mKey || (r.month || '').toUpperCase() === mon; });
@@ -3052,7 +3085,10 @@ function onCalcGroupChange() {
 
 function renderPersonSidebar() {
     var cur = window.appState.salespeople[0] && window.appState.salespeople[0].name;
-    populateCalcPersonSelect(cur);
+    var chosen = populateCalcPersonSelect(cur);
+    if (chosen && (!cur || cur.toUpperCase() !== chosen.toUpperCase())) {
+        selectCalcPerson(chosen, { force: true });
+    }
 }
 
 
@@ -9413,7 +9449,10 @@ function manualSave() {
 
     // Sync current salespeople into reportHistory for this month
     if (!window.appState.config.reportHistory) window.appState.config.reportHistory = [];
-    var validPeople = window.appState.salespeople.filter(function(p){ return p.name && (p.target > 0 || p.sales > 0); });
+    var validPeople = window.appState.salespeople.filter(function(p) {
+        return p.name && (p.target > 0 || p.sales > 0)
+            && (typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(p.name, month, parseInt(year, 10) || new Date().getFullYear()));
+    });
     if (validPeople.length > 0) {
         var existIdx = window.appState.config.reportHistory.findIndex(function(r){ return (r.month||'').toUpperCase() === monthKey; });
         var histData = validPeople.map(function(p) {
@@ -9523,18 +9562,18 @@ function renderPeopleList() {
                 ? '<span class="pi-badge" style="background:var(--vi-l);color:var(--vi);border-radius:20px;">✦ Personal</span>'
                 : '<span class="pi-badge" style="background:var(--sheet);color:var(--ink4);border:1px solid var(--line);border-radius:20px;">Company Rate</span>')
             + '</div></div>'
-            + '<select id="type-select-'+i+'" class="filter-select">'
+            + '<select id="type-select-'+i+'" class="filter-select pi-type-select">'
             + '<option value="Sales"'+(empType==='Sales'?' selected':'')+'>💼 Sales</option>'
             + '<option value="Supervisor"'+(empType==='Supervisor'?' selected':'')+'>👔 Supervisor</option>'
             + '<option value="Support Staff"'+(empType==='Support Staff'?' selected':'')+'>🛠️ Support Staff</option>'
             + '</select>'
             + (function(){
                 var companies = (window.appState.config.companies || []);
-                if (companies.length === 0) return '';
+                if (companies.length === 0) return '<select class="filter-select pi-company-select" disabled aria-hidden="true"><option>—</option></select>';
                 var empCompany = getEmployeeCompany(name);
                 var opts = '<option value=""'+(empCompany===''?' selected':'')+'>— No Company —</option>';
                 companies.forEach(function(c){ opts += '<option value="'+c+'"'+(empCompany===c?' selected':'')+'>🏢 '+c+'</option>'; });
-                return '<select id="company-select-'+i+'" class="filter-select">'+opts+'</select>';
+                return '<select id="company-select-'+i+'" class="filter-select pi-company-select">'+opts+'</select>';
             })()
             + '<div class="pi-btns" id="pi-btns-'+i+'"></div>';
         container.appendChild(item);
@@ -9544,56 +9583,58 @@ function renderPeopleList() {
         if (companySel) companySel.addEventListener('change', (function(n){ return function(e){ setEmployeeCompany(n, e.target.value); renderPeopleList(); showToast('✅', n+' assigned to '+(e.target.value||'no company')); };})(name));
         var btns = item.querySelector('#pi-btns-'+i);
 
-        // Salary always first
+        function piBtnSlot(parent, btn) {
+            var slot = document.createElement('div');
+            slot.className = 'pi-btn-slot';
+            if (btn) slot.appendChild(btn);
+            parent.appendChild(slot);
+            return slot;
+        }
+
+        // Salary | action 2 | action 3 | status | delete — fixed columns for every row
         var bS = document.createElement('button');
         bS.className = 'pi-btn pi-btn--salary';
         bS.textContent = '💵 Salary';
         bS.addEventListener('click',(function(n){return function(){showSalaryModal(n);};})(name));
-        btns.appendChild(bS);
+        piBtnSlot(btns, bS);
 
+        var b2 = null;
+        var b3 = null;
         if (empType === 'Sales') {
-            var bC = document.createElement('button');
-            bC.className = 'pi-btn pi-btn--comm';
-            bC.textContent = '💰 Commission';
-            bC.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
-            var bT = document.createElement('button');
-            bT.className = 'pi-btn pi-btn--target';
-            bT.textContent = '🎯 Target';
-            bT.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
-            btns.appendChild(bC);
-            btns.appendChild(bT);
+            b2 = document.createElement('button');
+            b2.className = 'pi-btn pi-btn--comm';
+            b2.textContent = '💰 Commission';
+            b2.addEventListener('click',(function(n){return function(){showCommissionModal(n);};})(name));
+            b3 = document.createElement('button');
+            b3.className = 'pi-btn pi-btn--target';
+            b3.textContent = '🎯 Target';
+            b3.addEventListener('click',(function(n){return function(){showTargetModal(n);};})(name));
         } else if (empType === 'Supervisor') {
-            var bSI = document.createElement('button');
-            bSI.className = 'pi-btn pi-btn--tier';
-            bSI.textContent = '👔 Incentive Tiers';
-            bSI.addEventListener('click',(function(n){return function(){showSupervisorIncentiveModal(n);};})(name));
-            var spacer = document.createElement('div');
-            spacer.style.cssText = 'width:110px;';
-            btns.appendChild(bSI);
-            btns.appendChild(spacer);
+            b2 = document.createElement('button');
+            b2.className = 'pi-btn pi-btn--tier';
+            b2.textContent = '👔 Incentive Tiers';
+            b2.addEventListener('click',(function(n){return function(){showSupervisorIncentiveModal(n);};})(name));
         } else if (empType === 'Support Staff') {
-            var bMR = document.createElement('button');
-            bMR.className = 'pi-btn pi-btn--rate';
-            bMR.textContent = '🛠️ Block Rate';
-            bMR.addEventListener('click',(function(n){return function(){showMerchandiserRateModal(n);};})(name));
-            var spacer2 = document.createElement('div');
-            spacer2.style.cssText = 'width:110px;';
-            btns.appendChild(bMR);
-            btns.appendChild(spacer2);
+            b2 = document.createElement('button');
+            b2.className = 'pi-btn pi-btn--rate';
+            b2.textContent = '🛠️ Block Rate';
+            b2.addEventListener('click',(function(n){return function(){showMerchandiserRateModal(n);};})(name));
         }
+        piBtnSlot(btns, b2);
+        piBtnSlot(btns, b3);
 
         var bA = document.createElement('button');
         bA.title = active ? 'Click to mark as resigned / inactive' : 'Click to reactivate';
         bA.className = 'pi-btn ' + (active ? 'pi-btn--active' : 'pi-btn--inactive');
         bA.textContent = active ? '● Active' : '○ Inactive';
         bA.addEventListener('click',(function(n, isActive){ return function(){ requirePeoplePassword((isActive ? 'Set ' : 'Reactivate ') + n + ' \u2014 enter password to continue', function(){ showEmployeeStatusDatePicker(n, isActive); }); };})(name, active));
-        btns.appendChild(bA);
+        piBtnSlot(btns, bA);
 
         var bD = document.createElement('button');
         bD.className = 'pi-btn pi-btn--del';
         bD.textContent = '🗑️';
         bD.addEventListener('click',(function(n){return function(){ requirePeoplePassword('Delete ' + n + ' \u2014 enter password to continue', function(){ deleteSalespersonConfig(n); }); };})(name));
-        btns.appendChild(bD);
+        piBtnSlot(btns, bD);
     });
 
     // Drag-to-reorder
@@ -10529,6 +10570,7 @@ function renderDashboard() {
         hEntry.data.forEach(function(pd) {
             var t = getEmployeeType(pd.name);
             if (t !== 'Sales') return;
+            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(pd.name, m, selectedYear)) return;
             tS += parseFloat(pd.sales)||0;
             tT += parseFloat(pd.target)||0;
             tCo += parseFloat(pd.collectionAmount)||0;
@@ -10545,7 +10587,7 @@ function renderDashboard() {
         var totalBlocks = 0;
         var salesByMonth = MONTHS.map(function(m) {
             var hEntry = findHistEntry(history, m, selectedYear);
-            var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){return (p.name||'').toUpperCase()===name;}) : null;
+            var pd = hEntry && hEntry.data ? hEntry.data.find(function(p){return (p.name||'').toUpperCase()===String(name).toUpperCase();}) : null;
             var inDisplay = displayMonths.indexOf(m) !== -1
                 && (typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(name, m, selectedYear));
             if (empType === 'Sales') {
@@ -10560,7 +10602,7 @@ function renderDashboard() {
                     totalComm += calculateIncentive(callPct, activeCallIncentiveTiersFor(name));
                     monthCount++;
                     }
-                    return parseFloat(pd.sales)||0;
+                    return inDisplay ? (parseFloat(pd.sales)||0) : 0;
                 }
                 return 0;
             } else if (empType === 'Supervisor') {
@@ -10593,6 +10635,15 @@ function renderDashboard() {
         return {name:name, type:empType, totalSales:totalSales, totalTarget:totalTarget, totalComm:totalComm, totalBlocks:totalBlocks, ach:totalTarget>0?(totalSales/totalTarget*100):0, monthCount:monthCount, salesByMonth:salesByMonth};
     });
 
+    // When a specific month is selected, hide anyone not employed in that month (e.g. joined in JUL → hide in APR/MAY).
+    if (selectedMonth !== 'ALL') {
+        peopleStats = peopleStats.filter(function(p) {
+            return displayMonths.some(function(m) {
+                return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(p.name, m, selectedYear);
+            });
+        });
+    }
+
     // Team totals: Sales people only
     var salesPeople = peopleStats.filter(function(p){return p.type==='Sales';});
     var teamSales = salesPeople.reduce(function(s,p){return s+p.totalSales;},0);
@@ -10611,7 +10662,7 @@ function renderDashboard() {
     });
     var medals = ['🥇','🥈','🥉'];
     var html = '';
-    html += '<div class="dash-meta">'+selectedYear+' Overview · '+configPeople.length+' people</div>';
+    html += '<div class="dash-meta">'+selectedYear+' Overview · '+peopleStats.length+' people</div>';
     html += '<div class="dash-kpi-grid">';
     html += '<div class="dash-kpi dash-kpi--muted"><div class="dash-kpi-lbl">Team Target</div><div class="dash-kpi-val">'+fmt(teamTarget)+'</div></div>';
     html += '<div class="dash-kpi"><div class="dash-kpi-lbl">Team Sales</div><div class="dash-kpi-val">'+fmt(teamSales)+'</div></div>';
@@ -10663,9 +10714,9 @@ function renderDashboard() {
     MONTHS.forEach(function(m,mi){
         var total = monthTotals[mi]; var h = maxMonth>0?Math.max(4,(total/maxMonth)*58):4; var hasData = total>0;
         var salesBarC = getRoleBadgeStyle('Sales').c;
-        html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">';
-        html += '<div style="width:100%;height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,'+salesBarC+','+salesBarC+'cc)':'#f1f5f9')+';border-radius:3px 3px 2px 2px;opacity:'+(hasData?1:0.3)+';"></div>';
-        html += '<div style="font-size:8px;font-weight:700;color:'+(hasData?'#0f172a':'#cbd5e1')+';text-align:center;white-space:nowrap;">'+m+(hasData?'<br><span style="font-family:\'Sora\',sans-serif;font-size:7px;color:#475569;">'+fmt(total)+'</span>':'')+'</div></div>';
+        html += '<div class="dash-trend-col">';
+        html += '<div class="dash-trend-bar" style="height:'+h+'px;background:'+(hasData?'linear-gradient(180deg,'+salesBarC+','+salesBarC+'cc)':'#f1f5f9')+';opacity:'+(hasData?1:0.3)+';"></div>';
+        html += '<div class="dash-trend-lbl '+(hasData?'has-data':'no-data')+'">'+m+(hasData?'<span class="dash-trend-amt">'+fmt(total)+'</span>':'')+'</div></div>';
     });
     html += '</div></div>';
     }
