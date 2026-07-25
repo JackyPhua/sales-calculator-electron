@@ -7215,7 +7215,7 @@ window.openHistoryExcel = openHistoryExcel;
 
 // ==================== Salary History Helpers ====================
 
-function getSalaryForMonth(personName, monthStr) {
+function getSalaryForMonth(personName, monthStr, year) {
     var cfg = window.appState.config;
     var nu = (personName||'').toUpperCase();
     var history = cfg.salary_history && cfg.salary_history[nu];
@@ -7228,12 +7228,13 @@ function getSalaryForMonth(personName, monthStr) {
         };
     }
 
-    // Build targetYM from monthStr + current year (e.g. 'MAR' -> '2026-03')
+    // Build targetYM from month + year (e.g. 'MAR', 2026 -> '2026-03'; 'MAR-2025' also supported)
     var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    var curYear = new Date().getFullYear();
-    var mIdx = monthOrder.indexOf((monthStr||'').toUpperCase());
+    var bare = bareMonth(monthStr);
+    var mIdx = monthOrder.indexOf(bare);
     if (mIdx < 0) mIdx = 0;
-    var targetYM = curYear + '-' + String(mIdx + 1).padStart(2, '0');
+    var y = keyYear(monthStr) || parseInt(year, 10) || new Date().getFullYear();
+    var targetYM = y + '-' + String(mIdx + 1).padStart(2, '0');
 
     // Sort ascending by effectiveFrom
     var sorted = history.slice().sort(function(a, b) {
@@ -11008,17 +11009,18 @@ function renderAnnualReport() {
     html += '<div class="annual-person-grid">';
     displayPeople.forEach(function(p) {
         var empType = getEmployeeType(p);
-        var tS=0,tT=0,tComm=0,mc=0,totBlocks=0;
+        var tS=0,tT=0,tComm=0,mc=0,totBlocks=0,sal=0,allow=0;
         displayMonths.forEach(function(m){
             var d = peopleData[personKey(p)][m]; if (!d) return;
+            var sr = getSalaryForMonth(p, m, selectedYear);
+            sal += parseFloat(sr.salary) || 0;
+            allow += Object.values(sr.allowances || {}).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
             if (empType === 'Sales') { tS+=d.sales||0; tT+=d.target||0; tComm+=(d.commission||0)+(d.collInc||0)+(d.callInc||0)+(d.qtrBonus||0); mc++; }
             else if (empType === 'Supervisor') { tComm += d.total||0; mc++; }
             else if (empType === 'Support Staff') { totBlocks += d.blocks||0; tComm += d.incentive||0; mc++; }
         });
         if (mc === 0) return;
         var tAch = tT>0?(tS/tT*100):0;
-        var sal = ((cfg.base_salaries&&cfg.base_salaries[p])||1700)*mc;
-        var allow = cfg.allowances&&cfg.allowances[p] ? Object.values(cfg.allowances[p]).reduce(function(s,v){return s+(parseFloat(v)||0);},0)*mc : 0;
         var typeIcons = { Sales:'', Supervisor:'👔 ', 'Support Staff':'🛠️ ' };
         var headCls = empType==='Supervisor'?'annual-person-head--mgmt':empType==='Support Staff'?'annual-person-head--support':'annual-person-head--sales';
         html += '<div class="annual-person-card">';
@@ -11362,14 +11364,11 @@ function renderEmployerCostReport() {
         var nu = personKey(name);
         return hEntry.data.find(function(d) { return personKey(d.name) === nu; }) || null;
     }
-    function cfgSalary(name) {
-        var nu = personKey(name);
-        return (cfg.base_salaries && (cfg.base_salaries[nu] != null ? cfg.base_salaries[nu] : cfg.base_salaries[name])) || 0;
-    }
-    function cfgAllowances(name) {
-        var nu = personKey(name);
-        var bag = (cfg.allowances && (cfg.allowances[nu] || cfg.allowances[name])) || null;
-        return bag ? Object.values(bag).reduce(function(s, v) { return s + (parseFloat(v) || 0); }, 0) : 0;
+    function ecMonthPay(name, m) {
+        var salRec = getSalaryForMonth(name, m, selectedYear);
+        var monthSalary = parseFloat(salRec.salary) || 0;
+        var monthAllow = Object.values(salRec.allowances || {}).reduce(function(s, v) { return s + (parseFloat(v) || 0); }, 0);
+        return { salary: monthSalary, allow: monthAllow };
     }
 
     // Helper: team totals for a given month (Sales only)
@@ -11395,8 +11394,6 @@ function renderEmployerCostReport() {
         if (filterMonths && filterMonths.length > 0 && filterMonths.every(function(m) { return !isEmployeeActiveInMonth(name, m, selectedYear); })) return;
         var empType = getEmployeeType(name);
         var nu = personKey(name);
-        var salary = cfgSalary(name);
-        var allowances = cfgAllowances(name);
         var employerEpfRate = (cfg.employer_epf_rates && (cfg.employer_epf_rates[nu] != null ? cfg.employer_epf_rates[nu] : cfg.employer_epf_rates[name])) || 13;
         var months = 0, totalSales = 0, totalTarget = 0, totalSalary = 0, totalAllow = 0;
         var totalComm = 0, totalCollInc = 0, totalCallInc = 0, totalQtrBonus = 0;
@@ -11412,11 +11409,12 @@ function renderEmployerCostReport() {
             if (empType === 'Sales') {
                 if (!hEntry || !hEntry.data) return;
                 var pd = histPerson(hEntry, name);
+                var pay = ecMonthPay(name, m);
                 months++;
                 var sales = pd ? (parseFloat(pd.sales) || 0) : 0;
                 var target = pd ? (parseFloat(pd.target) || 0) : 0;
                 totalSales += sales; totalTarget += target;
-                totalSalary += salary; totalAllow += allowances;
+                totalSalary += pay.salary; totalAllow += pay.allow;
                 var collPct = pd && (pd.collectionTarget || 0) > 0 ? (pd.collectionAmount || 0) / pd.collectionTarget * 100 : 0;
                 var callPct = pd && (pd.callTarget || 0) > 0 ? (pd.callActual || 0) / pd.callTarget * 100 : 0;
                 var collI = calculateIncentive(collPct, collectionIncentiveTiersFor(name));
@@ -11426,14 +11424,15 @@ function renderEmployerCostReport() {
                 var qtrI = isQtr ? calculateIncentive(ach, quarterlyIncentiveTiersFor(name)) : 0;
                 var comm = calculateCommission(sales, target, name);
                 totalComm += comm; totalCollInc += collI; totalCallInc += callI; totalQtrBonus += qtrI;
-                var _mgS = salary + allowances + comm + collI + callI + qtrI;
+                var _mgS = pay.salary + pay.allow + comm + collI + callI + qtrI;
                 totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgS, m, selectedYear).employer : _mgS * employerEpfRate / 100;
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgS, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgS, m, selectedYear).employer : 0;
             } else if (empType === 'Supervisor') {
                 if (!hEntry || !hEntry.data) return;
+                var paySv = ecMonthPay(name, m);
                 months++;
-                totalSalary += salary; totalAllow += allowances;
+                totalSalary += paySv.salary; totalAllow += paySv.allow;
                 var team = _teamTotalsForMonth(m);
                 var _svSale = 0, _svColl = 0, _svCall = 0, _svQtr = 0;
                 if (team.target > 0) {
@@ -11448,14 +11447,15 @@ function renderEmployerCostReport() {
                     _svQtr  = (['MAR','JUN','SEP','DEC'].indexOf(m) !== -1) ? getTierAmt(qtrT, teamAchM) : 0;
                 }
                 totalComm += _svSale; totalCollInc += _svColl; totalCallInc += _svCall; totalQtrBonus += _svQtr;
-                var _mgV = salary + allowances + _svSale + _svColl + _svCall + _svQtr;
+                var _mgV = paySv.salary + paySv.allow + _svSale + _svColl + _svCall + _svQtr;
                 totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgV, m, selectedYear).employer : _mgV * employerEpfRate / 100;
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgV, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgV, m, selectedYear).employer : 0;
             } else if (empType === 'Support Staff') {
                 var pd = (hEntry && hEntry.data) ? histPerson(hEntry, name) : null;
+                var payMs = ecMonthPay(name, m);
                 months++;
-                totalSalary += salary; totalAllow += allowances;
+                totalSalary += payMs.salary; totalAllow += payMs.allow;
                 var blocks = pd ? (parseFloat(pd.collectionAmount) || 0) : 0;
                 var rate = (cfg.person_merchandiser_rates && cfg.person_merchandiser_rates[nu] != null)
                     ? parseFloat(cfg.person_merchandiser_rates[nu])
@@ -11465,7 +11465,7 @@ function renderEmployerCostReport() {
                 // Put merchandiser incentive into totalComm field (reused for display consistency)
                 var _blkInc = blocks * rate;
                 totalComm += _blkInc;
-                var _mgB = salary + allowances + _blkInc;
+                var _mgB = payMs.salary + payMs.allow + _blkInc;
                 totalEmployerEpf += (typeof computeEpf === 'function') ? computeEpf(name, _mgB, m, selectedYear).employer : _mgB * employerEpfRate / 100;
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgB, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgB, m, selectedYear).employer : 0;
