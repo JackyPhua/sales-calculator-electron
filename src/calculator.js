@@ -837,28 +837,44 @@ function getLastPayrollMonthYM(name) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
-/** First payroll month (YYYY-MM) from configured join date, or null. */
+/** First payroll month (YYYY-MM) from configured join date, or null.
+ *  Join on 1st of month M → first payroll is month M (mirrors inactive: 1st of M → last pay is M−1). */
 function getFirstPayrollMonthYM(name) {
     var startYM = getEmployeeStartYM(name);
     if (!startYM) return null;
-    var m = /^(\d{4})-(\d{2})/.exec(startYM);
-    return m ? (m[1] + '-' + m[2]) : null;
+    var parts = startYM.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+    if (!parts) return startYM.slice(0, 7);
+    return parts[1] + '-' + parts[2];
 }
 
-/** Earliest reportHistory month containing name (optionally scoped to year). Used when no join date is set. */
-function getInferredFirstPayrollYM(name, year) {
+/** Earliest month in reportHistory where the person has real activity (sales/target/blocks). */
+function getInferredFirstActivityMonthYM(name, year) {
     var cfg = window.appState && window.appState.config;
     if (!cfg || !cfg.reportHistory) return null;
     var nu = (name || '').toUpperCase();
     var yr = parseInt(year, 10);
+    var empType = typeof getEmployeeType === 'function' ? getEmployeeType(name) : 'Sales';
     var earliest = null;
     cfg.reportHistory.forEach(function(r) {
-        if (!r.data || !r.data.some(function(d) { return ((d.name || '') + '').toUpperCase() === nu; })) return;
+        if (!r.data) return;
+        var pd = r.data.find(function(d) { return ((d.name || '') + '').toUpperCase() === nu; });
+        if (!pd) return;
+        var hasActivity = false;
+        if (empType === 'Sales') {
+            // Target-only rows (e.g. pre-allocated team target before join) must not start payroll.
+            hasActivity = (parseFloat(pd.sales) || 0) > 0
+                || (parseFloat(pd.collectionAmount) || 0) > 0
+                || (parseFloat(pd.callActual) || 0) > 0;
+        } else if (empType === 'Support Staff') {
+            hasActivity = (parseFloat(pd.collectionAmount) || 0) > 0;
+        } else {
+            hasActivity = true;
+        }
+        if (!hasActivity) return;
         var bm = bareMonth(r.month);
         var entryYear = keyYear(r.month);
         if (!isNaN(yr)) {
             if (entryYear != null && entryYear !== yr) return;
-            // Legacy bare month without year — skip for this year if year-suffixed keys exist
             if (entryYear == null) {
                 var bareU = bm.toUpperCase();
                 var hasYearVariants = cfg.reportHistory.some(function(r2) {
@@ -872,6 +888,28 @@ function getInferredFirstPayrollYM(name, year) {
         if (!earliest || ym < earliest) earliest = ym;
     });
     return earliest;
+}
+
+/** First payroll month for annual salary: join date, bumped to first real activity when that is later. */
+function getAnnualSalaryFirstPayMonth(name, year) {
+    var explicit = getFirstPayrollMonthYM(name);
+    if (typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Supervisor') {
+        return explicit || null;
+    }
+    var fromActivity = getInferredFirstActivityMonthYM(name, year);
+    if (explicit) {
+        // Join on 01/06 but first sales in JUL → pay from JUL (6 mo), not JUN (7 mo).
+        if (fromActivity && fromActivity > explicit) return fromActivity;
+        return explicit;
+    }
+    if (fromActivity) return fromActivity;
+    return getInferredFirstPayrollYM(name, year);
+}
+
+/** Earliest reportHistory month with real activity (optionally scoped to year). Used when no join date is set. */
+function getInferredFirstPayrollYM(name, year) {
+    if (typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Supervisor') return null;
+    return getInferredFirstActivityMonthYM(name, year);
 }
 
 /** True if name appears in a reportHistory snapshot for bareM + year. */
@@ -961,6 +999,8 @@ window.getEmployeeEndYM = getEmployeeEndYM;
 window.setEmployeeEndYM = setEmployeeEndYM;
 window.getLastPayrollMonthYM = getLastPayrollMonthYM;
 window.getFirstPayrollMonthYM = getFirstPayrollMonthYM;
+window.getInferredFirstActivityMonthYM = getInferredFirstActivityMonthYM;
+window.getAnnualSalaryFirstPayMonth = getAnnualSalaryFirstPayMonth;
 window.getInferredFirstPayrollYM = getInferredFirstPayrollYM;
 window.personInHistMonth = personInHistMonth;
 window.isEmployeeActiveInMonth = isEmployeeActiveInMonth;
@@ -2152,7 +2192,7 @@ function showEmployeeStatusDatePicker(personName, currentlyActive) {
     var title  = makeActive ? '● Set Active' : '○ Set Inactive';
     var lbl    = makeActive ? 'Active from (Join date) — DD/MM/YYYY' : 'Inactive from (Resign date) — DD/MM/YYYY';
     var hint   = makeActive
-        ? 'This person will appear in Records / Annual Report from this month onwards.'
+        ? 'Pick the 1st of the month they join (e.g. 01/07/2026 for first payroll in July).'
         : 'This person will not appear in Records / Annual Report from this month onwards. Pick the 1st of the month they leave (e.g. 01/06 for last payroll in May). Past history is kept.';
     var accent = makeActive ? '#16a34a' : '#dc2626';
 
@@ -10990,6 +11030,16 @@ function renderAnnualReport() {
         var mi = parseInt(parts[2], 10) - 1;
         return (mi >= 0 && mi < MONTHS.length) ? (MONTHS[mi] + ' ' + parts[1]) : ym;
     }
+    function isEmployedInSelectedPeriod(p, m) {
+        var ym = monthYearToYM(m, selectedYear);
+        var firstPay = typeof getAnnualSalaryFirstPayMonth === 'function'
+            ? getAnnualSalaryFirstPayMonth(p, selectedYear) : getFirstPayrollMonthYM(p);
+        if (!firstPay) return false;
+        if (ym < firstPay) return false;
+        var lastPay = typeof getLastPayrollMonthYM === 'function' ? getLastPayrollMonthYM(p) : null;
+        if (lastPay && ym > lastPay) return false;
+        return true;
+    }
     function sumPersonActivityMonths(p) {
         var empType = getEmployeeType(p);
         var mc = 0;
@@ -11240,12 +11290,91 @@ function renderAnnualReport() {
         html += '</tr></tbody></table></div></div>';
     }
 
+    // ── Salary & Allowance Summary (all staff) ──
+    if (displayPeople.length > 0) {
+        var STD_ALLOW_KEYS = ['HP', 'CAR', 'LOCAL FUEL', 'OUTSTATION FUEL', 'HOUSING', 'FOOD', 'OTHERS'];
+        var allowColSet = {};
+        displayPeople.forEach(function(p) {
+            displayMonths.forEach(function(m) {
+                if (!isEmployedInSelectedPeriod(p, m)) return;
+                var sr = getSalaryForMonth(p, m, selectedYear);
+                Object.keys(sr.allowances || {}).forEach(function(k) {
+                    allowColSet[k] = true;
+                });
+            });
+        });
+        var allowCols = [];
+        STD_ALLOW_KEYS.forEach(function(k) { if (allowColSet[k]) allowCols.push(k); });
+        Object.keys(allowColSet).sort().forEach(function(k) {
+            if (allowCols.indexOf(k) < 0) allowCols.push(k);
+        });
+        function sumPersonPayroll(p) {
+            var payrollMonths = 0, totalSal = 0, totalAllow = 0, allowByKey = {};
+            displayMonths.forEach(function(m) {
+                if (!isEmployedInSelectedPeriod(p, m)) return;
+                payrollMonths++;
+                var sr = getSalaryForMonth(p, m, selectedYear);
+                totalSal += parseFloat(sr.salary) || 0;
+                Object.keys(sr.allowances || {}).forEach(function(k) {
+                    var v = parseFloat(sr.allowances[k]) || 0;
+                    allowByKey[k] = (allowByKey[k] || 0) + v;
+                    totalAllow += v;
+                });
+            });
+            return { payrollMonths: payrollMonths, totalSal: totalSal, totalAllow: totalAllow, allowByKey: allowByKey };
+        }
+        html += '<div class="report-panel"><div class="report-panel-head report-panel-head--pay">💵 Salary &amp; Allowance Summary</div>';
+        html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
+        html += '<th>Person</th><th class="rt-num" title="Employed months in selected period (join date → resign date)">Active Months</th><th class="rt-num">Basic Salary RM</th>';
+        allowCols.forEach(function(k) {
+            html += '<th class="rt-num">' + k + ' RM</th>';
+        });
+        html += '<th class="rt-num">Total Allowances RM</th><th class="rt-num">Gross Pay RM</th>';
+        html += '</tr></thead><tbody>';
+        var gtSal = 0, gtAllow = 0, gtGross = 0, gtAllowByKey = {};
+        displayPeople.forEach(function(p) {
+            var pay = sumPersonPayroll(p);
+            var rowStatus = getAnnualPersonStatus(p, sumPersonActivityMonths(p));
+            var rowCls = annualStatusRowClass(rowStatus);
+            var empType = getEmployeeType(p);
+            var typeTag = empType === 'Supervisor' ? ' 👔' : empType === 'Support Staff' ? ' 🛠️' : '';
+            gtSal += pay.totalSal;
+            gtAllow += pay.totalAllow;
+            gtGross += pay.totalSal + pay.totalAllow;
+            allowCols.forEach(function(k) {
+                var v = pay.allowByKey[k] || 0;
+                gtAllowByKey[k] = (gtAllowByKey[k] || 0) + v;
+            });
+            html += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>';
+            html += '<td style="font-weight:700;">' + p + typeTag + annualStatusBadge(p, rowStatus) + '</td>';
+            html += '<td class="rt-num rt-mono">' + pay.payrollMonths + '</td>';
+            html += '<td class="rt-num rt-mono">' + fmtNum(pay.totalSal) + '</td>';
+            allowCols.forEach(function(k) {
+                var v = pay.allowByKey[k] || 0;
+                html += '<td class="rt-num rt-mono">' + (v ? fmtNum(v) : '—') + '</td>';
+            });
+            html += '<td class="rt-num rt-mono">' + fmtNum(pay.totalAllow) + '</td>';
+            html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--blue-d);">' + fmtNum(pay.totalSal + pay.totalAllow) + '</td>';
+            html += '</tr>';
+        });
+        html += '<tr class="rt-total"><td style="font-weight:800;">TOTAL</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">—</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">' + fmtNum(gtSal) + '</td>';
+        allowCols.forEach(function(k) {
+            html += '<td class="rt-num rt-mono" style="font-weight:800;">' + fmtNum(gtAllowByKey[k] || 0) + '</td>';
+        });
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">' + fmtNum(gtAllow) + '</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--blue-d);">' + fmtNum(gtGross) + '</td>';
+        html += '</tr></tbody></table></div></div>';
+    }
+
     // ── Commission Summary (Sales) ──
     if (salesDisplay.length > 0) {
         html += '<div class="report-panel"><div class="report-panel-head report-panel-head--em">💰 Commission &amp; Incentive Summary (Sales)</div>';
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
         html += '<th>Person</th><th class="rt-num">Commission RM</th><th class="rt-num">Collection RM</th><th class="rt-num">Call Bonus RM</th><th class="rt-num">Quarterly RM</th><th class="rt-num">Total RM</th>';
         html += '</tr></thead><tbody>';
+        var gtComm = 0, gtColl = 0, gtCall = 0, gtQtr = 0;
         salesDisplay.forEach(function(p) {
             var comm=0,coll=0,call=0,qtr=0;
             displayMonths.forEach(function(m){
@@ -11253,6 +11382,7 @@ function renderAnnualReport() {
                 var d=peopleData[personKey(p)][m];
                 if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}
             });
+            gtComm += comm; gtColl += coll; gtCall += call; gtQtr += qtr;
             var rowStatus = getAnnualPersonStatus(p, sumPersonActivityMonths(p));
             var rowCls = annualStatusRowClass(rowStatus);
             html += '<tr'+(rowCls?' class="'+rowCls+'"':'')+'><td style="font-weight:700;">'+p+annualStatusBadge(p, rowStatus)+'</td>';
@@ -11260,7 +11390,13 @@ function renderAnnualReport() {
             html += '<td class="rt-num rt-mono">'+fmtNum(call)+'</td><td class="rt-num rt-mono">'+fmtNum(qtr)+'</td>';
             html += '<td class="rt-num rt-mono ach-good" style="font-weight:800;">'+fmtNum(comm+coll+call+qtr)+'</td></tr>';
         });
-        html += '</tbody></table></div></div>';
+        html += '<tr class="rt-total"><td style="font-weight:800;">TOTAL</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">'+fmtNum(gtComm)+'</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">'+fmtNum(gtColl)+'</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">'+fmtNum(gtCall)+'</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">'+fmtNum(gtQtr)+'</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--blue-d);">'+fmtNum(gtComm+gtColl+gtCall+gtQtr)+'</td>';
+        html += '</tr></tbody></table></div></div>';
     }
 
     if (supervisorDisplay.length > 0) {
@@ -11290,6 +11426,7 @@ function renderAnnualReport() {
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
         html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block RM</th><th class="rt-num" title="Months with saved blocks data in Records / Sales Insight">Months w/ Records</th><th class="rt-num">Total Incentive RM</th>';
         html += '</tr></thead><tbody>';
+        var gtBlocks = 0, gtSupportInc = 0;
         merchandiserDisplay.forEach(function(p) {
             var totBlocks=0, totInc=0, mc=0, rate=0;
             displayMonths.forEach(function(m){
@@ -11297,6 +11434,8 @@ function renderAnnualReport() {
                 var d=peopleData[personKey(p)][m];
                 if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}
             });
+            gtBlocks += totBlocks;
+            gtSupportInc += totInc;
             var rowStatus = getAnnualPersonStatus(p, mc);
             var rowCls = annualStatusRowClass(rowStatus);
             html += '<tr'+(rowCls?' class="'+rowCls+'"':'')+'><td style="font-weight:700;">🛠️ '+p+annualStatusBadge(p, rowStatus)+'</td>';
@@ -11304,7 +11443,12 @@ function renderAnnualReport() {
             html += '<td class="rt-num rt-mono">'+fmtNum(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
             html += '<td class="rt-num rt-mono ach-warn" style="font-weight:800;">'+fmtNum(totInc)+'</td></tr>';
         });
-        html += '</tbody></table></div></div>';
+        html += '<tr class="rt-total"><td style="font-weight:800;">TOTAL</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">'+gtBlocks+' blocks</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">—</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;">—</td>';
+        html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--blue-d);">'+fmtNum(gtSupportInc)+'</td>';
+        html += '</tr></tbody></table></div></div>';
     }
 
     html += '<div class="annual-section-title">👤 Individual Annual Summary</div>';
@@ -11313,7 +11457,7 @@ function renderAnnualReport() {
         var empType = getEmployeeType(p);
         var tS=0,tT=0,tComm=0,mc=0,payrollMonths=0,totBlocks=0,sal=0,allow=0;
         displayMonths.forEach(function(m){
-            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+            if (!isEmployedInSelectedPeriod(p, m)) return;
             payrollMonths++;
             var sr = getSalaryForMonth(p, m, selectedYear);
             sal += parseFloat(sr.salary) || 0;
