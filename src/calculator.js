@@ -603,7 +603,6 @@ async function initApp() {
         // Load configuration
         await loadConfig();
         fixSalaryHistory();
-        migrateReportHistory();
 
         
         // Initialize current view
@@ -995,19 +994,86 @@ function filterHistByYear(history, year) {
 }
 
 // Migrate old reportHistory entries from "JAN" to "JAN-2026" format
+function inferReportHistoryMigrationYear(hist) {
+    var counts = {};
+    (hist || []).forEach(function(entry) {
+        var y = keyYear(entry.month);
+        if (y != null) counts[y] = (counts[y] || 0) + 1;
+    });
+    var bestY = null, bestN = 0;
+    Object.keys(counts).forEach(function(ys) {
+        var n = counts[ys];
+        if (n > bestN) { bestN = n; bestY = parseInt(ys, 10); }
+    });
+    if (bestY != null) return bestY;
+    var qcd = window.appState && window.appState.config && window.appState.config.quickCalculateData;
+    if (qcd && qcd.year) return parseInt(qcd.year, 10) || new Date().getFullYear();
+    return new Date().getFullYear();
+}
+
+function mergeReportHistoryArrays(a, b) {
+    var merged = {};
+    function personScore(d) {
+        if (!d) return 0;
+        return ['target', 'sales', 'collectionAmount', 'callActual', 'quarterlySales'].reduce(function(s, k) {
+            return s + ((parseFloat(d[k]) || 0) > 0 ? 1 : 0);
+        }, 0);
+    }
+    function absorb(entry) {
+        if (!entry || !entry.month) return;
+        var key = (entry.month || '').toUpperCase();
+        if (!merged[key]) {
+            merged[key] = { month: entry.month, data: (entry.data || []).slice() };
+            return;
+        }
+        (entry.data || []).forEach(function(d) {
+            var nu = (d.name || '').toUpperCase();
+            var idx = merged[key].data.findIndex(function(x) { return (x.name || '').toUpperCase() === nu; });
+            if (idx < 0) merged[key].data.push(d);
+            else if (personScore(d) > personScore(merged[key].data[idx])) merged[key].data[idx] = d;
+            else {
+                var ex = merged[key].data[idx];
+                ['target', 'sales', 'collectionTarget', 'collectionAmount', 'callTarget', 'callActual', 'quarterlyTarget', 'quarterlySales'].forEach(function(f) {
+                    if ((parseFloat(d[f]) || 0) && !(parseFloat(ex[f]) || 0)) ex[f] = d[f];
+                });
+            }
+        });
+    }
+    (a || []).forEach(absorb);
+    (b || []).forEach(absorb);
+    return Object.values(merged);
+}
+
+async function hydrateConfigFromDb() {
+    var cfg = window.appState.config;
+    if (!cfg) return;
+    var dbHist = await dbLoad('reportHistory');
+    var dbQcd = await dbLoad('quickCalculateData');
+    if (dbHist && Array.isArray(dbHist) && dbHist.length) {
+        var before = (cfg.reportHistory || []).length;
+        cfg.reportHistory = mergeReportHistoryArrays(cfg.reportHistory || [], dbHist);
+        if (cfg.reportHistory.length !== before || dbHist.length > before) {
+            console.log('🔄 Merged reportHistory from DB kv_store (' + dbHist.length + ' entries)');
+        }
+    }
+    if (dbQcd && typeof dbQcd === 'object') {
+        cfg.quickCalculateData = dbQcd;
+    }
+}
+
 function migrateReportHistory() {
     var hist = window.appState.config.reportHistory;
     if (!hist || !Array.isArray(hist)) return;
-    var curYear = String(new Date().getFullYear());
+    var migrationYear = String(inferReportHistoryMigrationYear(hist));
     var migrated = false;
     hist.forEach(function(entry) {
         if (entry.month && !/\-\d{4}$/.test(entry.month)) {
-            entry.month = entry.month.toUpperCase() + '-' + curYear;
+            entry.month = entry.month.toUpperCase() + '-' + migrationYear;
             migrated = true;
         }
     });
     if (migrated) {
-        console.log('🔄 Migrated reportHistory to year-keyed format');
+        console.log('🔄 Migrated reportHistory bare months to year', migrationYear);
         // Merge duplicates that might have appeared
         var merged = {};
         hist.forEach(function(entry) {
@@ -1038,9 +1104,12 @@ async function loadConfig() {
         } else {
             window.appState.config = getDefaultConfig();
         }
-        
+
+        await hydrateConfigFromDb();
+
         // Ensure all necessary configuration items exist
         ensureConfigStructure();
+        migrateReportHistory();
         
         console.log('📂 Configuration loaded');
     } catch (error) {
@@ -1550,18 +1619,7 @@ async function initQuickCalculate() {
     window.appState.salespeople = [];
     if (container) container.innerHTML = '';
 
-    // Try DB first
-    var dbQcd = await dbLoad('quickCalculateData');
-    var dbHist = await dbLoad('reportHistory');
-    if (dbQcd) {
-        window.appState.config.quickCalculateData = dbQcd;
-        console.log('✅ Restored quickCalculateData from DB');
-    }
-    if (dbHist && Array.isArray(dbHist)) {
-        window.appState.config.reportHistory = dbHist;
-        console.log('✅ Restored reportHistory from DB, entries:', dbHist.length);
-    }
-
+    // reportHistory / quickCalculateData merged in loadConfig → hydrateConfigFromDb
     var saved = window.appState.config.quickCalculateData;
     if (saved && saved.salespeople && saved.salespeople.length > 0) {
         if (saved.month) { var ms=document.getElementById('report-month'); if(ms) ms.value=saved.month; }
@@ -4096,6 +4154,8 @@ async function saveConfig() {
         if (window.electronAPI && window.electronAPI.saveConfig) {
             await window.electronAPI.saveConfig(window.appState.config);
         }
+        var hist = window.appState.config && window.appState.config.reportHistory;
+        if (hist) await dbSave('reportHistory', hist);
     } catch (error) {
         console.error('Failed to save configuration:', error);
     }
@@ -7417,12 +7477,12 @@ function fixSalaryHistory() {
             // Find earliest report month in reportHistory
             var reports = cfg.reportHistory || [];
             var monthOrder = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-            var curYear = new Date().getFullYear();
             var earliestReport = null;
             reports.forEach(function(r) {
                 var mi = monthOrder.indexOf(bareMonth(r.month));
                 if (mi < 0) return;
-                var ym = curYear + '-' + String(mi+1).padStart(2,'0');
+                var ry = resolveReportYear(r.month, new Date().getFullYear());
+                var ym = ry + '-' + String(mi + 1).padStart(2, '0');
                 if (!earliestReport || ym < earliestReport) earliestReport = ym;
             });
 
@@ -10949,13 +11009,32 @@ function renderAnnualReport() {
             return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(p, m, selectedYear);
         });
     }
+    function isPersonResignedDuringDisplayPeriod(p) {
+        if (isPersonInactiveInDisplayPeriod(p) || !displayMonths.length) return false;
+        var lastPay = typeof getLastPayrollMonthYM === 'function' ? getLastPayrollMonthYM(p) : null;
+        var firstDisplayYM = monthYearToYM(displayMonths[0], selectedYear);
+        var lastDisplayYM = monthYearToYM(displayMonths[displayMonths.length - 1], selectedYear);
+        if (lastPay) {
+            if (lastPay < firstDisplayYM) return false;
+            return lastPay < lastDisplayYM;
+        }
+        if (typeof isEmployeeActive === 'function' && !isEmployeeActive(p)) {
+            var employedCount = displayMonths.filter(function(m) {
+                return typeof isEmployeeActiveInMonth === 'function' && isEmployeeActiveInMonth(p, m, selectedYear);
+            }).length;
+            return employedCount > 0 && employedCount < displayMonths.length;
+        }
+        return false;
+    }
     function getAnnualPersonStatus(p, mc) {
         if (isPersonInactiveInDisplayPeriod(p)) return 'inactive';
+        if (isPersonResignedDuringDisplayPeriod(p)) return 'resigned';
         if ((mc || 0) === 0) return 'no-activity';
         return '';
     }
     function annualStatusRowClass(status) {
         if (status === 'inactive') return 'rt-row--inactive';
+        if (status === 'resigned') return 'rt-row--resigned';
         if (status === 'no-activity') return 'rt-row--no-activity';
         return '';
     }
@@ -10965,11 +11044,17 @@ function renderAnnualReport() {
             var endLbl = endYM ? ymToMonthLabel(endYM) : '';
             return '<span class="annual-status-badge annual-status-badge--inactive">Inactive' + (endLbl ? ' · ended ' + endLbl : '') + '</span>';
         }
+        if (status === 'resigned') {
+            var endYMR = typeof getLastPayrollMonthYM === 'function' ? getLastPayrollMonthYM(p) : null;
+            var endLblR = endYMR ? ymToMonthLabel(endYMR) : '';
+            return '<span class="annual-status-badge annual-status-badge--resigned">Resigned' + (endLblR ? ' · ended ' + endLblR : '') + '</span>';
+        }
         if (status === 'no-activity') return '<span class="annual-status-badge annual-status-badge--no-activity">No activity</span>';
         return '';
     }
     function annualCardClass(status) {
         if (status === 'inactive') return 'annual-person-card annual-person-card--inactive';
+        if (status === 'resigned') return 'annual-person-card annual-person-card--resigned';
         if (status === 'no-activity') return 'annual-person-card annual-person-card--no-activity';
         return 'annual-person-card';
     }
@@ -10983,13 +11068,15 @@ function renderAnnualReport() {
         if (!subEl || selectedPerson !== 'ALL') return;
         var salesCount = displayPeople.filter(function(n) { return getEmployeeType(n) === 'Sales'; }).length;
         var inactiveCount = displayPeople.filter(function(n) { return isPersonInactiveInDisplayPeriod(n); }).length;
+        var resignedCount = displayPeople.filter(function(n) { return isPersonResignedDuringDisplayPeriod(n); }).length;
         var noActCount = displayPeople.filter(function(n) {
-            if (isPersonInactiveInDisplayPeriod(n)) return false;
+            if (isPersonInactiveInDisplayPeriod(n) || isPersonResignedDuringDisplayPeriod(n)) return false;
             return sumPersonActivityMonths(n) === 0;
         }).length;
         var countLabel = displayPeople.length + ' employees' + (salesCount !== displayPeople.length ? ' (' + salesCount + ' Sales)' : '');
         var extras = [];
         if (inactiveCount) extras.push(inactiveCount + ' inactive');
+        if (resignedCount) extras.push(resignedCount + ' resigned');
         if (noActCount) extras.push(noActCount + ' no activity');
         if (extras.length) countLabel += ' · ' + extras.join(' · ');
         subEl.textContent = selectedYear + ' · ' + monthLabel + ' · ' + countLabel + groupLabel;
@@ -11242,7 +11329,7 @@ function renderAnnualReport() {
         var typeIcons = { Sales:'', Supervisor:'👔 ', 'Support Staff':'🛠️ ' };
         var cardStatus = getAnnualPersonStatus(p, mc);
         html += '<div class="'+annualCardClass(cardStatus)+'">';
-        var metaSuffix = mc===0 && cardStatus!=='inactive' ? ' · no activity' : '';
+        var metaSuffix = mc===0 && cardStatus!=='inactive' && cardStatus!=='resigned' ? ' · no activity' : '';
         var metaText = empType === 'Support Staff'
             ? (mc > 0 ? metaMonths + ' mo. w/ records · ' + empType : metaMonths + ' months · ' + empType + metaSuffix)
             : metaMonths + ' months · ' + empType + metaSuffix;
