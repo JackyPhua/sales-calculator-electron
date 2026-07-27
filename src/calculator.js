@@ -737,12 +737,30 @@ function keyYear(key) {
     return m ? parseInt(m[1]) : null;
 }
 
+/** Resolve calendar year for a reportHistory month key (supports legacy bare "JAN"). */
+function resolveReportYear(monthKey, fallbackYear) {
+    var y = keyYear(monthKey);
+    if (y != null) return y;
+    var fb = parseInt(fallbackYear, 10);
+    return !isNaN(fb) ? fb : new Date().getFullYear();
+}
+window.resolveReportYear = resolveReportYear;
+
 // Helper: find reportHistory entry for a given bare month and year
 // Supports both "JAN-2026" and legacy "JAN" formats
 function findHistEntry(history, bareM, year) {
-    var yearKey = bareM.toUpperCase() + '-' + (year || String(new Date().getFullYear()));
-    return history.find(function(r){ return (r.month||'').toUpperCase() === yearKey; })
-        || history.find(function(r){ return (r.month||'').toUpperCase() === bareM.toUpperCase(); });
+    if (!history || !history.length) return undefined;
+    var bareU = (bareM || '').toUpperCase();
+    var yr = parseInt(year, 10) || new Date().getFullYear();
+    var yearKey = bareU + '-' + yr;
+    var exact = history.find(function(r) { return (r.month || '').toUpperCase() === yearKey; });
+    if (exact) return exact;
+    // Legacy bare month (e.g. "JAN") — do not bleed into other years once year-suffixed keys exist
+    var hasYearVariants = history.some(function(r) {
+        return (r.month || '').toUpperCase().indexOf(bareU + '-') === 0;
+    });
+    if (hasYearVariants) return undefined;
+    return history.find(function(r) { return (r.month || '').toUpperCase() === bareU; });
 }
 
 // ==================== Employee Start (Join) Month ====================
@@ -820,6 +838,43 @@ function getLastPayrollMonthYM(name) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
+/** First payroll month (YYYY-MM) from configured join date, or null. */
+function getFirstPayrollMonthYM(name) {
+    var startYM = getEmployeeStartYM(name);
+    if (!startYM) return null;
+    var m = /^(\d{4})-(\d{2})/.exec(startYM);
+    return m ? (m[1] + '-' + m[2]) : null;
+}
+
+/** Earliest reportHistory month containing name (optionally scoped to year). Used when no join date is set. */
+function getInferredFirstPayrollYM(name, year) {
+    var cfg = window.appState && window.appState.config;
+    if (!cfg || !cfg.reportHistory) return null;
+    var nu = (name || '').toUpperCase();
+    var yr = parseInt(year, 10);
+    var earliest = null;
+    cfg.reportHistory.forEach(function(r) {
+        if (!r.data || !r.data.some(function(d) { return ((d.name || '') + '').toUpperCase() === nu; })) return;
+        var bm = bareMonth(r.month);
+        var entryYear = keyYear(r.month);
+        if (!isNaN(yr)) {
+            if (entryYear != null && entryYear !== yr) return;
+            // Legacy bare month without year — skip for this year if year-suffixed keys exist
+            if (entryYear == null) {
+                var bareU = bm.toUpperCase();
+                var hasYearVariants = cfg.reportHistory.some(function(r2) {
+                    return (r2.month || '').toUpperCase().indexOf(bareU + '-') === 0;
+                });
+                if (hasYearVariants) return;
+            }
+        }
+        var useYear = entryYear != null ? entryYear : (!isNaN(yr) ? yr : new Date().getFullYear());
+        var ym = monthYearToYM(bm, useYear);
+        if (!earliest || ym < earliest) earliest = ym;
+    });
+    return earliest;
+}
+
 /** True if name appears in a reportHistory snapshot for bareM + year. */
 function personInHistMonth(name, bareM, year) {
     var cfg = window.appState && window.appState.config;
@@ -834,8 +889,13 @@ function personInHistMonth(name, bareM, year) {
 /** True if the person was employed in the given report month (bareM + year). */
 function isEmployeeActiveInMonth(name, bareM, year) {
     var ym = monthYearToYM(bareM, year);
-    var startYM = getEmployeeStartYM(name);
-    if (startYM && ym < startYM.slice(0, 7)) return false;
+    var explicitFirst = getFirstPayrollMonthYM(name);
+    var firstPay = explicitFirst;
+    // Supervisors are rarely stored in reportHistory — do not infer start from sales rows.
+    if (!firstPay && typeof getEmployeeType === 'function' && getEmployeeType(name) !== 'Supervisor') {
+        firstPay = getInferredFirstPayrollYM(name, year);
+    }
+    if (firstPay && ym < firstPay) return false;
     var lastPayYM = getLastPayrollMonthYM(name);
     var endYM = getEmployeeEndYM(name);
     var inactive = typeof isEmployeeActive === 'function' && !isEmployeeActive(name);
@@ -844,6 +904,14 @@ function isEmployeeActiveInMonth(name, bareM, year) {
         return personInHistMonth(name, bareM, year);
     }
     if (lastPayYM && ym > lastPayYM) return false;
+    // Management staff must have an explicit join date — otherwise they appear every month the team has data.
+    if (!explicitFirst && typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Supervisor') {
+        return false;
+    }
+    // Support staff without join date: only months they appear in saved history.
+    if (!explicitFirst && typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Support Staff') {
+        return personInHistMonth(name, bareM, year);
+    }
     return true;
 }
 
@@ -891,6 +959,8 @@ window.setEmployeeStartYM = setEmployeeStartYM;
 window.getEmployeeEndYM = getEmployeeEndYM;
 window.setEmployeeEndYM = setEmployeeEndYM;
 window.getLastPayrollMonthYM = getLastPayrollMonthYM;
+window.getFirstPayrollMonthYM = getFirstPayrollMonthYM;
+window.getInferredFirstPayrollYM = getInferredFirstPayrollYM;
 window.personInHistMonth = personInHistMonth;
 window.isEmployeeActiveInMonth = isEmployeeActiveInMonth;
 window.isEmployeeActive = isEmployeeActive;
@@ -5001,16 +5071,17 @@ function viewHistoryReport(index) {
     if (!report) { showToast('⚠️', 'Report not found'); return; }
 
     var people = report.data || [];
-    var month  = (report.month || '').toUpperCase();
     var cfg    = window.appState.config;
     var qMonths = ['MAR','JUN','SEP','DEC'];
-    var isQtr   = qMonths.indexOf(month) !== -1;
+    var _hvBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : ((report.month || '').toUpperCase());
+    var _yearSel = document.getElementById('history-year-select');
+    var _yearFallback = (_yearSel && _yearSel.value && _yearSel.value !== 'ALL') ? _yearSel.value : String(new Date().getFullYear());
+    var _hvYear = resolveReportYear(report.month, _yearFallback);
+    var isQtr   = qMonths.indexOf(_hvBareM) !== -1;
 
     // Hide people who had not joined yet in this report month
-    var _hvBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : month;
-    var _hvYear  = (typeof keyYear === 'function') ? (keyYear(report.month) || new Date().getFullYear()) : new Date().getFullYear();
     people = people.filter(function(p){
-        return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(p.name, _hvBareM, _hvYear);
+        return typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(p.name, _hvBareM, _hvYear);
     });
 
     var existing = document.getElementById('history-view-modal');
@@ -5019,9 +5090,10 @@ function viewHistoryReport(index) {
     var cards = people.map(function(p, pIdx) {
         var nu       = (p.name || '').toUpperCase();
         var empType  = (typeof getEmployeeType === 'function') ? getEmployeeType(p.name) : 'Sales';
-        var salary   = (cfg.base_salaries && cfg.base_salaries[nu]) || 0;
-        var allow    = (cfg.allowances    && cfg.allowances[nu])    || {};
-        var epfRate  = (cfg.deductionRates && cfg.deductionRates[nu] && cfg.deductionRates[nu].EPF_RATE) || 11;
+        var salRec   = getSalaryForMonth(p.name, _hvBareM, _hvYear);
+        var salary   = salRec.salary;
+        var allow    = salRec.allowances || {};
+        var epfRate  = salRec.epfRate;
         var totalAllow = Object.values(allow).reduce(function(s,v){ return s+(parseFloat(v)||0); }, 0);
 
         var target  = parseFloat(p.target)          || 0;
@@ -5147,7 +5219,7 @@ function viewHistoryReport(index) {
 
     box.innerHTML = '<div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:20px 24px;color:#fff;">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-        + '<div><div style="font-size:20px;font-weight:700;">' + month + ' Report</div>'
+        + '<div><div style="font-size:20px;font-weight:700;">' + _hvBareM + ' ' + _hvYear + ' Report</div>'
         + '<div style="font-size:13px;opacity:0.85;margin-top:4px;">' + people.length + ' salespeople</div></div>'
         + '<div style="display:flex;gap:8px;">' + closeBtn + '</div></div>'
         + (people.length > 1 ? '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">' + personBtns + '</div>' : '')
@@ -5377,7 +5449,7 @@ function loadQuickCalculateHistory() {
 
     function personHasDataInReport(personName, report, bm, yr) {
         var nu = (personName || '').toUpperCase();
-        if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(personName, bm, yr)) return false;
+        if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(personName, bm, yr)) return false;
         var reportData = report.data || [];
         var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === nu; });
         if (!pd) return false;
@@ -5386,7 +5458,7 @@ function loadQuickCalculateHistory() {
         if (t === 'Support Staff') return (pd.collectionAmount || 0) > 0;
         if (t === 'Supervisor') {
             var team = calcTeamTotals(bm, yr);
-            return team.target > 0;
+            return team.target > 0 || team.sales > 0;
         }
         return false;
     }
@@ -5416,7 +5488,7 @@ function loadQuickCalculateHistory() {
             var reportData = report.data || [];
             var pd = reportData.find(function(p) { return (p.name || '').toUpperCase() === selectedPerson.toUpperCase(); });
             if (!pd) pd = { name: selectedPerson };
-            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(selectedPerson, bm, yr)) return 0;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(selectedPerson, bm, yr)) return 0;
             return calcPersonBonus(pd, bm, yr).total;
         }
         return monthTotalComm(report, bm, yr);
@@ -5441,6 +5513,7 @@ function loadQuickCalculateHistory() {
         var tS = 0, tT = 0;
         hEntry.data.forEach(function(p) {
             if (getEmployeeType(p.name) !== 'Sales') return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p.name, bm, yr)) return;
             tS += parseFloat(p.sales) || 0;
             tT += parseFloat(p.target) || 0;
         });
@@ -5458,6 +5531,7 @@ function loadQuickCalculateHistory() {
         var tS = 0, tT = 0, tCo = 0, tCoT = 0, tCa = 0, tCaT = 0;
         hEntry.data.forEach(function(p) {
             if (getEmployeeType(p.name) !== 'Sales') return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p.name, bm, yr)) return;
             tS += parseFloat(p.sales) || 0;
             tT += parseFloat(p.target) || 0;
             tCo += parseFloat(p.collectionAmount) || 0;
@@ -5510,7 +5584,7 @@ function loadQuickCalculateHistory() {
         var total = 0;
         people.forEach(function(p) {
             if (!personMatchesGroup(p.name)) return;
-            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, bm, yr)) return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p.name, bm, yr)) return;
             total += calcPersonBonus(p, bm, yr).total;
         });
         return total;
@@ -5610,7 +5684,7 @@ function loadQuickCalculateHistory() {
         });
 
         var month = bareMonth(report.month);
-        var monthYear = keyYear(report.month) || (showAllYears ? curYear : selectedYear);
+        var monthYear = resolveReportYear(report.month, showAllYears ? curYear : selectedYear);
         var realIndex = history.indexOf(report);
         var totalComm = scopeCommForReport(report, month, monthYear);
         var teamAch = calcTeamTotals(month, monthYear).ach;
@@ -5623,11 +5697,13 @@ function loadQuickCalculateHistory() {
         var peopleWithData = people.filter(function(p) {
             if (!personMatchesGroup(p.name)) return false;
             if (selectedPerson !== 'ALL' && (p.name || '').toUpperCase() !== selectedPerson.toUpperCase()) return false;
-            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(p.name, month, monthYear)) return false;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p.name, month, monthYear)) return false;
             var t = getEmployeeType(p.name);
             if (t === 'Sales') return (p.target || 0) > 0 || (p.sales || 0) > 0;
             if (t === 'Support Staff') return (p.collectionAmount || 0) > 0;
-            if (t === 'Supervisor') return selectedPerson !== 'ALL' || teamAch > 0 || calcTeamTotals(month, monthYear).target > 0;
+            if (t === 'Supervisor') {
+                return selectedPerson !== 'ALL' || teamAch > 0 || calcTeamTotals(month, monthYear).target > 0 || calcTeamTotals(month, monthYear).sales > 0;
+            }
             return false;
         });
         peopleWithData.sort(function(a, b) {
@@ -9302,9 +9378,16 @@ function printHistoryReport(index) {
     var report = (window.appState.config.reportHistory || [])[index];
     if (!report) return;
     var people = report.data || [];
-    var month = (report.month || '').toUpperCase();
     var cfg = window.appState.config;
-    var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(month) !== -1;
+    var _phBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : ((report.month || '').toUpperCase());
+    var _yearSel = document.getElementById('history-year-select');
+    var _yearFallback = (_yearSel && _yearSel.value && _yearSel.value !== 'ALL') ? _yearSel.value : String(new Date().getFullYear());
+    var _phYear = resolveReportYear(report.month, _yearFallback);
+    var isQtr = ['MAR','JUN','SEP','DEC'].indexOf(_phBareM) !== -1;
+
+    people = people.filter(function(p) {
+        return typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(p.name, _phBareM, _phYear);
+    });
 
     // Compute team totals for Supervisor
     var teamS=0, teamT=0, teamCo=0, teamCoT=0, teamCa=0, teamCaT=0;
@@ -9322,10 +9405,11 @@ function printHistoryReport(index) {
     people.forEach(function(p) {
         var name = (p.name || '').toUpperCase();
         var empType = (typeof getEmployeeType === 'function') ? getEmployeeType(name) : 'Sales';
-        var salary = (cfg.base_salaries && cfg.base_salaries[name]) || 0;
-        var allowances = cfg.allowances && cfg.allowances[name] ? Object.values(cfg.allowances[name]).reduce(function(s,v){return s+(parseFloat(v)||0);},0) : 0;
+        var salRec = getSalaryForMonth(p.name, _phBareM, _phYear);
+        var salary = salRec.salary;
+        var allowances = Object.values(salRec.allowances || {}).reduce(function(s,v){ return s+(parseFloat(v)||0); }, 0);
         var totalFixed = salary + allowances;
-        var epfRate = (cfg.deductionRates && cfg.deductionRates[name] && cfg.deductionRates[name].EPF_RATE) || 11;
+        var epfRate = salRec.epfRate;
 
         var comm = 0, collI = 0, callI = 0, qtrI = 0, totalComm = 0;
         var detailRows = '';
@@ -9392,8 +9476,6 @@ function printHistoryReport(index) {
         }
 
         var totalIncome = totalFixed + totalComm;
-        var _phBareM = (typeof bareMonth === 'function') ? bareMonth(report.month) : month;
-        var _phYear  = (typeof keyYear === 'function') ? (keyYear(report.month) || new Date().getFullYear()) : new Date().getFullYear();
         var _phEpf   = (typeof computeEpf === 'function') ? computeEpf(name, totalIncome, _phBareM, _phYear) : { employee: totalIncome*epfRate/100, empPct: epfRate };
         var epf = _phEpf.employee;
         var epfPctLabel = (_phEpf.empPct != null) ? _phEpf.empPct.toFixed(1) : epfRate;
@@ -9404,7 +9486,7 @@ function printHistoryReport(index) {
         var grandTotal = totalIncome - epf - socso - eis;
 
         html += '<div style="page-break-inside:avoid;border:1px solid #ccc;border-radius:8px;padding:16px;margin-bottom:16px;">';
-        html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+typeLabel+' — '+month+' 2026</h3>';
+        html += '<h3 style="margin:0 0 10px;font-size:16px;color:#0f172a;">'+name+typeLabel+' — '+_phBareM+' '+_phYear+'</h3>';
         html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
         html += detailRows;
         html += '<tr><td style="padding:6px 10px;color:#dc2626;">EPF '+epfPctLabel+'%</td><td style="padding:6px 10px;text-align:right;color:#dc2626;">- '+formatCurrency(epf)+'</td></tr>';
@@ -9415,9 +9497,9 @@ function printHistoryReport(index) {
     });
 
     var win = window.open('', '_blank');
-    win.document.write('<html><head><title>'+month+' Report</title>');
+    win.document.write('<html><head><title>'+_phBareM+' '+_phYear+' Report</title>');
     win.document.write('<style>body{font-family:Sora,sans-serif;padding:20px;max-width:800px;margin:0 auto;}h2{font-size:20px;margin-bottom:16px;}</style></head><body>');
-    win.document.write('<h2>Commission Report — '+month+' 2026</h2>');
+    win.document.write('<h2>Commission Report — '+_phBareM+' '+_phYear+'</h2>');
     win.document.write(html);
     win.document.write('</body></html>');
     win.document.close();
@@ -10791,7 +10873,7 @@ function renderAnnualReport() {
     if (displayMonths.length) {
         displayPeople = displayPeople.filter(function(n) {
             return displayMonths.some(function(m) {
-                return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(n, m, selectedYear);
+                return typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(n, m, selectedYear);
             });
         });
     }
@@ -10841,7 +10923,7 @@ function renderAnnualReport() {
             hEntry.data.forEach(function(pd) {
                 var nu = personKey(pd.name);
                 if (!peopleData[nu]) return;
-                if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(nu, m, selectedYear)) return;
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(nu, m, selectedYear)) return;
                 var empType = getEmployeeType(nu);
                 if (empType === 'Sales') {
                     var comm = calculateCommission(pd.sales||0, pd.target||0, nu);
@@ -10866,7 +10948,7 @@ function renderAnnualReport() {
         configPeople.forEach(function(name) {
             var empType = getEmployeeType(name);
             if (empType !== 'Supervisor') return;
-            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(name, m, selectedYear)) return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(name, m, selectedYear)) return;
             var team = _teamTotalsForMonth(m);
             if (team.target === 0) return; // No team data this month
             var teamAchM = team.target>0?(team.sales/team.target*100):0;
@@ -10887,6 +10969,7 @@ function renderAnnualReport() {
         var empType = getEmployeeType(name);
         displayMonths.forEach(function(m) {
             var d = peopleData[personKey(name)][m]; if (!d) return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(name, m, selectedYear)) return;
             if (empType === 'Sales') {
                 teamSales+=d.sales; teamTarget+=d.target; teamComm+=d.commission+d.collInc+d.callInc+d.qtrBonus;
             } else if (empType === 'Supervisor') {
@@ -10923,12 +11006,18 @@ function renderAnnualReport() {
         html += '<th class="rt-num rt-border">Target RM</th><th class="rt-num">Sales RM</th><th class="rt-num">Ach%</th>';
         html += '</tr></thead><tbody>';
         displayMonths.forEach(function(m) {
-            var hasData = salesDisplay.some(function(p){return peopleData[personKey(p)][m];});
+            var hasData = salesDisplay.some(function(p){
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return false;
+                return peopleData[personKey(p)][m];
+            });
             if (!hasData) return;
             var monthTarget = 0, monthSales = 0;
             html += '<tr><td style="font-weight:700;">'+m+'</td>';
             salesDisplay.forEach(function(p) {
-                var d = peopleData[personKey(p)][m];
+                var d = null;
+                if (typeof canPersistPersonToMonth !== 'function' || canPersistPersonToMonth(p, m, selectedYear)) {
+                    d = peopleData[personKey(p)][m];
+                }
                 if (d) { monthTarget += d.target || 0; monthSales += d.sales || 0; }
                 html += '<td class="rt-num rt-mono rt-border">'+(d?fmtNum(d.target):'—')+'</td>';
                 html += '<td class="rt-num rt-mono" style="font-weight:600;">'+(d?fmtNum(d.sales):'—')+'</td>';
@@ -10943,7 +11032,12 @@ function renderAnnualReport() {
         html += '<tr class="rt-total"><td>TOTAL</td>';
         var grandTarget = 0, grandSales = 0;
         salesDisplay.forEach(function(p) {
-            var tT=0, tS=0; displayMonths.forEach(function(m){var d=peopleData[personKey(p)][m];if(d){tT+=d.target;tS+=d.sales;}});
+            var tT=0, tS=0;
+            displayMonths.forEach(function(m){
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+                var d = peopleData[personKey(p)][m];
+                if (d) { tT += d.target; tS += d.sales; }
+            });
             grandTarget += tT;
             grandSales += tS;
             var tA = tT>0?(tS/tT*100):0;
@@ -10965,7 +11059,12 @@ function renderAnnualReport() {
         html += '<th>Person</th><th class="rt-num">Commission RM</th><th class="rt-num">Collection RM</th><th class="rt-num">Call Bonus RM</th><th class="rt-num">Quarterly RM</th><th class="rt-num">Total RM</th>';
         html += '</tr></thead><tbody>';
         salesDisplay.forEach(function(p) {
-            var comm=0,coll=0,call=0,qtr=0; displayMonths.forEach(function(m){var d=peopleData[personKey(p)][m];if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}});
+            var comm=0,coll=0,call=0,qtr=0;
+            displayMonths.forEach(function(m){
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+                var d=peopleData[personKey(p)][m];
+                if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}
+            });
             html += '<tr><td style="font-weight:700;">'+p+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(comm)+'</td><td class="rt-num rt-mono">'+fmtNum(coll)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(call)+'</td><td class="rt-num rt-mono">'+fmtNum(qtr)+'</td>';
@@ -10980,7 +11079,12 @@ function renderAnnualReport() {
         html += '<th>Management Staff</th><th class="rt-num">Sale Inc RM</th><th class="rt-num">Collection Inc RM</th><th class="rt-num">Call Inc RM</th><th class="rt-num">Quarterly RM</th><th class="rt-num">Total RM</th>';
         html += '</tr></thead><tbody>';
         supervisorDisplay.forEach(function(p) {
-            var sI=0,cI=0,caI=0,qI=0; displayMonths.forEach(function(m){var d=peopleData[personKey(p)][m];if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}});
+            var sI=0,cI=0,caI=0,qI=0;
+            displayMonths.forEach(function(m){
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+                var d=peopleData[personKey(p)][m];
+                if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}
+            });
             html += '<tr><td style="font-weight:700;">👔 '+p+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(sI)+'</td><td class="rt-num rt-mono">'+fmtNum(cI)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(caI)+'</td><td class="rt-num rt-mono">'+fmtNum(qI)+'</td>';
@@ -10996,7 +11100,11 @@ function renderAnnualReport() {
         html += '</tr></thead><tbody>';
         merchandiserDisplay.forEach(function(p) {
             var totBlocks=0, totInc=0, mc=0, rate=0;
-            displayMonths.forEach(function(m){var d=peopleData[personKey(p)][m];if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}});
+            displayMonths.forEach(function(m){
+                if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+                var d=peopleData[personKey(p)][m];
+                if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}
+            });
             html += '<tr><td style="font-weight:700;">🛠️ '+p+'</td>';
             html += '<td class="rt-num rt-mono" style="font-weight:700;">'+totBlocks+' blocks</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
@@ -11011,6 +11119,7 @@ function renderAnnualReport() {
         var empType = getEmployeeType(p);
         var tS=0,tT=0,tComm=0,mc=0,totBlocks=0,sal=0,allow=0;
         displayMonths.forEach(function(m){
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
             var d = peopleData[personKey(p)][m]; if (!d) return;
             var sr = getSalaryForMonth(p, m, selectedYear);
             sal += parseFloat(sr.salary) || 0;
@@ -11378,6 +11487,7 @@ function renderEmployerCostReport() {
         var tS=0, tT=0, tCo=0, tCoT=0, tCa=0, tCaT=0;
         hEntry.data.forEach(function(pd) {
             if (getEmployeeType(pd.name) !== 'Sales') return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(pd.name, m, selectedYear)) return;
             tS += parseFloat(pd.sales)||0;
             tT += parseFloat(pd.target)||0;
             tCo += parseFloat(pd.collectionAmount)||0;
@@ -11391,7 +11501,7 @@ function renderEmployerCostReport() {
     // Gather data per person
     var allPeopleData = {};
     configPeople.forEach(function(name) {
-        if (filterMonths && filterMonths.length > 0 && filterMonths.every(function(m) { return !isEmployeeActiveInMonth(name, m, selectedYear); })) return;
+        if (filterMonths && filterMonths.length > 0 && filterMonths.every(function(m) { return !canPersistPersonToMonth(name, m, selectedYear); })) return;
         var empType = getEmployeeType(name);
         var nu = personKey(name);
         var employerEpfRate = (cfg.employer_epf_rates && (cfg.employer_epf_rates[nu] != null ? cfg.employer_epf_rates[nu] : cfg.employer_epf_rates[name])) || 13;
@@ -11403,12 +11513,13 @@ function renderEmployerCostReport() {
 
         MONTHS.forEach(function(m) {
             if (!isMonthIncluded(m)) return;
-            if (typeof isEmployeeActiveInMonth === 'function' && !isEmployeeActiveInMonth(name, m, selectedYear)) return;
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(name, m, selectedYear)) return;
             var hEntry = findHistEntry(history, m, selectedYear);
 
             if (empType === 'Sales') {
                 if (!hEntry || !hEntry.data) return;
                 var pd = histPerson(hEntry, name);
+                if (!pd) return;
                 var pay = ecMonthPay(name, m);
                 months++;
                 var sales = pd ? (parseFloat(pd.sales) || 0) : 0;
@@ -11452,7 +11563,9 @@ function renderEmployerCostReport() {
                 totalEmployerEis += (typeof computeEis === 'function') ? computeEis(name, _mgV, m, selectedYear).employer : 0;
                 totalEmployerSocso += (typeof computeSocso === 'function') ? computeSocso(name, _mgV, m, selectedYear).employer : 0;
             } else if (empType === 'Support Staff') {
-                var pd = (hEntry && hEntry.data) ? histPerson(hEntry, name) : null;
+                if (!hEntry || !hEntry.data) return;
+                var pd = histPerson(hEntry, name);
+                if (!pd) return;
                 var payMs = ecMonthPay(name, m);
                 months++;
                 totalSalary += payMs.salary; totalAllow += payMs.allow;
@@ -11501,7 +11614,7 @@ function renderEmployerCostReport() {
     // When a month/quarter is selected, hide anyone not employed in that scope
     if (filterMonths && filterMonths.length) {
         displayPeople = displayPeople.filter(function(n) {
-            return filterMonths.some(function(m) { return isEmployeeActiveInMonth(n, m, selectedYear); });
+            return filterMonths.some(function(m) { return canPersistPersonToMonth(n, m, selectedYear); });
         });
     }
 
@@ -11667,7 +11780,8 @@ function renderEmployerCostReport() {
         var subLbl = g.headcount + ' staff · ' + ecMonthLabel + ' ' + selectedYear;
 
         var out = '<div class="report-panel">';
-        out += '<div class="ec-card-head ec-card-head--group-grand">';
+        var grandHeadCls = 'ec-card-head ec-card-head--group-grand' + (empType === 'ALL' ? ' ec-card-head--group-grand-all' : '');
+        out += '<div class="'+grandHeadCls+'">';
         out += '<div><div class="ec-card-title">'+groupCfg.icon+' '+groupCfg.title+' — Grand Total</div>';
         out += '<div class="ec-card-sub">'+subLbl+'</div></div>';
         if (selectedCostFilter === 'ALL' && (empType === 'Sales' || empType === 'ALL')) {
@@ -11727,7 +11841,7 @@ function renderEmployerCostReport() {
         return out;
     }
 
-    function renderPersonExpenseTable(name) {
+    function renderPersonExpenseTable(name, rank) {
         var p = allPeopleData[name];
         if (!p || p.months === 0) return '';
         var filteredTotal = selectedCostFilter === 'ALL' ? p.totalCost : ecPersonFilteredAmount(p);
@@ -11736,8 +11850,9 @@ function renderEmployerCostReport() {
 
         var out = '<div class="report-panel">';
         var typeTag = empType==='Supervisor'?' 👔':empType==='Support Staff'?' 🛠️':'';
+        var rankLbl = rank ? ('#' + rank + ' · ') : '';
         out += '<div class="ec-card-head">';
-        out += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub" style="color:rgba(255,255,255,.75);">'+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
+        out += '<div><div class="ec-card-title">'+name+typeTag+'</div><div class="ec-card-sub" style="color:rgba(255,255,255,.75);">'+rankLbl+p.months+' months · '+ecMonthLabel+' '+selectedYear+'</div></div>';
         if (selectedCostFilter === 'ALL' && empType === 'Sales') {
             out += '<div class="ec-card-sales"><div class="ec-card-sales-lbl">Sales</div><div class="ec-card-sales-val">'+fmt(p.totalSales)+'</div></div>';
         } else if (selectedCostFilter !== 'ALL') {
@@ -11823,37 +11938,65 @@ function renderEmployerCostReport() {
         return displayPeople.filter(function(n) {
             var p = allPeopleData[n];
             if (!p || p.months === 0) return false;
-            if (filterMonths && filterMonths.length && typeof isEmployeeActiveInMonth === 'function') {
-                return filterMonths.some(function(m) { return isEmployeeActiveInMonth(n, m, selectedYear); });
+            if (filterMonths && filterMonths.length && typeof canPersistPersonToMonth === 'function') {
+                return filterMonths.some(function(m) { return canPersistPersonToMonth(n, m, selectedYear); });
             }
             return true;
         });
     }
 
+    function ecMemberExpenseTotal(name) {
+        var p = allPeopleData[name];
+        if (!p) return 0;
+        return selectedCostFilter === 'ALL' ? (p.totalCost || 0) : ecPersonFilteredAmount(p);
+    }
+
+    function sortEcMembers(members) {
+        return members.slice().sort(function(a, b) {
+            var diff = ecMemberExpenseTotal(b) - ecMemberExpenseTotal(a);
+            if (diff !== 0) return diff;
+            return (a || '').localeCompare(b || '');
+        });
+    }
+
+    function membersForGroup(empType) {
+        return sortEcMembers(activeMembers().filter(function(n) {
+            return getEmployeeType(n) === empType;
+        }));
+    }
+
+    // Sales → Supervisor (below Sales) → Support Staff
     var GROUP_SECTIONS = [
         { type: 'Sales', title: 'Sales Team', icon: '💼' },
         { type: 'Supervisor', title: 'Management Staff', icon: '👔' },
         { type: 'Support Staff', title: 'Support Staff', icon: '🛠️' }
     ];
 
+    function renderGroupSection(groupCfg, members) {
+        if (!members.length) return '';
+        var out = '';
+        out += renderGroupGrandTotal(groupCfg, members);
+        members.forEach(function(name, idx) {
+            out += renderPersonExpenseTable(name, idx + 1);
+        });
+        return out;
+    }
+
     if (selectedGroup === 'ALL') {
-        var allMembers = activeMembers();
+        var allMembers = sortEcMembers(activeMembers());
         if (allMembers.length) {
             html += renderGroupGrandTotal({ type: 'ALL', title: 'All Staff', icon: '👥' }, allMembers);
-            allMembers.forEach(function(name) {
-                html += renderPersonExpenseTable(name);
+            GROUP_SECTIONS.forEach(function(groupCfg) {
+                html += renderGroupSection(groupCfg, membersForGroup(groupCfg.type));
             });
         }
     } else {
         var groupCfg = null;
         GROUP_SECTIONS.forEach(function(g) { if (g.type === selectedGroup) groupCfg = g; });
         if (groupCfg) {
-            var members = activeMembers();
+            var members = membersForGroup(groupCfg.type);
             if (members.length) {
-                html += renderGroupGrandTotal(groupCfg, members);
-                members.forEach(function(name) {
-                    html += renderPersonExpenseTable(name);
-                });
+                html += renderGroupSection(groupCfg, members);
             }
         }
     }
