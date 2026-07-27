@@ -366,6 +366,8 @@
         .seg-toggle-btn{padding:7px 16px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;background:transparent;color:var(--ink3);}
         .seg-toggle-btn.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1);}
         .filter-select:focus,.filter-select-sm:focus{border-color:var(--blue);}
+        #calc-person-select option:disabled{color:#94a3b8;font-style:italic;}
+        #calc-person-select.calc-person-select--partial{color:var(--ink3);}
         .empty-state{text-align:center;padding:32px 16px;color:var(--ink4);}
         .empty-state-icon{font-size:36px;margin-bottom:10px;}
         .empty-state-title{font-size:14px;font-weight:600;margin-bottom:6px;color:var(--ink2);}
@@ -498,6 +500,21 @@
         .annual-person-head--sales{background:linear-gradient(180deg,#1a4d42 0%,#163556 100%);}
         .annual-person-head--mgmt{background:linear-gradient(180deg,#1e3a6e 0%,#163556 100%);}
         .annual-person-head--support{background:linear-gradient(180deg,#4a3f1f 0%,#163556 100%);}
+        .annual-person-head--inactive{background:linear-gradient(180deg,#64748b 0%,#475569 100%) !important;}
+        .annual-person-head--no-activity{background:linear-gradient(180deg,#d97706 0%,#92400e 100%) !important;}
+        .annual-person-card--inactive{opacity:.92;border-color:#cbd5e1;}
+        .annual-person-card--inactive .annual-person-body{color:#64748b;}
+        .annual-person-card--inactive .annual-stat-val{color:#64748b;}
+        .annual-person-card--inactive .annual-stat-total .annual-stat-val{color:#475569;}
+        .annual-person-card--no-activity{border-color:#fde68a;background:#fffef8;}
+        .annual-person-card--no-activity .annual-person-meta{color:#fde68a;}
+        .annual-status-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;vertical-align:middle;letter-spacing:.2px;white-space:nowrap;}
+        .annual-status-badge--inactive{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;}
+        .annual-status-badge--no-activity{background:#fef3c7;color:#b45309;border:1px solid #fde68a;}
+        .report-table tr.rt-row--inactive td{background:#f8fafc;color:#64748b;}
+        .report-table tr.rt-row--inactive td:first-child{color:#475569;font-weight:700;}
+        .report-table tr.rt-row--no-activity td{background:#fffbeb;color:#78350f;}
+        .report-table tr.rt-row--no-activity td:first-child{color:#92400e;font-weight:700;}
         .annual-person-name{font-size:13px;font-weight:800;letter-spacing:-.2px;}
         .annual-person-meta{font-size:10px;color:#94a3b8;margin-top:2px;}
         .annual-person-body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:11px;}

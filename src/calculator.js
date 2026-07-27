@@ -908,9 +908,11 @@ function isEmployeeActiveInMonth(name, bareM, year) {
     if (!explicitFirst && typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Supervisor') {
         return false;
     }
-    // Support staff without join date: only months they appear in saved history.
+    // Support staff without join date: employ from first saved history month onward (not every month needs its own row).
     if (!explicitFirst && typeof getEmployeeType === 'function' && getEmployeeType(name) === 'Support Staff') {
-        return personInHistMonth(name, bareM, year);
+        if (firstPay) return true;
+        // Active, never saved yet — allow first entry in any month (set join date in People for precise cutoffs).
+        return typeof isEmployeeActive !== 'function' || isEmployeeActive(name);
     }
     return true;
 }
@@ -3000,13 +3002,8 @@ function getCalcConfiguredPeople() {
     if (configPeople.length === 0) {
         configPeople = window.appState.salespeople.filter(function(p) { return p.name; }).map(function(p) { return p.name; });
     }
-    var month = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
-    var year = parseInt(((document.getElementById('report-year') || {}).value || ''), 10) || new Date().getFullYear();
-    if (month) {
-        configPeople = configPeople.filter(function(n) {
-            return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(n, month, year);
-        });
-    } else if (typeof isEmployeeActive === 'function') {
+    // Active roster only — resigned/inactive people never appear in Sales Insight.
+    if (typeof isEmployeeActive === 'function') {
         configPeople = configPeople.filter(function(n) { return isEmployeeActive(n); });
     }
     var groupSel = document.getElementById('calc-group-select');
@@ -3023,6 +3020,13 @@ function getCalcConfiguredPeople() {
     });
 }
 
+function isPersonEmployedInCalcPeriod(name) {
+    var month = ((document.getElementById('report-month') || {}).value || '').toUpperCase();
+    var year = parseInt(((document.getElementById('report-year') || {}).value || ''), 10) || new Date().getFullYear();
+    if (!month) return true;
+    return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(name, month, year);
+}
+
 function populateCalcPersonSelect(preferredName) {
     var sel = document.getElementById('calc-person-select');
     if (!sel) return null;
@@ -3030,18 +3034,32 @@ function populateCalcPersonSelect(preferredName) {
     if (people.length === 0) {
         sel.innerHTML = '<option value="">— No person —</option>';
         sel.value = '';
+        sel.classList.remove('calc-person-select--partial');
         return null;
     }
     var curName = preferredName
         || (window.appState.salespeople[0] && window.appState.salespeople[0].name)
         || sel.value;
+    var hasDisabled = false;
     sel.innerHTML = people.map(function(n) {
-        return '<option value="' + n.replace(/"/g, '&quot;') + '">' + n + '</option>';
+        var employed = isPersonEmployedInCalcPeriod(n);
+        if (!employed) hasDisabled = true;
+        var dis = employed ? '' : ' disabled';
+        var label = employed ? n : (n + ' — not this month');
+        return '<option value="' + n.replace(/"/g, '&quot;') + '"' + dis + '>' + label + '</option>';
     }).join('');
-    var match = people.find(function(n) { return n.toUpperCase() === (curName || '').toUpperCase(); });
-    var chosen = match || people[0];
-    sel.value = chosen;
-    return chosen;
+    sel.classList.toggle('calc-person-select--partial', hasDisabled);
+    var preferMatch = people.find(function(n) {
+        return n.toUpperCase() === (curName || '').toUpperCase() && isPersonEmployedInCalcPeriod(n);
+    });
+    var firstEmployed = people.find(function(n) { return isPersonEmployedInCalcPeriod(n); });
+    var chosen = preferMatch || firstEmployed;
+    if (chosen) {
+        sel.value = chosen;
+        return chosen;
+    }
+    sel.value = people[0];
+    return null;
 }
 
 function saveCurrentCalcPersonBeforeSwitch() {
@@ -3096,6 +3114,11 @@ function saveCurrentCalcPersonBeforeSwitch() {
 function selectCalcPerson(name, options) {
     options = options || {};
     if (!name) return;
+    if (!isPersonEmployedInCalcPeriod(name)) {
+        var fallback = populateCalcPersonSelect(name);
+        if (fallback) selectCalcPerson(fallback, { force: true });
+        return;
+    }
     var curPerson = window.appState.salespeople[0];
     var curName = (curPerson && curPerson.name) || (document.getElementById('name-0') || {}).value || '';
     if (!options.force && curName && curName.toUpperCase() === name.toUpperCase()) return;
@@ -3145,7 +3168,13 @@ function selectCalcPerson(name, options) {
 
 function onCalcPersonChange() {
     var sel = document.getElementById('calc-person-select');
-    if (sel && sel.value) selectCalcPerson(sel.value, { force: true });
+    if (sel && sel.value) {
+        if (!isPersonEmployedInCalcPeriod(sel.value)) {
+            populateCalcPersonSelect();
+            return;
+        }
+        selectCalcPerson(sel.value, { force: true });
+    }
 }
 
 function onCalcGroupChange() {
@@ -10894,6 +10923,77 @@ function renderAnnualReport() {
     function fmt(n) { return 'RM ' + (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function fmtNum(n) { return (n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function personKey(name) { return (name || '').toUpperCase(); }
+    function ymToMonthLabel(ym) {
+        if (!ym) return '';
+        var parts = ym.match(/^(\d{4})-(\d{2})/);
+        if (!parts) return ym;
+        var mi = parseInt(parts[2], 10) - 1;
+        return (mi >= 0 && mi < MONTHS.length) ? (MONTHS[mi] + ' ' + parts[1]) : ym;
+    }
+    function sumPersonActivityMonths(p) {
+        var empType = getEmployeeType(p);
+        var mc = 0;
+        displayMonths.forEach(function(m) {
+            if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
+            var d = peopleData[personKey(p)][m];
+            if (!d) return;
+            if (empType === 'Sales') mc++;
+            else if (empType === 'Supervisor' && d.type === 'Supervisor') mc++;
+            else if (empType === 'Support Staff' && d.type === 'Support Staff') mc++;
+        });
+        return mc;
+    }
+    function isPersonInactiveInDisplayPeriod(p) {
+        if (!displayMonths.length) return false;
+        return !displayMonths.some(function(m) {
+            return typeof isEmployeeActiveInMonth !== 'function' || isEmployeeActiveInMonth(p, m, selectedYear);
+        });
+    }
+    function getAnnualPersonStatus(p, mc) {
+        if (isPersonInactiveInDisplayPeriod(p)) return 'inactive';
+        if ((mc || 0) === 0) return 'no-activity';
+        return '';
+    }
+    function annualStatusRowClass(status) {
+        if (status === 'inactive') return 'rt-row--inactive';
+        if (status === 'no-activity') return 'rt-row--no-activity';
+        return '';
+    }
+    function annualStatusBadge(p, status) {
+        if (status === 'inactive') {
+            var endYM = typeof getLastPayrollMonthYM === 'function' ? getLastPayrollMonthYM(p) : null;
+            var endLbl = endYM ? ymToMonthLabel(endYM) : '';
+            return '<span class="annual-status-badge annual-status-badge--inactive">Inactive' + (endLbl ? ' · ended ' + endLbl : '') + '</span>';
+        }
+        if (status === 'no-activity') return '<span class="annual-status-badge annual-status-badge--no-activity">No activity</span>';
+        return '';
+    }
+    function annualCardClass(status) {
+        if (status === 'inactive') return 'annual-person-card annual-person-card--inactive';
+        if (status === 'no-activity') return 'annual-person-card annual-person-card--no-activity';
+        return 'annual-person-card';
+    }
+    function annualHeadClass(status, empType) {
+        if (status === 'inactive') return 'annual-person-head annual-person-head--inactive';
+        if (status === 'no-activity') return 'annual-person-head annual-person-head--no-activity';
+        var typeCls = empType === 'Supervisor' ? 'annual-person-head--mgmt' : empType === 'Support Staff' ? 'annual-person-head--support' : 'annual-person-head--sales';
+        return 'annual-person-head ' + typeCls;
+    }
+    function updateAnnualSubCounts() {
+        if (!subEl || selectedPerson !== 'ALL') return;
+        var salesCount = displayPeople.filter(function(n) { return getEmployeeType(n) === 'Sales'; }).length;
+        var inactiveCount = displayPeople.filter(function(n) { return isPersonInactiveInDisplayPeriod(n); }).length;
+        var noActCount = displayPeople.filter(function(n) {
+            if (isPersonInactiveInDisplayPeriod(n)) return false;
+            return sumPersonActivityMonths(n) === 0;
+        }).length;
+        var countLabel = displayPeople.length + ' employees' + (salesCount !== displayPeople.length ? ' (' + salesCount + ' Sales)' : '');
+        var extras = [];
+        if (inactiveCount) extras.push(inactiveCount + ' inactive');
+        if (noActCount) extras.push(noActCount + ' no activity');
+        if (extras.length) countLabel += ' · ' + extras.join(' · ');
+        subEl.textContent = selectedYear + ' · ' + monthLabel + ' · ' + countLabel + groupLabel;
+    }
     var peopleData = {};
     configPeople.forEach(function(name) { peopleData[personKey(name)] = {}; });
 
@@ -10980,6 +11080,7 @@ function renderAnnualReport() {
         });
     });
     var teamAch = teamTarget>0?(teamSales/teamTarget*100):0;
+    updateAnnualSubCounts();
     function achCls(pct) { return pct >= 100 ? 'ach-good' : pct >= 90 ? 'ach-warn' : 'ach-bad'; }
     var html = '';
     html += '<div class="dash-kpi-grid report-kpi-grid">';
@@ -11065,7 +11166,9 @@ function renderAnnualReport() {
                 var d=peopleData[personKey(p)][m];
                 if(d){comm+=d.commission||0;coll+=d.collInc||0;call+=d.callInc||0;qtr+=d.qtrBonus||0;}
             });
-            html += '<tr><td style="font-weight:700;">'+p+'</td>';
+            var rowStatus = getAnnualPersonStatus(p, sumPersonActivityMonths(p));
+            var rowCls = annualStatusRowClass(rowStatus);
+            html += '<tr'+(rowCls?' class="'+rowCls+'"':'')+'><td style="font-weight:700;">'+p+annualStatusBadge(p, rowStatus)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(comm)+'</td><td class="rt-num rt-mono">'+fmtNum(coll)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(call)+'</td><td class="rt-num rt-mono">'+fmtNum(qtr)+'</td>';
             html += '<td class="rt-num rt-mono ach-good" style="font-weight:800;">'+fmtNum(comm+coll+call+qtr)+'</td></tr>';
@@ -11085,7 +11188,9 @@ function renderAnnualReport() {
                 var d=peopleData[personKey(p)][m];
                 if(d&&d.type==='Supervisor'){sI+=d.saleInc||0;cI+=d.collInc||0;caI+=d.callInc||0;qI+=d.qtrInc||0;}
             });
-            html += '<tr><td style="font-weight:700;">👔 '+p+'</td>';
+            var rowStatus = getAnnualPersonStatus(p, sumPersonActivityMonths(p));
+            var rowCls = annualStatusRowClass(rowStatus);
+            html += '<tr'+(rowCls?' class="'+rowCls+'"':'')+'><td style="font-weight:700;">👔 '+p+annualStatusBadge(p, rowStatus)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(sI)+'</td><td class="rt-num rt-mono">'+fmtNum(cI)+'</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(caI)+'</td><td class="rt-num rt-mono">'+fmtNum(qI)+'</td>';
             html += '<td class="rt-num rt-mono" style="font-weight:800;color:var(--vi);">'+fmtNum(sI+cI+caI+qI)+'</td></tr>';
@@ -11096,7 +11201,7 @@ function renderAnnualReport() {
     if (merchandiserDisplay.length > 0) {
         html += '<div class="report-panel"><div class="report-panel-head">🛠️ Support Staff Incentive Summary</div>';
         html += '<div class="report-panel-body"><table class="report-table"><thead><tr>';
-        html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block RM</th><th class="rt-num">Months Active</th><th class="rt-num">Total Incentive RM</th>';
+        html += '<th>Support Staff</th><th class="rt-num">Total Blocks</th><th class="rt-num">Rate/Block RM</th><th class="rt-num" title="Months with saved blocks data in Records / Sales Insight">Months w/ Records</th><th class="rt-num">Total Incentive RM</th>';
         html += '</tr></thead><tbody>';
         merchandiserDisplay.forEach(function(p) {
             var totBlocks=0, totInc=0, mc=0, rate=0;
@@ -11105,7 +11210,9 @@ function renderAnnualReport() {
                 var d=peopleData[personKey(p)][m];
                 if(d&&d.type==='Support Staff'){totBlocks+=d.blocks||0;totInc+=d.incentive||0;rate=d.rate||rate;mc++;}
             });
-            html += '<tr><td style="font-weight:700;">🛠️ '+p+'</td>';
+            var rowStatus = getAnnualPersonStatus(p, mc);
+            var rowCls = annualStatusRowClass(rowStatus);
+            html += '<tr'+(rowCls?' class="'+rowCls+'"':'')+'><td style="font-weight:700;">🛠️ '+p+annualStatusBadge(p, rowStatus)+'</td>';
             html += '<td class="rt-num rt-mono" style="font-weight:700;">'+totBlocks+' blocks</td>';
             html += '<td class="rt-num rt-mono">'+fmtNum(rate)+'</td><td class="rt-num rt-mono">'+mc+'</td>';
             html += '<td class="rt-num rt-mono ach-warn" style="font-weight:800;">'+fmtNum(totInc)+'</td></tr>';
@@ -11117,23 +11224,29 @@ function renderAnnualReport() {
     html += '<div class="annual-person-grid">';
     displayPeople.forEach(function(p) {
         var empType = getEmployeeType(p);
-        var tS=0,tT=0,tComm=0,mc=0,totBlocks=0,sal=0,allow=0;
+        var tS=0,tT=0,tComm=0,mc=0,payrollMonths=0,totBlocks=0,sal=0,allow=0;
         displayMonths.forEach(function(m){
             if (typeof canPersistPersonToMonth === 'function' && !canPersistPersonToMonth(p, m, selectedYear)) return;
-            var d = peopleData[personKey(p)][m]; if (!d) return;
+            payrollMonths++;
             var sr = getSalaryForMonth(p, m, selectedYear);
             sal += parseFloat(sr.salary) || 0;
             allow += Object.values(sr.allowances || {}).reduce(function(s,v){return s+(parseFloat(v)||0);},0);
+            var d = peopleData[personKey(p)][m];
+            if (!d) return;
             if (empType === 'Sales') { tS+=d.sales||0; tT+=d.target||0; tComm+=(d.commission||0)+(d.collInc||0)+(d.callInc||0)+(d.qtrBonus||0); mc++; }
             else if (empType === 'Supervisor') { tComm += d.total||0; mc++; }
             else if (empType === 'Support Staff') { totBlocks += d.blocks||0; tComm += d.incentive||0; mc++; }
         });
-        if (mc === 0) return;
+        var metaMonths = mc > 0 ? mc : payrollMonths;
         var tAch = tT>0?(tS/tT*100):0;
         var typeIcons = { Sales:'', Supervisor:'👔 ', 'Support Staff':'🛠️ ' };
-        var headCls = empType==='Supervisor'?'annual-person-head--mgmt':empType==='Support Staff'?'annual-person-head--support':'annual-person-head--sales';
-        html += '<div class="annual-person-card">';
-        html += '<div class="annual-person-head '+headCls+'"><div class="annual-person-name">'+(typeIcons[empType]||'')+p+'</div><div class="annual-person-meta">'+mc+' months · '+empType+'</div></div>';
+        var cardStatus = getAnnualPersonStatus(p, mc);
+        html += '<div class="'+annualCardClass(cardStatus)+'">';
+        var metaSuffix = mc===0 && cardStatus!=='inactive' ? ' · no activity' : '';
+        var metaText = empType === 'Support Staff'
+            ? (mc > 0 ? metaMonths + ' mo. w/ records · ' + empType : metaMonths + ' months · ' + empType + metaSuffix)
+            : metaMonths + ' months · ' + empType + metaSuffix;
+        html += '<div class="'+annualHeadClass(cardStatus, empType)+'"><div class="annual-person-name">'+(typeIcons[empType]||'')+p+annualStatusBadge(p, cardStatus)+'</div><div class="annual-person-meta">'+metaText+'</div></div>';
         html += '<div class="annual-person-body">';
         if (empType === 'Sales') {
             html += '<div class="annual-stat-row"><span class="annual-stat-lbl">Total Sales</span><span class="annual-stat-val">'+fmt(tS)+'</span></div>';
